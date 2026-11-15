@@ -1,0 +1,212 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
+plugins {
+    alias(libs.plugins.shadow)
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'com.lixui'
+
+def archiveName = rootProject.name
+// Artifacts go into build/ unless BUILD_PATH points somewhere else.
+def customBuildPath = System.getenv('BUILD_PATH') ?: layout.buildDirectory.get().asFile
+def lwjglVersion = libs.versions.lwjgl.get()
+
+repositories {
+    mavenCentral()
+}
+
+def detectLwjglNatives = {
+    String os = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+    String arch = System.getProperty('os.arch').toLowerCase(Locale.ROOT)
+    boolean arm = arch.contains('aarch64') || arch.contains('arm64')
+
+    if (os.contains('win')) {
+        return arm ? 'natives-windows-arm64' : 'natives-windows'
+    }
+    if (os.contains('mac')) {
+        return arm ? 'natives-macos-arm64' : 'natives-macos'
+    }
+    return arm ? 'natives-linux-arm64' : 'natives-linux'
+}
+
+// Natives are needed to run the tests and the demo, never to compile the library.
+def lwjglNatives = providers.gradleProperty('lwjglNatives').getOrElse(detectLwjglNatives())
+
+configurations {
+    demoNatives {
+        canBeConsumed = false
+        canBeResolved = true
+    }
+}
+
+dependencies {
+    api platform(libs.lwjgl.bom)
+    api libs.lwjgl
+    api libs.lwjgl.glfw
+    api libs.lwjgl.opengl
+    api libs.lwjgl.stb
+    api libs.slf4j.api
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testImplementation libs.assertj
+    testRuntimeOnly libs.junit.platform.launcher
+
+    demoNatives platform(libs.lwjgl.bom)
+    ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl', 'lwjgl-stb'].each { String module ->
+        testRuntimeOnly("org.lwjgl:${module}::$lwjglNatives")
+        demoNatives("org.lwjgl:${module}::$lwjglNatives")
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+
+    withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 25
+    options.compilerArgs.addAll(['-Xlint:deprecation', '-Xlint:unchecked'])
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    options.addStringOption('Xdoclint:all', '-quiet')
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat = 'full'
+    }
+}
+
+tasks.withType(Jar).configureEach {
+    destinationDirectory.set(file(customBuildPath))
+
+    from(rootProject.file('LICENSE')) {
+        into 'META-INF'
+    }
+}
+
+// The fat JAR replaces the thin library JAR.
+tasks.named('jar') {
+    enabled = false
+}
+
+tasks.register('javadocJar', Jar) {
+    group = 'build'
+    description = 'Packages the generated Javadoc into a JAR.'
+    archiveClassifier.set('javadoc')
+    from(tasks.named('javadoc'))
+}
+
+tasks.named('shadowJar', ShadowJar) {
+    group = 'build'
+    description = 'Builds the self-contained JAR with all non-LWJGL dependencies.'
+    archiveClassifier.set('')
+
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    mergeServiceFiles()
+
+    // LWJGL belongs to the host application; bundling it would cause duplicate classes.
+    dependencies {
+        exclude(dependency('org.lwjgl:.*'))
+    }
+
+    exclude 'META-INF/*.SF'
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+    exclude 'META-INF/INDEX.LIST'
+    exclude 'module-info.class'
+    exclude 'META-INF/versions/*/module-info.class'
+
+    manifest {
+        attributes(
+                'Implementation-Title': archiveName,
+                'Implementation-Version': project.version.toString(),
+                'Implementation-Vendor': 'LixUI'
+        )
+    }
+}
+
+// ./gradlew buildReleaseJar -> build/LixUI-<version>[-sources|-javadoc].jar
+tasks.register('buildReleaseJar') {
+    group = 'build'
+    description = 'Builds the fat JAR, the sources JAR and the Javadoc JAR.'
+    dependsOn 'javadoc', 'sourcesJar', 'javadocJar', 'shadowJar'
+}
+
+tasks.named('assemble') {
+    dependsOn 'buildReleaseJar'
+}
+
+// ./gradlew demo [-PdemoMainClass=com.lixui.demo.Demo]
+tasks.register('demo', JavaExec) {
+    group = 'application'
+    description = 'Runs the demo scene.'
+    classpath = sourceSets.main.runtimeClasspath + configurations.demoNatives
+    mainClass = providers.gradleProperty('demoMainClass').getOrElse('com.lixui.demo.Demo')
+
+    // GLFW must own the main thread on macOS.
+    if (System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('mac')) {
+        jvmArgs '-XstartOnFirstThread'
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            artifact tasks.named('shadowJar')
+            artifact tasks.named('sourcesJar')
+            artifact tasks.named('javadocJar')
+
+            pom {
+                name = archiveName
+                description = 'A lightweight immediate-mode UI framework for LWJGL.'
+
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/licenses/MIT'
+                    }
+                }
+
+                // The fat JAR replaces `components.java`, so API dependencies are declared manually.
+                withXml {
+                    Node root = asNode()
+
+                    Node managedDependencies = root.appendNode('dependencyManagement').appendNode('dependencies')
+                    Node bom = managedDependencies.appendNode('dependency')
+                    bom.appendNode('groupId', 'org.lwjgl')
+                    bom.appendNode('artifactId', 'lwjgl-bom')
+                    bom.appendNode('version', lwjglVersion)
+                    bom.appendNode('type', 'pom')
+                    bom.appendNode('scope', 'import')
+
+                    Node dependencies = root.appendNode('dependencies')
+                    ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl', 'lwjgl-stb'].each { String artifactId ->
+                        Node dependency = dependencies.appendNode('dependency')
+                        dependency.appendNode('groupId', 'org.lwjgl')
+                        dependency.appendNode('artifactId', artifactId)
+                        dependency.appendNode('scope', 'compile')
+                    }
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = 'local'
+            url = layout.buildDirectory.dir('repo').get().asFile.toURI()
+        }
+    }
+}

@@ -1,0 +1,105 @@
+# ===== Gradle =====
+.gradle/
+build/
+bin/
+.kotlin/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# ===== Java =====
+*.class
+*.log
+*.ctxt
+.mtj.tmp/
+hs_err_pid*
+replay_pid*
+
+# ===== Archives =====
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+!gradle/wrapper/gradle-wrapper.jar
+
+# ===== IntelliJ IDEA =====
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+# ===== Eclipse =====
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+# ===== NetBeans =====
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# ===== VS Code =====
+.vscode/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== Secrets =====
+.env
+.env.*
+*.pem
+*.key
+local.properties
+secrets.properties
+
+# ===== Local =====
+.opencode/
+.opencode-cache/
+opencode.json
+opencode.jsonc
+opencode.local.json
+AGENTS.md
+**/AGENTS.md
+CLAUDE.md
+**/CLAUDE.md
+CLAUDE.local.md
+GEMINI.md
+**/GEMINI.md
+.cursorrules
+.windsurfrules
+.clinerules
+.github/copilot-instructions.md
+.claude/
+.cursor/
+.windsurf/
+.cline/
+.roo/
+.continue/
+.aider*
+.codex/
+.gemini/
+
+# ===== Misc =====
+logs/
+tmp/
+temp/
+*.swp
+*.swo
+*~
