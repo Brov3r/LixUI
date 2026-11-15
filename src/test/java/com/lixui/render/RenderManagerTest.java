@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -428,15 +429,17 @@ class RenderManagerTest {
         manager.end();
 
         List<DrawCommand> commands = backend.lastDrawList.commands();
-        assertEquals(2, commands.size());
-        ImageCommand first = (ImageCommand) commands.get(0);
-        assertSame(backend.createdTexture, first.texture());
-        assertEquals(RED, first.color());
-        assertEquals(Transform.IDENTITY, first.transform());
-        assertEquals(font.glyph('A').uv(), first.uv());
+        assertEquals(1, commands.size());
+        TextCommand text = (TextCommand) commands.get(0);
+        assertEquals(2, text.glyphs().size());
+        assertSame(backend.createdTexture, text.texture());
+        assertEquals(RED, text.colors().get(0));
+        assertEquals(Transform.IDENTITY, text.transform());
+        assertEquals(font.glyph('A').uv(), text.glyphs().get(0).uv());
         assertEquals(new Rect(Math.round(10 + font.glyph('A').offsetX()),
                 Math.round(20 + font.ascent() + font.glyph('A').offsetY()),
-                font.glyph('A').width(), font.glyph('A').height()), first.bounds());
+                font.glyph('A').width(), font.glyph('A').height()),
+                text.glyphs().get(0).bounds());
 
         assertThrows(NullPointerException.class, () -> manager.measureText(null, "A"));
         assertThrows(NullPointerException.class, () -> manager.measureText(font, null));
@@ -463,6 +466,39 @@ class RenderManagerTest {
     }
 
     @Test
+    void prefersInstalledBoldFacesOverSyntheticStyles() {
+        String family = null;
+        for (String candidate : List.of("Segoe UI", "Arial", "Helvetica Neue", "Helvetica",
+                "DejaVu Sans", "Liberation Sans", "Noto Sans", "Tahoma", "Verdana")) {
+            if (SystemFonts.find(candidate, FontStyle.BOLD).isPresent()) {
+                family = candidate;
+                break;
+            }
+        }
+        Assumptions.assumeTrue(family != null, "No installed bold face is available.");
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+
+        Font bold = manager.createFont(family, 20, FontStyle.BOLD).orElseThrow();
+
+        assertEquals(FontStyle.REGULAR, bold.style());
+        assertNotNull(bold.glyph('A'));
+        assertSame(bold.atlas(), backend.createdImage);
+    }
+
+    @Test
+    void systemFontLookupReturnsEmptyForMissingFamilies() {
+        RenderManager manager = new RenderManager(new RecordingBackend());
+
+        assertTrue(manager.createFont("lixui-missing-family", 16, FontStyle.BOLD).isEmpty());
+        assertThrows(NullPointerException.class,
+                () -> manager.createFont((String) null, 16, FontStyle.BOLD));
+        assertThrows(NullPointerException.class,
+                () -> manager.createFont("Arial", 16, null));
+    }
+
+    @Test
     void alignsTextAroundTheAnchor() {
         FontData data = SystemFonts.findDefault().orElse(null);
         Assumptions.assumeTrue(data != null, "No readable system font is installed.");
@@ -486,7 +522,8 @@ class RenderManagerTest {
         Rect expected = new Rect(Math.round(400 - width / 2 + glyph.offsetX()),
                 Math.round(300 - height / 2 + font.ascent() + glyph.offsetY()),
                 glyph.width(), glyph.height());
-        assertEquals(expected, backend.lastDrawList.commands().get(0).bounds());
+        TextCommand command = (TextCommand) backend.lastDrawList.commands().get(0);
+        assertEquals(expected, command.glyphs().get(0).bounds());
     }
 
     @Test
@@ -506,9 +543,11 @@ class RenderManagerTest {
         manager.end();
 
         List<DrawCommand> commands = backend.lastDrawList.commands();
-        assertEquals(2, commands.size());
-        Color first = commands.get(0).color();
-        Color second = commands.get(1).color();
+        assertEquals(1, commands.size());
+        TextCommand command = (TextCommand) commands.get(0);
+        assertEquals(2, command.colors().size());
+        Color first = command.colors().get(0);
+        Color second = command.colors().get(1);
         assertTrue(first.r() > second.r());
         assertTrue(first.b() < second.b());
         assertEquals(1, first.a(), 0.0001f);

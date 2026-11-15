@@ -12,6 +12,8 @@ import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +31,7 @@ public final class Font {
     private static final int ATLAS_PADDING = 1;
     private static final int MAX_ATLAS_SIZE = 8192;
     private static final int MAX_KERNING_CODEPOINTS = 512;
+    private static final int MAX_LAYOUT_CACHE_ENTRIES = 256;
     private static final float ITALIC_SLANT = 0.21f;
     private static final int[] DEFAULT_CODEPOINTS = buildDefaultCodepoints();
 
@@ -41,6 +44,8 @@ public final class Font {
     private final FontStyle style;
     private final Map<Integer, Glyph> glyphs;
     private final Map<Long, Float> kerning;
+    private final Map<LayoutKey, List<TextGlyph>> layoutCache =
+            new LinkedHashMap<>(16, 0.75f, true);
 
     Font(ImageData atlas, float pixelSize, float ascent, float descent, float lineHeight,
             float letterSpacing, FontStyle style, Map<Integer, Glyph> glyphs,
@@ -347,8 +352,11 @@ public final class Font {
 
     /**
      * Returns the synthetic style baked into the glyph atlas.
+     * Fonts created from a real bold or italic face with
+     * {@code RenderManager.createFont(String, float, FontStyle)} report {@link FontStyle#REGULAR},
+     * because their outlines already carry the style.
      *
-     * @return the font style
+     * @return the synthetic font style
      */
     public FontStyle style() {
         return style;
@@ -457,19 +465,71 @@ public final class Font {
      */
     public List<TextGlyph> layout(String text, float x, float y,
                                   HorizontalAlignment horizontal, VerticalAlignment vertical) {
-        Objects.requireNonNull(text, "text");
         Objects.requireNonNull(horizontal, "horizontal");
         Objects.requireNonNull(vertical, "vertical");
         validateOrigin(x, y);
+        List<TextGlyph> relative = layoutRelative(text, horizontal, vertical);
+        if (x == 0 && y == 0) {
+            return relative;
+        }
+        List<TextGlyph> quads = new ArrayList<>(relative.size());
+        for (TextGlyph glyph : relative) {
+            Rect bounds = glyph.bounds();
+            quads.add(new TextGlyph(new Rect(bounds.x() + x, bounds.y() + y,
+                    bounds.width(), bounds.height()), glyph.uv()));
+        }
+        return quads;
+    }
+
+    /**
+     * Positions the glyph quads of a text block around the anchor {@code (0, 0)}.
+     * The result is cached per text and alignment pair, so repeated frames reuse the same immutable
+     * list. Callers can translate the quads to their destination without measuring the font again.
+     *
+     * @param text text to lay out
+     * @param horizontal horizontal alignment applied to each line
+     * @param vertical vertical alignment applied to the whole block
+     * @return an immutable list of glyph quads
+     * @throws NullPointerException if an argument is null
+     */
+    public List<TextGlyph> layoutRelative(String text, HorizontalAlignment horizontal,
+                                          VerticalAlignment vertical) {
+        Objects.requireNonNull(text, "text");
+        Objects.requireNonNull(horizontal, "horizontal");
+        Objects.requireNonNull(vertical, "vertical");
+        LayoutKey key = new LayoutKey(text, horizontal, vertical);
+        synchronized (layoutCache) {
+            List<TextGlyph> cached = layoutCache.get(key);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        List<TextGlyph> computed = List.copyOf(layoutAt(text, horizontal, vertical));
+        synchronized (layoutCache) {
+            layoutCache.put(key, computed);
+            if (layoutCache.size() > MAX_LAYOUT_CACHE_ENTRIES) {
+                Iterator<Map.Entry<LayoutKey, List<TextGlyph>>> iterator =
+                        layoutCache.entrySet().iterator();
+                if (iterator.hasNext()) {
+                    iterator.next();
+                    iterator.remove();
+                }
+            }
+        }
+        return computed;
+    }
+
+    private List<TextGlyph> layoutAt(String text, HorizontalAlignment horizontal,
+                                     VerticalAlignment vertical) {
         String[] lines = text.split("\n", -1);
         float[] widths = new float[lines.length];
         for (int index = 0; index < lines.length; index++) {
             widths[index] = walk(lines[index], 0, 0, null).width();
         }
-        float top = alignedTop(y, lines.length * lineHeight, vertical);
+        float top = alignedTop(0, lines.length * lineHeight, vertical);
         List<TextGlyph> quads = new ArrayList<>();
         for (int index = 0; index < lines.length; index++) {
-            float lineX = alignedX(x, widths[index], horizontal);
+            float lineX = alignedX(0, widths[index], horizontal);
             walk(lines[index], lineX, top + index * lineHeight, quads);
         }
         return quads;
@@ -741,6 +801,10 @@ public final class Font {
     }
 
     private record PlacedGlyph(StyledDraft draft, int x, int y) {
+    }
+
+    private record LayoutKey(String text, HorizontalAlignment horizontal,
+                             VerticalAlignment vertical) {
     }
 
     private record Packing(int width, int height, byte[] pixels, List<PlacedGlyph> placed) {

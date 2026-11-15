@@ -10,6 +10,7 @@ import com.lixui.text.Font;
 import com.lixui.text.FontData;
 import com.lixui.text.FontStyle;
 import com.lixui.text.HorizontalAlignment;
+import com.lixui.text.SystemFonts;
 import com.lixui.text.TextGlyph;
 import com.lixui.text.VerticalAlignment;
 
@@ -20,6 +21,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Backend-specific drawing manager used by widgets and custom draw code.
@@ -297,6 +299,54 @@ public final class RenderManager {
     }
 
     /**
+     * Loads the best installed face of a system font family and uploads its glyph atlas.
+     * A real bold or italic face is used when the system provides one; otherwise the regular face is
+     * rasterized with the synthetic style. The result is empty when the family is not installed.
+     *
+     * @param family family name such as {@code "Arial"}
+     * @param pixelSize requested line size in logical UI units
+     * @param style requested face style
+     * @return the uploaded font, or empty when the family is not installed
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the size is invalid or a font atlas cannot be built
+     */
+    public Optional<Font> createFont(String family, float pixelSize, FontStyle style) {
+        return createFont(family, pixelSize, style, 0);
+    }
+
+    /**
+     * Loads the best installed face of a system font family with letter spacing and uploads its atlas.
+     * A real bold or italic face is used when the system provides one; otherwise the regular face is
+     * rasterized with the synthetic style. The result is empty when the family is not installed.
+     *
+     * @param family family name such as {@code "Arial"}
+     * @param pixelSize requested line size in logical UI units
+     * @param style requested face style
+     * @param letterSpacing extra space between glyphs in logical UI units
+     * @return the uploaded font, or empty when the family is not installed
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the size or spacing is invalid, or a font atlas cannot be built
+     */
+    public Optional<Font> createFont(String family, float pixelSize, FontStyle style,
+                                     float letterSpacing) {
+        Objects.requireNonNull(family, "family");
+        Objects.requireNonNull(style, "style");
+        Optional<FontData> regular = SystemFonts.find(family);
+        if (regular.isEmpty()) {
+            return Optional.empty();
+        }
+        Optional<FontData> face = style == FontStyle.REGULAR
+                ? regular : SystemFonts.find(family, style);
+        Font font = face
+                .map(data -> Font.load(data, pixelSize, Font.defaultCodepoints(),
+                        FontStyle.REGULAR, letterSpacing))
+                .orElseGet(() -> Font.load(regular.get(), pixelSize, Font.defaultCodepoints(),
+                        style, letterSpacing));
+        fontAtlases.put(font, backend.createTexture(font.atlas()));
+        return Optional.of(font);
+    }
+
+    /**
      * Releases the atlas texture of a font created by this render manager.
      * Fonts that were already released, or that belong to another render manager, are ignored.
      *
@@ -479,13 +529,22 @@ public final class RenderManager {
         if (atlas == null) {
             throw new IllegalArgumentException("Font was not created by this render manager.");
         }
+        List<TextGlyph> relative = font.layoutRelative(text, horizontal, vertical);
+        if (relative.isEmpty()) {
+            return;
+        }
         Transform transform = currentTransform();
         Color solid = paint instanceof Paint.Solid value ? value.color() : null;
-        for (TextGlyph glyph : font.layout(text, x, y, horizontal, vertical)) {
-            Rect bounds = snapToPixel(glyph.bounds());
-            Color tint = solid != null ? solid : paint.colorAt(center(bounds));
-            target.image(atlas, bounds, 0, glyph.uv(), tint, transform);
+        List<TextGlyph> glyphs = new ArrayList<>(relative.size());
+        List<Color> colors = new ArrayList<>(relative.size());
+        for (TextGlyph glyph : relative) {
+            Rect bounds = glyph.bounds();
+            Rect snapped = snapToPixel(new Rect(bounds.x() + x, bounds.y() + y,
+                    bounds.width(), bounds.height()));
+            glyphs.add(new TextGlyph(snapped, glyph.uv()));
+            colors.add(solid != null ? solid : paint.colorAt(center(snapped)));
         }
+        target.text(atlas, glyphs, colors, transform);
     }
 
     private static Rect snapToPixel(Rect bounds) {

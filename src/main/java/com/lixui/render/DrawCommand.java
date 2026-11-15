@@ -7,7 +7,7 @@ import com.lixui.graphics.Color;
  * A backend-neutral drawing primitive emitted by the UI.
  * Bounds, clipping and the optional corner radius are expressed in logical UI units.
  */
-public sealed interface DrawCommand permits RoundedRectCommand, ImageCommand, MeshCommand,
+public sealed interface DrawCommand permits RoundedRectCommand, ImageCommand, TextCommand, MeshCommand,
         MaskBeginCommand, MaskEndCommand, MaskTextureBeginCommand, MaskTextureEndCommand {
     /**
      * Returns the rectangle occupied by the primitive.

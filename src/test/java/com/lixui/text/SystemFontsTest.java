@@ -3,13 +3,42 @@ package com.lixui.text;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SystemFontsTest {
+    @Test
+    void resolvesInstalledBoldAndItalicFacesWhenAvailable() {
+        String family = null;
+        Optional<FontData> bold = Optional.empty();
+        Optional<FontData> italic = Optional.empty();
+        for (String candidate : List.of("Segoe UI", "Arial", "Helvetica Neue", "Helvetica",
+                "DejaVu Sans", "Liberation Sans", "Noto Sans", "Tahoma", "Verdana")) {
+            Optional<FontData> boldFace = SystemFonts.find(candidate, FontStyle.BOLD);
+            Optional<FontData> italicFace = SystemFonts.find(candidate, FontStyle.ITALIC);
+            if (boldFace.isPresent() && italicFace.isPresent()) {
+                family = candidate;
+                bold = boldFace;
+                italic = italicFace;
+                break;
+            }
+        }
+        Assumptions.assumeTrue(family != null, "No installed bold and italic faces are available.");
+
+        Font boldFont = Font.load(bold.orElseThrow(), 20, new int[]{'A'});
+        Font italicFont = Font.load(italic.orElseThrow(), 20, new int[]{'A'});
+
+        assertEquals(FontStyle.REGULAR, boldFont.style());
+        assertEquals(FontStyle.REGULAR, italicFont.style());
+        assertNotNull(boldFont.glyph('A'));
+        assertNotNull(italicFont.glyph('A'));
+    }
+
     @Test
     void resolvesMissingFamiliesToEmpty() {
         assertTrue(SystemFonts.find("lixui-font-that-does-not-exist").isEmpty());

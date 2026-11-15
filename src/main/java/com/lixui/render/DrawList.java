@@ -3,6 +3,7 @@ package com.lixui.render;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
+import com.lixui.text.TextGlyph;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -264,6 +265,30 @@ public final class DrawList {
             return;
         }
         commands.add(new ImageCommand(bounds, radius, uv, texture, tint, clip, transform));
+    }
+
+    /**
+     * Appends a batched text block using the current clip.
+     * Commands with no glyphs or an empty clip are omitted.
+     *
+     * @param atlas font atlas texture
+     * @param glyphs positioned glyph quads
+     * @param colors tint per glyph, aligned with {@code glyphs}
+     * @param transform affine transform applied to every glyph
+     * @throws NullPointerException if an argument or list element is null
+     * @throws IllegalArgumentException if the color count differs from the glyph count
+     */
+    public void text(Texture atlas, List<TextGlyph> glyphs, List<Color> colors,
+                     Transform transform) {
+        Objects.requireNonNull(atlas, "atlas");
+        Objects.requireNonNull(glyphs, "glyphs");
+        Objects.requireNonNull(colors, "colors");
+        Objects.requireNonNull(transform, "transform");
+        Rect clip = clips.peek();
+        if (glyphs.isEmpty() || clip.isEmpty()) {
+            return;
+        }
+        commands.add(new TextCommand(atlas, glyphs, colors, clip, transform));
     }
 
     /**

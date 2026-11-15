@@ -89,6 +89,33 @@ public final class SystemFonts {
     }
 
     /**
+     * Loads an installed bold, italic or bold-italic face of a family.
+     * The lookup matches full face names such as {@code "Arial Bold"} and {@code "Arial Italic"};
+     * oblique faces are accepted as italics. A regular style is resolved with {@link #find(String)}.
+     * The result is empty when the family has no installed face for the requested style, so callers
+     * can fall back to a synthetic style.
+     *
+     * @param family family name such as {@code "Arial"}
+     * @param style requested face style
+     * @return the styled font bytes, or empty when no face is installed
+     * @throws NullPointerException if an argument is null
+     */
+    public static Optional<FontData> find(String family, FontStyle style) {
+        Objects.requireNonNull(family, "family");
+        Objects.requireNonNull(style, "style");
+        if (style == FontStyle.REGULAR) {
+            return find(family);
+        }
+        for (String suffix : styleSuffixes(style)) {
+            Optional<FontData> face = find(family + " " + suffix);
+            if (face.isPresent()) {
+                return face;
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
      * Loads a suitable default system font.
      * Well-known faces are tried first, then the first indexed family. The result can be used
      * directly with {@link Font#load(FontData, float)}.
@@ -246,6 +273,15 @@ public final class SystemFonts {
 
     private static String normalize(String value) {
         return value.strip().toLowerCase(Locale.ROOT);
+    }
+
+    private static List<String> styleSuffixes(FontStyle style) {
+        return switch (style) {
+            case BOLD -> List.of("Bold");
+            case ITALIC -> List.of("Italic", "Oblique");
+            case BOLD_ITALIC -> List.of("Bold Italic", "Bold Oblique");
+            default -> throw new IllegalStateException("Unknown font style.");
+        };
     }
 
     private record Index(Map<String, Path> paths, List<String> families) {

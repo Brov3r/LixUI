@@ -15,6 +15,7 @@ import com.lixui.render.MaskTextureEndCommand;
 import com.lixui.render.MeshCommand;
 import com.lixui.render.MeshVertex;
 import com.lixui.render.RenderBackend;
+import com.lixui.render.TextCommand;
 import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
 import org.lwjgl.opengl.GL11;
@@ -335,6 +336,8 @@ public final class OpenGlBackend implements RenderBackend {
                 appendTexturedQuad(mask.bounds(), mask.uv(), mask.transform());
             } else if (command instanceof MaskTextureEndCommand mask) {
                 appendTexturedQuad(mask.bounds(), mask.uv(), mask.transform());
+            } else if (command instanceof TextCommand text) {
+                appendText(text);
             } else if (command instanceof MeshCommand mesh) {
                 appendMesh(mesh);
             } else {
@@ -366,6 +369,9 @@ public final class OpenGlBackend implements RenderBackend {
     private Texture textureOf(DrawCommand command) {
         if (command instanceof ImageCommand image) {
             return image.texture();
+        }
+        if (command instanceof TextCommand text) {
+            return text.texture();
         }
         if (command instanceof MaskTextureBeginCommand mask) {
             return mask.texture();
@@ -451,6 +457,13 @@ public final class OpenGlBackend implements RenderBackend {
         appendMask(command.vertices());
     }
 
+    private void appendText(TextCommand command) {
+        for (int index = 0; index < command.glyphs().size(); index++) {
+            appendQuad(command.glyphs().get(index).bounds(), 0, command.colors().get(index),
+                    command.glyphs().get(index).uv(), command.transform());
+        }
+    }
+
     private void appendMask(List<MeshVertex> vertices) {
         for (MeshVertex vertex : vertices) {
             putVertex(vertex.x(), vertex.y(), 0, 0, MESH_HALF_SIZE, MESH_HALF_SIZE, 0,
@@ -459,6 +472,9 @@ public final class OpenGlBackend implements RenderBackend {
     }
 
     private static int vertexCount(DrawCommand command) {
+        if (command instanceof TextCommand text) {
+            return text.glyphs().size() * VERTICES_PER_QUAD;
+        }
         if (command instanceof MeshCommand mesh) {
             return mesh.vertices().size();
         }

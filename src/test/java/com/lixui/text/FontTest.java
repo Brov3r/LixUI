@@ -13,7 +13,9 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -80,6 +82,21 @@ class FontTest {
                 VerticalAlignment.TOP));
         assertThrows(NullPointerException.class, () -> font.layout("A", 0, 0,
                 HorizontalAlignment.LEFT, null));
+    }
+
+    @Test
+    void cachesRelativeLayoutsByTextAndAlignment() {
+        Font font = testFont();
+
+        List<TextGlyph> first = font.layoutRelative("AB",
+                HorizontalAlignment.LEFT, VerticalAlignment.TOP);
+        List<TextGlyph> second = font.layoutRelative("AB",
+                HorizontalAlignment.LEFT, VerticalAlignment.TOP);
+
+        assertSame(first, second);
+        assertNotSame(first, font.layoutRelative("AB",
+                HorizontalAlignment.CENTER, VerticalAlignment.TOP));
+        assertEquals(font.layout("AB", 0, 0), first);
     }
 
     @Test
