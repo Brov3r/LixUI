@@ -1,14 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 800 110" width="800" height="110" role="img" aria-label="LixUI - Retained UI for LWJGL" xmlns:c2pa="http://c2pa.org/manifest">
     <title>LixUI Banner</title>
     <defs>
-        <!-- Animated flowing gradient (reflects, so the loop is seamless) -->
+        <!-- Animated flowing gradient. In reflect mode one period is 2*(510-290) = 440,
+             so the translate must be a multiple of 440 for the loop to be seamless. -->
         <linearGradient id="flow" gradientUnits="userSpaceOnUse" x1="290" y1="0" x2="510" y2="0" spreadMethod="reflect">
             <stop offset="0%" stop-color="#8bbbfa"/>
             <stop offset="30%" stop-color="#a78bfa"/>
             <stop offset="55%" stop-color="#3de0c2"/>
             <stop offset="80%" stop-color="#09d99b"/>
             <stop offset="100%" stop-color="#b7f171"/>
-            <animateTransform attributeName="gradientTransform" type="translate" values="0 0; 220 0" dur="7s" repeatCount="indefinite"/>
+            <animateTransform attributeName="gradientTransform" type="translate" values="0 0; 440 0" dur="14s" repeatCount="indefinite"/>
         </linearGradient>
 
         <!-- Fading line that tapers out at both ends -->
