@@ -32,9 +32,6 @@ final class DemoInput implements AutoCloseable {
     private final GlfwInput adapter;
     private final Set<MouseButton> buttons = EnumSet.noneOf(MouseButton.class);
     private final Set<Key> keys = EnumSet.noneOf(Key.class);
-    private float mouseX;
-    private float mouseY;
-    private boolean mouseMoved;
 
     DemoInput(long window) {
         adapter = GlfwInput.install(window, input);
@@ -45,10 +42,6 @@ final class DemoInput implements AutoCloseable {
         InputEvent event;
         while ((event = input.poll()) != null) {
             log(event);
-        }
-        if (mouseMoved) {
-            LOGGER.info("mouse x={} y={} buttons={}", Math.round(mouseX), Math.round(mouseY), buttons);
-            mouseMoved = false;
         }
     }
 
@@ -79,21 +72,12 @@ final class DemoInput implements AutoCloseable {
 
     private void log(InputEvent event) {
         switch (event) {
-            case PointerMoved moved -> {
-                mouseX = moved.x();
-                mouseY = moved.y();
-                mouseMoved = true;
+            case PointerMoved ignored -> {
             }
-            case PointerEntered entered -> {
-                mouseX = entered.x();
-                mouseY = entered.y();
-                LOGGER.info("mouse entered at ({}, {})", Math.round(mouseX), Math.round(mouseY));
-            }
-            case PointerExited exited -> {
-                mouseX = exited.x();
-                mouseY = exited.y();
-                LOGGER.info("mouse exited at ({}, {})", Math.round(mouseX), Math.round(mouseY));
-            }
+            case PointerEntered entered -> LOGGER.info("mouse entered at ({}, {})",
+                    Math.round(entered.x()), Math.round(entered.y()));
+            case PointerExited exited -> LOGGER.info("mouse exited at ({}, {})",
+                    Math.round(exited.x()), Math.round(exited.y()));
             case PointerPressed pressed -> {
                 buttons.add(pressed.button());
                 LOGGER.info("mouse {} down at ({}, {}); buttons={}; {}",

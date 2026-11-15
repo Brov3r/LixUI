@@ -7,7 +7,8 @@ import com.lixui.graphics.Color;
  * A backend-neutral drawing primitive emitted by the UI.
  * Bounds, clipping and the optional corner radius are expressed in logical UI units.
  */
-public sealed interface DrawCommand permits RoundedRectCommand, ImageCommand {
+public sealed interface DrawCommand permits RoundedRectCommand, ImageCommand, MeshCommand,
+        MaskBeginCommand, MaskEndCommand, MaskTextureBeginCommand, MaskTextureEndCommand {
     /**
      * Returns the rectangle occupied by the primitive.
      *
@@ -16,18 +17,24 @@ public sealed interface DrawCommand permits RoundedRectCommand, ImageCommand {
     Rect bounds();
 
     /**
-     * Returns the corner radius, clamped to half of the smaller bound dimension.
+     * Returns the uniform corner radius.
+     * Commands without a uniform radius return zero.
      *
      * @return the non-negative corner radius
      */
-    float radius();
+    default float radius() {
+        return 0;
+    }
 
     /**
-     * Returns the fill color or image tint.
+     * Returns the uniform fill color or image tint.
+     * Commands without a uniform color return white.
      *
      * @return the straight-alpha color
      */
-    Color color();
+    default Color color() {
+        return Color.WHITE;
+    }
 
     /**
      * Returns the clipping rectangle captured when the command was submitted.

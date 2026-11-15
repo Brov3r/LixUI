@@ -6,6 +6,12 @@ import com.lixui.render.DrawCommand;
 import com.lixui.render.DrawList;
 import com.lixui.render.ImageCommand;
 import com.lixui.render.ImageData;
+import com.lixui.render.MaskBeginCommand;
+import com.lixui.render.MaskEndCommand;
+import com.lixui.render.MaskTextureBeginCommand;
+import com.lixui.render.MaskTextureEndCommand;
+import com.lixui.render.MeshCommand;
+import com.lixui.render.MeshVertex;
 import com.lixui.render.RenderBackend;
 import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
@@ -34,6 +40,7 @@ import java.util.Objects;
  */
 public final class OpenGlBackend implements RenderBackend {
     private static final Rect FULL_UV = new Rect(0, 0, 1, 1);
+    private static final float MESH_HALF_SIZE = 1_000_000f;
     private static final int FLOATS_PER_VERTEX = 13;
     private static final int VERTICES_PER_QUAD = 6;
     private static final int FLOATS_PER_QUAD = FLOATS_PER_VERTEX * VERTICES_PER_QUAD;
@@ -146,11 +153,10 @@ public final class OpenGlBackend implements RenderBackend {
     @Override
     public void destroyTexture(Texture texture) {
         GlTexture glTexture = asGlTexture(texture);
-        if (!glTexture.owned()) {
+        if (!glTexture.owned() || !textures.remove(glTexture)) {
             return;
         }
         GL11.glDeleteTextures(glTexture.id());
-        textures.remove(glTexture);
         if (whiteTexture == glTexture) {
             whiteTexture = null;
         }
@@ -176,11 +182,21 @@ public final class OpenGlBackend implements RenderBackend {
         }
 
         GL11.glViewport(0, 0, viewport.framebufferWidth(), viewport.framebufferHeight());
+        boolean scissorWasEnabled = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
+        boolean stencilWasEnabled = GL11.glIsEnabled(GL11.GL_STENCIL_TEST);
+        boolean multisampleWasEnabled = GL11.glIsEnabled(GL13.GL_MULTISAMPLE);
+        int previousStencilMask = GL11.glGetInteger(GL11.GL_STENCIL_WRITEMASK);
+        int previousClearStencil = GL11.glGetInteger(GL11.GL_STENCIL_CLEAR_VALUE);
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glDisable(GL11.GL_SCISSOR_TEST);
+        GL13.glEnable(GL13.GL_MULTISAMPLE);
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GL11.glEnable(GL11.GL_SCISSOR_TEST);
+        GL11.glClearStencil(0);
+        GL11.glStencilMask(0xFF);
+        GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
+        GL11.glEnable(GL11.GL_STENCIL_TEST);
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
 
         GL30.glBindVertexArray(vertexArray);
@@ -192,14 +208,28 @@ public final class OpenGlBackend implements RenderBackend {
         GL20.glUseProgram(program);
         GL20.glUniform2f(viewportLocation, viewport.logicalWidth(), viewport.logicalHeight());
         GL20.glUniform1i(textureLocation, 0);
+        GL11.glEnable(GL11.GL_SCISSOR_TEST);
         for (Batch batch : batches) {
             if (!applyClip(batch.clip())) {
                 continue;
             }
+            applyStencil(batch);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, batch.texture().id());
             GL11.glDrawArrays(GL11.GL_TRIANGLES, batch.firstVertex(), batch.vertexCount());
         }
 
+        GL11.glColorMask(true, true, true, true);
+        GL11.glStencilMask(previousStencilMask);
+        GL11.glClearStencil(previousClearStencil);
+        if (!stencilWasEnabled) {
+            GL11.glDisable(GL11.GL_STENCIL_TEST);
+        }
+        if (!scissorWasEnabled) {
+            GL11.glDisable(GL11.GL_SCISSOR_TEST);
+        }
+        if (!multisampleWasEnabled) {
+            GL11.glDisable(GL13.GL_MULTISAMPLE);
+        }
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
         GL20.glUseProgram(0);
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
@@ -271,40 +301,111 @@ public final class OpenGlBackend implements RenderBackend {
 
         Rect currentClip = null;
         GlTexture currentTexture = null;
+        int currentStencilRef = 0;
+        MaskAction currentAction = MaskAction.DRAW;
+        int stencilDepth = 0;
         int batchStartVertex = 0;
         int batchVertexCount = 0;
         for (DrawCommand command : drawList.commands()) {
-            GlTexture texture = asGlTexture(command instanceof ImageCommand image
-                    ? image.texture() : whiteTexture);
-            if (!command.clip().equals(currentClip) || texture != currentTexture) {
+            MaskAction action = maskAction(command);
+            int stencilRef = stencilDepth;
+            GlTexture texture = asGlTexture(textureOf(command));
+            if (!command.clip().equals(currentClip) || texture != currentTexture
+                    || stencilRef != currentStencilRef || action != currentAction) {
                 if (batchVertexCount > 0) {
-                    batches.add(new Batch(batchStartVertex, batchVertexCount, currentClip, currentTexture));
+                    batches.add(new Batch(batchStartVertex, batchVertexCount,
+                            currentClip, currentTexture, currentStencilRef, currentAction));
                 }
                 currentClip = command.clip();
                 currentTexture = texture;
+                currentStencilRef = stencilRef;
+                currentAction = action;
                 batchStartVertex = floatCount / FLOATS_PER_VERTEX;
                 batchVertexCount = 0;
             }
-            ensureCapacity(FLOATS_PER_QUAD);
-            appendQuad(command);
-            batchVertexCount += VERTICES_PER_QUAD;
+            int commandVertices = vertexCount(command);
+            ensureCapacity(commandVertices * FLOATS_PER_VERTEX);
+            if (command instanceof MaskBeginCommand mask) {
+                appendMask(mask.vertices());
+            } else if (command instanceof MaskEndCommand mask) {
+                appendMask(mask.vertices());
+            } else if (command instanceof MaskTextureBeginCommand mask) {
+                appendTexturedQuad(mask.bounds(), mask.uv());
+            } else if (command instanceof MaskTextureEndCommand mask) {
+                appendTexturedQuad(mask.bounds(), mask.uv());
+            } else if (command instanceof MeshCommand mesh) {
+                appendMesh(mesh);
+            } else {
+                appendQuad(command);
+            }
+            batchVertexCount += commandVertices;
+            if (action == MaskAction.PUSH) {
+                stencilDepth++;
+            } else if (action == MaskAction.POP) {
+                stencilDepth--;
+            }
         }
         if (batchVertexCount > 0) {
-            batches.add(new Batch(batchStartVertex, batchVertexCount, currentClip, currentTexture));
+            batches.add(new Batch(batchStartVertex, batchVertexCount,
+                    currentClip, currentTexture, currentStencilRef, currentAction));
+        }
+    }
+
+    private static MaskAction maskAction(DrawCommand command) {
+        if (command instanceof MaskBeginCommand || command instanceof MaskTextureBeginCommand) {
+            return MaskAction.PUSH;
+        }
+        if (command instanceof MaskEndCommand || command instanceof MaskTextureEndCommand) {
+            return MaskAction.POP;
+        }
+        return MaskAction.DRAW;
+    }
+
+    private Texture textureOf(DrawCommand command) {
+        if (command instanceof ImageCommand image) {
+            return image.texture();
+        }
+        if (command instanceof MaskTextureBeginCommand mask) {
+            return mask.texture();
+        }
+        if (command instanceof MaskTextureEndCommand mask) {
+            return mask.texture();
+        }
+        return whiteTexture;
+    }
+
+    private void applyStencil(Batch batch) {
+        GL11.glStencilMask(0xFF);
+        GL11.glStencilFunc(GL11.GL_EQUAL, batch.stencilRef(), 0xFF);
+        switch (batch.action()) {
+            case DRAW -> {
+                GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
+                GL11.glColorMask(true, true, true, true);
+            }
+            case PUSH -> {
+                GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_INCR);
+                GL11.glColorMask(false, false, false, false);
+            }
+            case POP -> {
+                GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_DECR);
+                GL11.glColorMask(false, false, false, false);
+            }
+            default -> throw new IllegalStateException("Unknown mask action.");
         }
     }
 
     private void appendQuad(DrawCommand command) {
-        Rect bounds = command.bounds();
         Rect uv = command instanceof ImageCommand image ? image.uv() : FULL_UV;
+        appendQuad(command.bounds(), command.radius(), command.color(), uv);
+    }
+
+    private void appendQuad(Rect bounds, float radius, Color color, Rect uv) {
         float halfWidth = bounds.width() / 2;
         float halfHeight = bounds.height() / 2;
         float left = bounds.x();
         float top = bounds.y();
         float right = bounds.right();
         float bottom = bounds.bottom();
-        float radius = command.radius();
-        Color color = command.color();
         float u0 = uv.x();
         float v0 = uv.y();
         float u1 = uv.right();
@@ -316,6 +417,34 @@ public final class OpenGlBackend implements RenderBackend {
         putVertex(left, top, -halfWidth, -halfHeight, halfWidth, halfHeight, radius, color, u0, v0);
         putVertex(right, bottom, halfWidth, halfHeight, halfWidth, halfHeight, radius, color, u1, v1);
         putVertex(left, bottom, -halfWidth, halfHeight, halfWidth, halfHeight, radius, color, u0, v1);
+    }
+
+    private void appendTexturedQuad(Rect bounds, Rect uv) {
+        appendQuad(bounds, 0, Color.WHITE, uv);
+    }
+
+    private void appendMesh(MeshCommand command) {
+        appendMask(command.vertices());
+    }
+
+    private void appendMask(List<MeshVertex> vertices) {
+        for (MeshVertex vertex : vertices) {
+            putVertex(vertex.x(), vertex.y(), 0, 0, MESH_HALF_SIZE, MESH_HALF_SIZE, 0,
+                    vertex.color(), 0.5f, 0.5f);
+        }
+    }
+
+    private static int vertexCount(DrawCommand command) {
+        if (command instanceof MeshCommand mesh) {
+            return mesh.vertices().size();
+        }
+        if (command instanceof MaskBeginCommand mask) {
+            return mask.vertices().size();
+        }
+        if (command instanceof MaskEndCommand mask) {
+            return mask.vertices().size();
+        }
+        return VERTICES_PER_QUAD;
     }
 
     private void putVertex(float x, float y, float localX, float localY,
@@ -432,6 +561,16 @@ public final class OpenGlBackend implements RenderBackend {
         }
     }
 
-    private record Batch(int firstVertex, int vertexCount, Rect clip, GlTexture texture) {
+    private record Batch(int firstVertex, int vertexCount, Rect clip, GlTexture texture,
+                         int stencilRef, MaskAction action) {
+    }
+
+    private enum MaskAction {
+        /** Draws content using the current stencil reference. */
+        DRAW,
+        /** Increments the stencil buffer without writing color. */
+        PUSH,
+        /** Decrements the stencil buffer without writing color. */
+        POP
     }
 }

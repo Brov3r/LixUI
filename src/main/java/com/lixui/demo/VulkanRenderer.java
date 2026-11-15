@@ -1,6 +1,7 @@
 package com.lixui.demo;
 
 import com.lixui.backend.vulkan.VulkanBackend;
+import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
 import org.lwjgl.PointerBuffer;
@@ -23,11 +24,17 @@ import org.lwjgl.vulkan.VkDeviceCreateInfo;
 import org.lwjgl.vulkan.VkDeviceQueueCreateInfo;
 import org.lwjgl.vulkan.VkExtensionProperties;
 import org.lwjgl.vulkan.VkFenceCreateInfo;
+import org.lwjgl.vulkan.VkFormatProperties;
 import org.lwjgl.vulkan.VkFramebufferCreateInfo;
+import org.lwjgl.vulkan.VkImageCreateInfo;
 import org.lwjgl.vulkan.VkImageViewCreateInfo;
 import org.lwjgl.vulkan.VkInstance;
 import org.lwjgl.vulkan.VkInstanceCreateInfo;
+import org.lwjgl.vulkan.VkMemoryAllocateInfo;
+import org.lwjgl.vulkan.VkMemoryRequirements;
 import org.lwjgl.vulkan.VkPhysicalDevice;
+import org.lwjgl.vulkan.VkPhysicalDeviceMemoryProperties;
+import org.lwjgl.vulkan.VkPhysicalDeviceProperties;
 import org.lwjgl.vulkan.VkPresentInfoKHR;
 import org.lwjgl.vulkan.VkQueue;
 import org.lwjgl.vulkan.VkQueueFamilyProperties;
@@ -45,7 +52,7 @@ import java.nio.IntBuffer;
 import java.nio.LongBuffer;
 
 final class VulkanRenderer implements AutoCloseable {
-    private static final int SAMPLE_COUNT = VK10.VK_SAMPLE_COUNT_1_BIT;
+    private static final int SAMPLE_COUNT = VK10.VK_SAMPLE_COUNT_4_BIT;
 
     private final long window;
     private VkInstance instance;
@@ -60,6 +67,13 @@ final class VulkanRenderer implements AutoCloseable {
     private long swapchain;
     private long[] imageViews;
     private long[] framebuffers;
+    private long multisampleImage;
+    private long multisampleMemory;
+    private long multisampleView;
+    private int depthStencilFormat;
+    private long depthStencilImage;
+    private long depthStencilMemory;
+    private long depthStencilView;
     private long commandPool;
     private VkCommandBuffer[] commandBuffers;
     private long imageAvailable;
@@ -67,6 +81,9 @@ final class VulkanRenderer implements AutoCloseable {
     private long frameFence;
     private VulkanBackend backend;
     private Texture sceneTexture;
+    private Texture maskTexture;
+    private RenderManager renderer;
+    private final long startNanos = System.nanoTime();
     private int framebufferWidth;
     private int framebufferHeight;
     private int logicalWidth;
@@ -86,11 +103,15 @@ final class VulkanRenderer implements AutoCloseable {
                 surface = result.get(0);
             }
             selectPhysicalDevice();
+            requireFourSampleSupport();
             createDevice();
             chooseSurfaceFormat();
+            depthStencilFormat = chooseDepthStencilFormat();
             createRenderPass();
             backend = new VulkanBackend(physicalDevice, device, queue, queueFamily, renderPass, SAMPLE_COUNT);
             sceneTexture = backend.createTexture(DemoTextures.checkerboard());
+            maskTexture = backend.createTexture(DemoTextures.mask());
+            renderer = new RenderManager(backend);
             createFrameSynchronization();
         } catch (RuntimeException | Error exception) {
             close();
@@ -175,6 +196,8 @@ final class VulkanRenderer implements AutoCloseable {
                 backend.close();
                 backend = null;
                 sceneTexture = null;
+                maskTexture = null;
+                renderer = null;
             }
             destroySwapchain();
             if (renderPass != VK10.VK_NULL_HANDLE) {
@@ -337,13 +360,63 @@ final class VulkanRenderer implements AutoCloseable {
         }
     }
 
+    private int chooseDepthStencilFormat() {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkFormatProperties properties = VkFormatProperties.calloc(stack);
+            int[] candidates = {
+                    VK10.VK_FORMAT_D24_UNORM_S8_UINT,
+                    VK10.VK_FORMAT_D32_SFLOAT_S8_UINT,
+                    VK10.VK_FORMAT_D16_UNORM_S8_UINT
+            };
+            for (int format : candidates) {
+                VK10.vkGetPhysicalDeviceFormatProperties(physicalDevice, format, properties);
+                if ((properties.optimalTilingFeatures()
+                        & VK10.VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0) {
+                    return format;
+                }
+            }
+        }
+        throw new IllegalStateException("No depth/stencil format is supported.");
+    }
+
+    private void requireFourSampleSupport() {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkPhysicalDeviceProperties properties = VkPhysicalDeviceProperties.calloc(stack);
+            VK10.vkGetPhysicalDeviceProperties(physicalDevice, properties);
+            int colorSamples = properties.limits().framebufferColorSampleCounts();
+            int depthSamples = properties.limits().framebufferDepthSampleCounts();
+            if ((colorSamples & VK10.VK_SAMPLE_COUNT_4_BIT) == 0
+                    || (depthSamples & VK10.VK_SAMPLE_COUNT_4_BIT) == 0) {
+                throw new IllegalStateException("The selected Vulkan device does not support 4x MSAA.");
+            }
+        }
+    }
+
     private void createRenderPass() {
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkAttachmentDescription.Buffer attachments = VkAttachmentDescription.calloc(1, stack);
+            VkAttachmentDescription.Buffer attachments = VkAttachmentDescription.calloc(3, stack);
             attachments.get(0)
                     .format(surfaceFormat)
                     .samples(SAMPLE_COUNT)
                     .loadOp(VK10.VK_ATTACHMENT_LOAD_OP_CLEAR)
+                    .storeOp(VK10.VK_ATTACHMENT_STORE_OP_DONT_CARE)
+                    .stencilLoadOp(VK10.VK_ATTACHMENT_LOAD_OP_DONT_CARE)
+                    .stencilStoreOp(VK10.VK_ATTACHMENT_STORE_OP_DONT_CARE)
+                    .initialLayout(VK10.VK_IMAGE_LAYOUT_UNDEFINED)
+                    .finalLayout(VK10.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+            attachments.get(1)
+                    .format(depthStencilFormat)
+                    .samples(SAMPLE_COUNT)
+                    .loadOp(VK10.VK_ATTACHMENT_LOAD_OP_CLEAR)
+                    .storeOp(VK10.VK_ATTACHMENT_STORE_OP_DONT_CARE)
+                    .stencilLoadOp(VK10.VK_ATTACHMENT_LOAD_OP_CLEAR)
+                    .stencilStoreOp(VK10.VK_ATTACHMENT_STORE_OP_DONT_CARE)
+                    .initialLayout(VK10.VK_IMAGE_LAYOUT_UNDEFINED)
+                    .finalLayout(VK10.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+            attachments.get(2)
+                    .format(surfaceFormat)
+                    .samples(VK10.VK_SAMPLE_COUNT_1_BIT)
+                    .loadOp(VK10.VK_ATTACHMENT_LOAD_OP_DONT_CARE)
                     .storeOp(VK10.VK_ATTACHMENT_STORE_OP_STORE)
                     .stencilLoadOp(VK10.VK_ATTACHMENT_LOAD_OP_DONT_CARE)
                     .stencilStoreOp(VK10.VK_ATTACHMENT_STORE_OP_DONT_CARE)
@@ -354,21 +427,33 @@ final class VulkanRenderer implements AutoCloseable {
             colorReference.get(0)
                     .attachment(0)
                     .layout(VK10.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+            VkAttachmentReference.Buffer resolveReference = VkAttachmentReference.calloc(1, stack);
+            resolveReference.get(0)
+                    .attachment(2)
+                    .layout(VK10.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+            VkAttachmentReference depthReference = VkAttachmentReference.calloc(stack)
+                    .attachment(1)
+                    .layout(VK10.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
             VkSubpassDescription.Buffer subpass = VkSubpassDescription.calloc(1, stack);
             subpass.get(0)
                     .pipelineBindPoint(VK10.VK_PIPELINE_BIND_POINT_GRAPHICS)
                     .colorAttachmentCount(1)
-                    .pColorAttachments(colorReference);
+                    .pColorAttachments(colorReference)
+                    .pResolveAttachments(resolveReference)
+                    .pDepthStencilAttachment(depthReference);
 
             VkSubpassDependency.Buffer dependency = VkSubpassDependency.calloc(1, stack);
             dependency.get(0)
                     .srcSubpass(VK10.VK_SUBPASS_EXTERNAL)
                     .dstSubpass(0)
-                    .srcStageMask(VK10.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
-                    .dstStageMask(VK10.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
+                    .srcStageMask(VK10.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+                            | VK10.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT)
+                    .dstStageMask(VK10.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+                            | VK10.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT)
                     .srcAccessMask(0)
-                    .dstAccessMask(VK10.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+                    .dstAccessMask(VK10.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+                            | VK10.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
 
             VkRenderPassCreateInfo info = VkRenderPassCreateInfo.calloc(stack)
                     .sType$Default()
@@ -458,9 +543,11 @@ final class VulkanRenderer implements AutoCloseable {
             check(KHRSwapchain.vkGetSwapchainImagesKHR(device, swapchain, swapchainImageCount, images),
                     "Get swapchain images");
             createImageViews(images);
+            createMultisampleColor();
+            createDepthStencil();
             createFramebuffers(images.remaining());
             createCommands(images.remaining());
-            backend.resize(new Viewport(extentWidth, extentHeight, viewportWidth, viewportHeight));
+            renderer.resize(new Viewport(extentWidth, extentHeight, viewportWidth, viewportHeight));
             swapchainDirty = false;
             return true;
         }
@@ -486,6 +573,113 @@ final class VulkanRenderer implements AutoCloseable {
         }
     }
 
+    private void createMultisampleColor() {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkImageCreateInfo imageInfo = VkImageCreateInfo.calloc(stack)
+                    .sType$Default()
+                    .imageType(VK10.VK_IMAGE_TYPE_2D)
+                    .format(surfaceFormat)
+                    .mipLevels(1)
+                    .arrayLayers(1)
+                    .samples(SAMPLE_COUNT)
+                    .tiling(VK10.VK_IMAGE_TILING_OPTIMAL)
+                    .usage(VK10.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+                    .sharingMode(VK10.VK_SHARING_MODE_EXCLUSIVE)
+                    .initialLayout(VK10.VK_IMAGE_LAYOUT_UNDEFINED);
+            imageInfo.extent().set(framebufferWidth, framebufferHeight, 1);
+            LongBuffer result = stack.mallocLong(1);
+            check(VK10.vkCreateImage(device, imageInfo, null, result), "Create multisample color image");
+            multisampleImage = result.get(0);
+
+            VkMemoryRequirements requirements = VkMemoryRequirements.malloc(stack);
+            VK10.vkGetImageMemoryRequirements(device, multisampleImage, requirements);
+            VkMemoryAllocateInfo allocateInfo = VkMemoryAllocateInfo.calloc(stack)
+                    .sType$Default()
+                    .allocationSize(requirements.size())
+                    .memoryTypeIndex(findMemoryType(requirements.memoryTypeBits(),
+                            VK10.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
+            check(VK10.vkAllocateMemory(device, allocateInfo, null, result),
+                    "Allocate multisample color memory");
+            multisampleMemory = result.get(0);
+            check(VK10.vkBindImageMemory(device, multisampleImage, multisampleMemory, 0),
+                    "Bind multisample color memory");
+
+            VkImageViewCreateInfo viewInfo = VkImageViewCreateInfo.calloc(stack)
+                    .sType$Default()
+                    .image(multisampleImage)
+                    .viewType(VK10.VK_IMAGE_VIEW_TYPE_2D)
+                    .format(surfaceFormat);
+            viewInfo.subresourceRange()
+                    .aspectMask(VK10.VK_IMAGE_ASPECT_COLOR_BIT)
+                    .levelCount(1)
+                    .layerCount(1);
+            check(VK10.vkCreateImageView(device, viewInfo, null, result),
+                    "Create multisample color view");
+            multisampleView = result.get(0);
+        }
+    }
+
+    private void createDepthStencil() {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkImageCreateInfo imageInfo = VkImageCreateInfo.calloc(stack)
+                    .sType$Default()
+                    .imageType(VK10.VK_IMAGE_TYPE_2D)
+                    .format(depthStencilFormat)
+                    .mipLevels(1)
+                    .arrayLayers(1)
+                    .samples(SAMPLE_COUNT)
+                    .tiling(VK10.VK_IMAGE_TILING_OPTIMAL)
+                    .usage(VK10.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
+                    .sharingMode(VK10.VK_SHARING_MODE_EXCLUSIVE)
+                    .initialLayout(VK10.VK_IMAGE_LAYOUT_UNDEFINED);
+            imageInfo.extent().set(framebufferWidth, framebufferHeight, 1);
+            LongBuffer result = stack.mallocLong(1);
+            check(VK10.vkCreateImage(device, imageInfo, null, result), "Create depth/stencil image");
+            depthStencilImage = result.get(0);
+
+            VkMemoryRequirements requirements = VkMemoryRequirements.malloc(stack);
+            VK10.vkGetImageMemoryRequirements(device, depthStencilImage, requirements);
+            VkMemoryAllocateInfo allocateInfo = VkMemoryAllocateInfo.calloc(stack)
+                    .sType$Default()
+                    .allocationSize(requirements.size())
+                    .memoryTypeIndex(findMemoryType(requirements.memoryTypeBits(),
+                            VK10.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
+            check(VK10.vkAllocateMemory(device, allocateInfo, null, result),
+                    "Allocate depth/stencil memory");
+            depthStencilMemory = result.get(0);
+            check(VK10.vkBindImageMemory(device, depthStencilImage, depthStencilMemory, 0),
+                    "Bind depth/stencil memory");
+
+            VkImageViewCreateInfo viewInfo = VkImageViewCreateInfo.calloc(stack)
+                    .sType$Default()
+                    .image(depthStencilImage)
+                    .viewType(VK10.VK_IMAGE_VIEW_TYPE_2D)
+                    .format(depthStencilFormat);
+            viewInfo.subresourceRange()
+                    .aspectMask(VK10.VK_IMAGE_ASPECT_DEPTH_BIT | VK10.VK_IMAGE_ASPECT_STENCIL_BIT)
+                    .levelCount(1)
+                    .layerCount(1);
+            check(VK10.vkCreateImageView(device, viewInfo, null, result),
+                    "Create depth/stencil view");
+            depthStencilView = result.get(0);
+        }
+    }
+
+    private int findMemoryType(int typeFilter, int properties) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkPhysicalDeviceMemoryProperties memoryProperties =
+                    VkPhysicalDeviceMemoryProperties.calloc(stack);
+            VK10.vkGetPhysicalDeviceMemoryProperties(physicalDevice, memoryProperties);
+            for (int index = 0; index < memoryProperties.memoryTypeCount(); index++) {
+                if ((typeFilter & (1 << index)) != 0
+                        && (memoryProperties.memoryTypes(index).propertyFlags() & properties) == properties) {
+                    return index;
+                }
+            }
+        }
+        throw new IllegalStateException("No suitable memory type.");
+    }
+
     private void createFramebuffers(int imageCount) {
         framebuffers = new long[imageCount];
         try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -494,8 +688,8 @@ final class VulkanRenderer implements AutoCloseable {
                 VkFramebufferCreateInfo info = VkFramebufferCreateInfo.calloc(stack)
                         .sType$Default()
                         .renderPass(renderPass)
-                        .attachmentCount(1)
-                        .pAttachments(stack.longs(imageViews[i]))
+                        .attachmentCount(3)
+                        .pAttachments(stack.longs(multisampleView, depthStencilView, imageViews[i]))
                         .width(framebufferWidth)
                         .height(framebufferHeight)
                         .layers(1);
@@ -538,8 +732,16 @@ final class VulkanRenderer implements AutoCloseable {
             VkCommandBufferBeginInfo begin = VkCommandBufferBeginInfo.calloc(stack).sType$Default();
             check(VK10.vkBeginCommandBuffer(command, begin), "Begin command buffer");
 
-            VkClearValue.Buffer clearValues = VkClearValue.calloc(1, stack);
+            VkClearValue.Buffer clearValues = VkClearValue.calloc(3, stack);
             clearValues.get(0).color()
+                    .float32(0, 0.08f)
+                    .float32(1, 0.09f)
+                    .float32(2, 0.11f)
+                    .float32(3, 1.0f);
+            clearValues.get(1).depthStencil()
+                    .depth(1.0f)
+                    .stencil(0);
+            clearValues.get(2).color()
                     .float32(0, 0.08f)
                     .float32(1, 0.09f)
                     .float32(2, 0.11f)
@@ -554,7 +756,10 @@ final class VulkanRenderer implements AutoCloseable {
 
             VK10.vkCmdBeginRenderPass(command, renderPassBegin, VK10.VK_SUBPASS_CONTENTS_INLINE);
             backend.beginFrame(command);
-            backend.draw(DemoScene.create(logicalWidth, logicalHeight, sceneTexture, sceneTexture));
+            renderer.begin();
+            DemoRawScene.draw(renderer, sceneTexture, sceneTexture, maskTexture,
+                    (System.nanoTime() - startNanos) / 1_000_000_000f);
+            renderer.end();
             backend.endFrame();
             VK10.vkCmdEndRenderPass(command);
             check(VK10.vkEndCommandBuffer(command), "End command buffer");
@@ -577,6 +782,30 @@ final class VulkanRenderer implements AutoCloseable {
                 }
             }
             imageViews = null;
+        }
+        if (depthStencilView != VK10.VK_NULL_HANDLE) {
+            VK10.vkDestroyImageView(device, depthStencilView, null);
+            depthStencilView = VK10.VK_NULL_HANDLE;
+        }
+        if (depthStencilImage != VK10.VK_NULL_HANDLE) {
+            VK10.vkDestroyImage(device, depthStencilImage, null);
+            depthStencilImage = VK10.VK_NULL_HANDLE;
+        }
+        if (depthStencilMemory != VK10.VK_NULL_HANDLE) {
+            VK10.vkFreeMemory(device, depthStencilMemory, null);
+            depthStencilMemory = VK10.VK_NULL_HANDLE;
+        }
+        if (multisampleView != VK10.VK_NULL_HANDLE) {
+            VK10.vkDestroyImageView(device, multisampleView, null);
+            multisampleView = VK10.VK_NULL_HANDLE;
+        }
+        if (multisampleImage != VK10.VK_NULL_HANDLE) {
+            VK10.vkDestroyImage(device, multisampleImage, null);
+            multisampleImage = VK10.VK_NULL_HANDLE;
+        }
+        if (multisampleMemory != VK10.VK_NULL_HANDLE) {
+            VK10.vkFreeMemory(device, multisampleMemory, null);
+            multisampleMemory = VK10.VK_NULL_HANDLE;
         }
         if (commandPool != VK10.VK_NULL_HANDLE) {
             VK10.vkDestroyCommandPool(device, commandPool, null);

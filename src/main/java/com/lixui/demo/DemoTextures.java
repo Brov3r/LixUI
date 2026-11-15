@@ -35,6 +35,30 @@ final class DemoTextures {
         return new ImageData(SIZE, SIZE, pixels);
     }
 
+    /**
+     * Creates a circular alpha mask used to verify texture-driven clipping.
+     *
+     * @return an RGBA8 mask image
+     */
+    static ImageData mask() {
+        byte[] pixels = new byte[SIZE * SIZE * 4];
+        float center = (SIZE - 1) / 2f;
+        float radius = SIZE * 0.46f;
+        for (int y = 0; y < SIZE; y++) {
+            for (int x = 0; x < SIZE; x++) {
+                float dx = x - center;
+                float dy = y - center;
+                boolean inside = dx * dx + dy * dy <= radius * radius;
+                int offset = (y * SIZE + x) * 4;
+                pixels[offset] = (byte) 0xFF;
+                pixels[offset + 1] = (byte) 0xFF;
+                pixels[offset + 2] = (byte) 0xFF;
+                pixels[offset + 3] = (byte) (inside ? 0xFF : 0x00);
+            }
+        }
+        return new ImageData(SIZE, SIZE, pixels);
+    }
+
     private static void fill(byte[] pixels, int startX, int startY, int width, int height,
                              int red, int green, int blue) {
         for (int y = startY; y < startY + height; y++) {

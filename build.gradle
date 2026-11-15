@@ -181,6 +181,7 @@ if (osName.contains('mac')) {
 def demoRuntimeClasspath = sourceSets.main.runtimeClasspath + configurations.demoNatives +
         configurations.demoRuntime
 def demoJavaExecutable = javaToolchains.launcherFor(java.toolchain).get().executablePath.asFile.absolutePath
+def demoLogDir = layout.buildDirectory.dir('demo-logs').get().asFile
 
 tasks.register('demoBoth') {
     group = 'application'
@@ -193,26 +194,65 @@ tasks.register('demoBoth') {
                 ['com.lixui.demo.OpenGlDemo', 'left'],
                 ['com.lixui.demo.VulkanDemo', 'right']
         ]
+        def logDir = demoLogDir
+        logDir.mkdirs()
+        def logFiles = []
         def processes = demos.collect { demo ->
+            def logFile = new File(logDir, "${demo[0].tokenize('.').last()}.log")
+            logFiles << logFile
             new ProcessBuilder([demoJavaExecutable] + demoJvmArgs +
                     ['-cp', classpath, demo[0], '--placement=' + demo[1]])
-                    .inheritIO()
+                    .redirectErrorStream(true)
+                    .redirectOutput(logFile)
                     .start()
         }
+        println "Demo logs: ${logDir}"
 
         def failures = []
-        processes.eachWithIndex { process, index ->
-            int exitCode = process.waitFor()
-            if (exitCode != 0) {
-                failures << "${demos[index][0]} exited with code ${exitCode}"
+        def completed = new boolean[processes.size()]
+        int completedCount = 0
+        while (completedCount < processes.size()) {
+            processes.eachWithIndex { process, index ->
+                if (!completed[index] && !process.isAlive()) {
+                    completed[index] = true
+                    completedCount++
+                    int exitCode = process.exitValue()
+                    if (exitCode != 0) {
+                        failures << "${demos[index][0]} exited with code ${exitCode}"
+                    }
+                }
+            }
+            if (!failures.isEmpty()) {
                 processes.each { peer ->
                     if (peer.isAlive()) {
                         peer.destroy()
                     }
                 }
+                processes.each { it.waitFor() }
+                break
+            }
+            Thread.sleep(100)
+        }
+        processes.eachWithIndex { process, index ->
+            int exitCode = process.exitValue()
+            if (exitCode != 0) {
+                def message = "${demos[index][0]} exited with code ${exitCode}"
+                if (!failures.contains(message)) {
+                    failures << message
+                }
             }
         }
         if (!failures.isEmpty()) {
+            processes.eachWithIndex { process, index ->
+                def logFile = logFiles[index]
+                if (logFile.exists()) {
+                    def lines = logFile.readLines('UTF-8')
+                    def tail = lines.drop(Math.max(0, lines.size() - 30)).join(System.lineSeparator())
+                    if (!tail.isEmpty()) {
+                        logger.error("Last lines of ${logFile.name}:${System.lineSeparator()}${tail}")
+                    }
+                }
+            }
             throw new GradleException(failures.join(System.lineSeparator()))
         }
     }

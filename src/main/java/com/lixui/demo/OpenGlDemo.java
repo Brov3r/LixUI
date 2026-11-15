@@ -1,8 +1,8 @@
 package com.lixui.demo;
 
 import com.lixui.backend.opengl.OpenGlBackend;
-import com.lixui.render.DrawList;
 import com.lixui.render.ImageData;
+import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
 import org.lwjgl.glfw.GLFW;
@@ -43,6 +43,8 @@ public final class OpenGlDemo {
                 try (OpenGlBackend backend = new OpenGlBackend()) {
                     ImageData image = DemoTextures.checkerboard();
                     Texture texture = backend.createTexture(image);
+                    Texture maskTexture = backend.createTexture(DemoTextures.mask());
+                    RenderManager renderer = new RenderManager(backend);
                     int hostTexture = uploadHostTexture(image);
                     try {
                         Texture wrapped = backend.wrapTexture(hostTexture, image.width(), image.height());
@@ -65,11 +67,12 @@ public final class OpenGlDemo {
                                 if (framebufferWidth > 0 && framebufferHeight > 0
                                         && viewportWidth > 0 && viewportHeight > 0) {
                                     GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
-                                    backend.resize(new Viewport(
+                                    renderer.resize(new Viewport(
                                             framebufferWidth, framebufferHeight, viewportWidth, viewportHeight));
-                                    DrawList drawList = DemoScene.create(
-                                            viewportWidth, viewportHeight, texture, wrapped);
-                                    backend.draw(drawList);
+                                    renderer.begin();
+                                    DemoRawScene.draw(renderer, texture, wrapped, maskTexture,
+                                            (float) GLFW.glfwGetTime());
+                                    renderer.end();
                                 }
                                 GLFW.glfwSwapBuffers(window.handle());
                             }

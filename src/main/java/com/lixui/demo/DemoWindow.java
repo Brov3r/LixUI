@@ -37,6 +37,8 @@ final class DemoWindow implements AutoCloseable {
                 GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR, 5);
                 GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE, GLFW.GLFW_OPENGL_CORE_PROFILE);
                 GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_FORWARD_COMPAT, GLFW.GLFW_TRUE);
+                GLFW.glfwWindowHint(GLFW.GLFW_STENCIL_BITS, 8);
+                GLFW.glfwWindowHint(GLFW.GLFW_SAMPLES, 4);
             }
 
             handle = GLFW.glfwCreateWindow(bounds.width(), bounds.height(), title,

@@ -1,10 +1,17 @@
 package com.lixui.backend.vulkan;
 
 import com.lixui.geometry.Rect;
+import com.lixui.graphics.Color;
 import com.lixui.render.DrawCommand;
 import com.lixui.render.DrawList;
 import com.lixui.render.ImageCommand;
 import com.lixui.render.ImageData;
+import com.lixui.render.MaskBeginCommand;
+import com.lixui.render.MaskEndCommand;
+import com.lixui.render.MaskTextureBeginCommand;
+import com.lixui.render.MaskTextureEndCommand;
+import com.lixui.render.MeshCommand;
+import com.lixui.render.MeshVertex;
 import com.lixui.render.RenderBackend;
 import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
@@ -36,6 +43,7 @@ import org.lwjgl.vulkan.VkPhysicalDevice;
 import org.lwjgl.vulkan.VkPhysicalDeviceMemoryProperties;
 import org.lwjgl.vulkan.VkPipelineColorBlendAttachmentState;
 import org.lwjgl.vulkan.VkPipelineColorBlendStateCreateInfo;
+import org.lwjgl.vulkan.VkPipelineDepthStencilStateCreateInfo;
 import org.lwjgl.vulkan.VkPipelineDynamicStateCreateInfo;
 import org.lwjgl.vulkan.VkPipelineInputAssemblyStateCreateInfo;
 import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
@@ -79,7 +87,7 @@ public final class VulkanBackend implements RenderBackend {
     private static final Rect FULL_UV = new Rect(0, 0, 1, 1);
     private static final int FLOATS_PER_VERTEX = 13;
     private static final int VERTICES_PER_QUAD = 6;
-    private static final int FLOATS_PER_QUAD = FLOATS_PER_VERTEX * VERTICES_PER_QUAD;
+    private static final float MESH_HALF_SIZE = 1_000_000f;
     private static final int VERTEX_STRIDE = FLOATS_PER_VERTEX * Float.BYTES;
     private static final int INITIAL_VERTEX_BYTES = 4096;
     private static final int MAX_TEXTURES = 1024;
@@ -94,6 +102,8 @@ public final class VulkanBackend implements RenderBackend {
     private long sampler;
     private long pipelineLayout;
     private long pipeline;
+    private long maskIncrementPipeline;
+    private long maskDecrementPipeline;
     private long uploadCommandPool;
     private VulkanTexture whiteTexture;
     private long vertexBuffer;
@@ -105,7 +115,8 @@ public final class VulkanBackend implements RenderBackend {
     private Viewport viewport;
 
     /**
-     * Creates the backend, its graphics pipeline and the default texture sampler.
+     * Creates the backend, its graphics pipelines and the default texture sampler.
+     * The render pass must provide a depth/stencil attachment for mask support.
      *
      * @param physicalDevice physical device used to select buffer and image memory
      * @param device logical device that owns the created resources
@@ -132,7 +143,9 @@ public final class VulkanBackend implements RenderBackend {
         try {
             descriptorSetLayout = createDescriptorSetLayout();
             pipelineLayout = createPipelineLayout();
-            pipeline = createPipeline(renderPass, sampleCount);
+            pipeline = createPipeline(renderPass, sampleCount, MaskAction.DRAW);
+            maskIncrementPipeline = createPipeline(renderPass, sampleCount, MaskAction.PUSH);
+            maskDecrementPipeline = createPipeline(renderPass, sampleCount, MaskAction.POP);
             uploadCommandPool = createUploadCommandPool(queueFamily);
             descriptorPool = createDescriptorPool();
             sampler = createSampler();
@@ -343,7 +356,9 @@ public final class VulkanBackend implements RenderBackend {
     @Override
     public void destroyTexture(Texture texture) {
         VulkanTexture vulkanTexture = asVulkanTexture(texture);
-        textures.remove(vulkanTexture);
+        if (!textures.remove(vulkanTexture)) {
+            return;
+        }
         if (whiteTexture == vulkanTexture) {
             whiteTexture = null;
         }
@@ -376,7 +391,7 @@ public final class VulkanBackend implements RenderBackend {
             return;
         }
 
-        ensureVertexCapacity(commands.size() * FLOATS_PER_QUAD);
+        ensureVertexCapacity(totalVertexFloats(commands));
         mappedVertices.clear();
         collect(commands);
         if (batches.isEmpty()) {
@@ -401,7 +416,6 @@ public final class VulkanBackend implements RenderBackend {
                     .maxDepth(1);
             VK10.vkCmdSetViewport(commandBuffer, 0, commandViewport);
 
-            VK10.vkCmdBindPipeline(commandBuffer, VK10.VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             VK10.vkCmdPushConstants(commandBuffer, pipelineLayout, VK10.VK_SHADER_STAGE_VERTEX_BIT, 0,
                     stack.floats(viewport.logicalWidth(), viewport.logicalHeight()));
 
@@ -415,6 +429,18 @@ public final class VulkanBackend implements RenderBackend {
                 if (!applyScissor(scissor.get(0), batch.clip())) {
                     continue;
                 }
+                long batchPipeline = switch (batch.action()) {
+                    case DRAW -> pipeline;
+                    case PUSH -> maskIncrementPipeline;
+                    case POP -> maskDecrementPipeline;
+                };
+                VK10.vkCmdBindPipeline(commandBuffer, VK10.VK_PIPELINE_BIND_POINT_GRAPHICS, batchPipeline);
+                VK10.vkCmdSetStencilCompareMask(commandBuffer,
+                        VK10.VK_STENCIL_FACE_FRONT_AND_BACK, 0xFF);
+                VK10.vkCmdSetStencilWriteMask(commandBuffer,
+                        VK10.VK_STENCIL_FACE_FRONT_AND_BACK, 0xFF);
+                VK10.vkCmdSetStencilReference(commandBuffer,
+                        VK10.VK_STENCIL_FACE_FRONT_AND_BACK, batch.stencilRef());
                 descriptorSet.put(0, batch.texture().descriptorSet());
                 VK10.vkCmdBindDescriptorSets(commandBuffer, VK10.VK_PIPELINE_BIND_POINT_GRAPHICS,
                         pipelineLayout, 0, descriptorSet, null);
@@ -458,6 +484,14 @@ public final class VulkanBackend implements RenderBackend {
         if (pipeline != VK10.VK_NULL_HANDLE) {
             VK10.vkDestroyPipeline(device, pipeline, null);
             pipeline = VK10.VK_NULL_HANDLE;
+        }
+        if (maskIncrementPipeline != VK10.VK_NULL_HANDLE) {
+            VK10.vkDestroyPipeline(device, maskIncrementPipeline, null);
+            maskIncrementPipeline = VK10.VK_NULL_HANDLE;
+        }
+        if (maskDecrementPipeline != VK10.VK_NULL_HANDLE) {
+            VK10.vkDestroyPipeline(device, maskDecrementPipeline, null);
+            maskDecrementPipeline = VK10.VK_NULL_HANDLE;
         }
         if (pipelineLayout != VK10.VK_NULL_HANDLE) {
             VK10.vkDestroyPipelineLayout(device, pipelineLayout, null);
@@ -503,7 +537,7 @@ public final class VulkanBackend implements RenderBackend {
         }
     }
 
-    private long createPipeline(long renderPass, int sampleCount) {
+    private long createPipeline(long renderPass, int sampleCount, MaskAction action) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             long vertexModule = createShaderModule(loadShader("rounded_rect.vert.spv", stack));
             long fragmentModule;
@@ -602,18 +636,19 @@ public final class VulkanBackend implements RenderBackend {
 
                 VkPipelineColorBlendAttachmentState.Buffer blendAttachment =
                         VkPipelineColorBlendAttachmentState.calloc(1, stack);
+                int colorWriteMask = action == MaskAction.DRAW
+                        ? VK10.VK_COLOR_COMPONENT_R_BIT | VK10.VK_COLOR_COMPONENT_G_BIT
+                        | VK10.VK_COLOR_COMPONENT_B_BIT | VK10.VK_COLOR_COMPONENT_A_BIT
+                        : 0;
                 blendAttachment.get(0)
-                        .blendEnable(true)
+                        .blendEnable(action == MaskAction.DRAW)
                         .srcColorBlendFactor(VK10.VK_BLEND_FACTOR_ONE)
                         .dstColorBlendFactor(VK10.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA)
                         .colorBlendOp(VK10.VK_BLEND_OP_ADD)
                         .srcAlphaBlendFactor(VK10.VK_BLEND_FACTOR_ONE)
                         .dstAlphaBlendFactor(VK10.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA)
                         .alphaBlendOp(VK10.VK_BLEND_OP_ADD)
-                        .colorWriteMask(VK10.VK_COLOR_COMPONENT_R_BIT
-                                | VK10.VK_COLOR_COMPONENT_G_BIT
-                                | VK10.VK_COLOR_COMPONENT_B_BIT
-                                | VK10.VK_COLOR_COMPONENT_A_BIT);
+                        .colorWriteMask(colorWriteMask);
 
                 VkPipelineColorBlendStateCreateInfo colorBlend =
                         VkPipelineColorBlendStateCreateInfo.calloc(stack)
@@ -622,9 +657,43 @@ public final class VulkanBackend implements RenderBackend {
                                 .attachmentCount(1)
                                 .pAttachments(blendAttachment);
 
+                int stencilPass = switch (action) {
+                    case DRAW -> VK10.VK_STENCIL_OP_KEEP;
+                    case PUSH -> VK10.VK_STENCIL_OP_INCREMENT_AND_CLAMP;
+                    case POP -> VK10.VK_STENCIL_OP_DECREMENT_AND_CLAMP;
+                    default -> throw new IllegalStateException("Unknown mask action.");
+                };
+                VkPipelineDepthStencilStateCreateInfo depthStencil =
+                        VkPipelineDepthStencilStateCreateInfo.calloc(stack)
+                                .sType$Default()
+                                .depthTestEnable(false)
+                                .depthWriteEnable(false)
+                                .depthCompareOp(VK10.VK_COMPARE_OP_ALWAYS)
+                                .depthBoundsTestEnable(false)
+                                .stencilTestEnable(true);
+                depthStencil.front()
+                        .failOp(VK10.VK_STENCIL_OP_KEEP)
+                        .passOp(stencilPass)
+                        .depthFailOp(VK10.VK_STENCIL_OP_KEEP)
+                        .compareOp(VK10.VK_COMPARE_OP_EQUAL)
+                        .compareMask(0xFF)
+                        .writeMask(0xFF)
+                        .reference(0);
+                depthStencil.back()
+                        .failOp(VK10.VK_STENCIL_OP_KEEP)
+                        .passOp(stencilPass)
+                        .depthFailOp(VK10.VK_STENCIL_OP_KEEP)
+                        .compareOp(VK10.VK_COMPARE_OP_EQUAL)
+                        .compareMask(0xFF)
+                        .writeMask(0xFF)
+                        .reference(0);
+
                 IntBuffer dynamicStates = stack.ints(
                         VK10.VK_DYNAMIC_STATE_VIEWPORT,
-                        VK10.VK_DYNAMIC_STATE_SCISSOR);
+                        VK10.VK_DYNAMIC_STATE_SCISSOR,
+                        VK10.VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK,
+                        VK10.VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
+                        VK10.VK_DYNAMIC_STATE_STENCIL_REFERENCE);
                 VkPipelineDynamicStateCreateInfo dynamicState = VkPipelineDynamicStateCreateInfo.calloc(stack)
                         .sType$Default()
                         .pDynamicStates(dynamicStates);
@@ -639,6 +708,7 @@ public final class VulkanBackend implements RenderBackend {
                         .pRasterizationState(rasterization)
                         .pMultisampleState(multisample)
                         .pColorBlendState(colorBlend)
+                        .pDepthStencilState(depthStencil)
                         .pDynamicState(dynamicState)
                         .layout(pipelineLayout)
                         .renderPass(renderPass)
@@ -677,6 +747,7 @@ public final class VulkanBackend implements RenderBackend {
                     .descriptorCount(MAX_TEXTURES);
             VkDescriptorPoolCreateInfo info = VkDescriptorPoolCreateInfo.calloc(stack)
                     .sType$Default()
+                    .flags(VK10.VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT)
                     .maxSets(MAX_TEXTURES)
                     .pPoolSizes(sizes);
             LongBuffer result = stack.mallocLong(1);
@@ -896,44 +967,96 @@ public final class VulkanBackend implements RenderBackend {
         batches.clear();
         Rect currentClip = null;
         VulkanTexture currentTexture = null;
+        int currentStencilRef = 0;
+        MaskAction currentAction = MaskAction.DRAW;
+        int stencilDepth = 0;
         int batchStartVertex = 0;
         int batchVertexCount = 0;
         int vertexIndex = 0;
         for (DrawCommand command : commands) {
-            VulkanTexture texture = asVulkanTexture(command instanceof ImageCommand image
-                    ? image.texture() : whiteTexture);
-            if (!command.clip().equals(currentClip) || texture != currentTexture) {
+            MaskAction action = maskAction(command);
+            int stencilRef = stencilDepth;
+            VulkanTexture texture = asVulkanTexture(textureOf(command));
+            int commandVertices = vertexCount(command);
+            if (!command.clip().equals(currentClip) || texture != currentTexture
+                    || stencilRef != currentStencilRef || action != currentAction) {
                 if (batchVertexCount > 0) {
-                    batches.add(new Batch(batchStartVertex, batchVertexCount, currentClip, currentTexture));
+                    batches.add(new Batch(batchStartVertex, batchVertexCount,
+                            currentClip, currentTexture, currentStencilRef, currentAction));
                 }
                 currentClip = command.clip();
                 currentTexture = texture;
+                currentStencilRef = stencilRef;
+                currentAction = action;
                 batchStartVertex = vertexIndex;
                 batchVertexCount = 0;
             }
-            appendQuad(command);
-            vertexIndex += VERTICES_PER_QUAD;
-            batchVertexCount += VERTICES_PER_QUAD;
+            if (command instanceof MaskBeginCommand mask) {
+                appendMask(mask.vertices());
+            } else if (command instanceof MaskEndCommand mask) {
+                appendMask(mask.vertices());
+            } else if (command instanceof MaskTextureBeginCommand mask) {
+                appendTexturedQuad(mask.bounds(), mask.uv());
+            } else if (command instanceof MaskTextureEndCommand mask) {
+                appendTexturedQuad(mask.bounds(), mask.uv());
+            } else if (command instanceof MeshCommand mesh) {
+                appendMesh(mesh);
+            } else {
+                appendQuad(command);
+            }
+            vertexIndex += commandVertices;
+            batchVertexCount += commandVertices;
+            if (action == MaskAction.PUSH) {
+                stencilDepth++;
+            } else if (action == MaskAction.POP) {
+                stencilDepth--;
+            }
         }
         if (batchVertexCount > 0) {
-            batches.add(new Batch(batchStartVertex, batchVertexCount, currentClip, currentTexture));
+            batches.add(new Batch(batchStartVertex, batchVertexCount,
+                    currentClip, currentTexture, currentStencilRef, currentAction));
         }
     }
 
+    private static MaskAction maskAction(DrawCommand command) {
+        if (command instanceof MaskBeginCommand || command instanceof MaskTextureBeginCommand) {
+            return MaskAction.PUSH;
+        }
+        if (command instanceof MaskEndCommand || command instanceof MaskTextureEndCommand) {
+            return MaskAction.POP;
+        }
+        return MaskAction.DRAW;
+    }
+
+    private Texture textureOf(DrawCommand command) {
+        if (command instanceof ImageCommand image) {
+            return image.texture();
+        }
+        if (command instanceof MaskTextureBeginCommand mask) {
+            return mask.texture();
+        }
+        if (command instanceof MaskTextureEndCommand mask) {
+            return mask.texture();
+        }
+        return whiteTexture;
+    }
+
     private void appendQuad(DrawCommand command) {
-        Rect bounds = command.bounds();
         Rect uv = command instanceof ImageCommand image ? image.uv() : FULL_UV;
+        appendQuad(command.bounds(), command.radius(), command.color(), uv);
+    }
+
+    private void appendQuad(Rect bounds, float radius, Color color, Rect uv) {
         float halfWidth = bounds.width() / 2;
         float halfHeight = bounds.height() / 2;
         float left = bounds.x();
         float top = bounds.y();
         float right = bounds.right();
         float bottom = bounds.bottom();
-        float radius = command.radius();
-        float red = command.color().r();
-        float green = command.color().g();
-        float blue = command.color().b();
-        float alpha = command.color().a();
+        float red = color.r();
+        float green = color.g();
+        float blue = color.b();
+        float alpha = color.a();
         float u0 = uv.x();
         float v0 = uv.y();
         float u1 = uv.right();
@@ -945,6 +1068,43 @@ public final class VulkanBackend implements RenderBackend {
         putVertex(left, top, -halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v0);
         putVertex(right, bottom, halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v1);
         putVertex(left, bottom, -halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v1);
+    }
+
+    private void appendTexturedQuad(Rect bounds, Rect uv) {
+        appendQuad(bounds, 0, Color.WHITE, uv);
+    }
+
+    private void appendMesh(MeshCommand command) {
+        appendMask(command.vertices());
+    }
+
+    private void appendMask(List<MeshVertex> vertices) {
+        for (MeshVertex vertex : vertices) {
+            putVertex(vertex.x(), vertex.y(), 0, 0, MESH_HALF_SIZE, MESH_HALF_SIZE, 0,
+                    vertex.color().r(), vertex.color().g(), vertex.color().b(), vertex.color().a(),
+                    0.5f, 0.5f);
+        }
+    }
+
+    private static int totalVertexFloats(List<DrawCommand> commands) {
+        int total = 0;
+        for (DrawCommand command : commands) {
+            total += vertexCount(command) * FLOATS_PER_VERTEX;
+        }
+        return total;
+    }
+
+    private static int vertexCount(DrawCommand command) {
+        if (command instanceof MeshCommand mesh) {
+            return mesh.vertices().size();
+        }
+        if (command instanceof MaskBeginCommand mask) {
+            return mask.vertices().size();
+        }
+        if (command instanceof MaskEndCommand mask) {
+            return mask.vertices().size();
+        }
+        return VERTICES_PER_QUAD;
     }
 
     private void putVertex(float x, float y, float localX, float localY,
@@ -1056,7 +1216,17 @@ public final class VulkanBackend implements RenderBackend {
         }
     }
 
-    private record Batch(int firstVertex, int vertexCount, Rect clip, VulkanTexture texture) {
+    private record Batch(int firstVertex, int vertexCount, Rect clip, VulkanTexture texture,
+                         int stencilRef, MaskAction action) {
+    }
+
+    private enum MaskAction {
+        /** Draws content using the current stencil reference. */
+        DRAW,
+        /** Increments the stencil buffer without writing color. */
+        PUSH,
+        /** Decrements the stencil buffer without writing color. */
+        POP
     }
 
     private record BufferResource(long buffer, long memory) {

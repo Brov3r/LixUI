@@ -207,6 +207,145 @@ class DrawListTest {
         assertThrows(NullPointerException.class, () -> list.image(texture, bounds, 0, uv, null));
     }
 
+    @Test
+    void emitsMeshCommandsWithComputedBoundsAndClip() {
+        DrawList list = new DrawList(VIEWPORT);
+        MeshVertex first = new MeshVertex(10, 20, RED);
+        MeshVertex second = new MeshVertex(100, 20, GREEN);
+        MeshVertex third = new MeshVertex(10, 80, BLUE);
+
+        list.mesh(List.of(first, second, third));
+
+        MeshCommand command = (MeshCommand) list.commands().get(0);
+        assertEquals(new Rect(10, 20, 90, 60), command.bounds());
+        assertSame(VIEWPORT, command.clip());
+        assertEquals(List.of(first, second, third), command.vertices());
+    }
+
+    @Test
+    void omitsMeshesWithEmptyClipOrDegenerateBounds() {
+        DrawList list = new DrawList(VIEWPORT);
+        List<MeshVertex> triangle = List.of(
+                new MeshVertex(0, 0, RED),
+                new MeshVertex(10, 0, GREEN),
+                new MeshVertex(0, 10, BLUE));
+
+        list.pushClip(new Rect(2000, 2000, 10, 10));
+        list.mesh(triangle);
+        list.popClip();
+
+        list.mesh(List.of(
+                new MeshVertex(0, 0, RED),
+                new MeshVertex(10, 0, GREEN),
+                new MeshVertex(20, 0, BLUE)));
+
+        assertTrue(list.commands().isEmpty());
+    }
+
+    @Test
+    void rejectsInvalidMeshInputs() {
+        DrawList list = new DrawList(VIEWPORT);
+
+        assertThrows(NullPointerException.class, () -> list.mesh(null));
+        assertThrows(IllegalArgumentException.class, () -> list.mesh(List.of(
+                new MeshVertex(0, 0, RED))));
+        assertThrows(NullPointerException.class, () -> new MeshVertex(0, 0, null));
+        assertThrows(IllegalArgumentException.class, () -> new MeshVertex(Float.NaN, 0, RED));
+    }
+
+    @Test
+    void emitsMaskBeginAndEndCommands() {
+        DrawList list = new DrawList(VIEWPORT);
+        List<MeshVertex> mask = List.of(
+                new MeshVertex(10, 10, RED),
+                new MeshVertex(100, 10, RED),
+                new MeshVertex(10, 100, RED));
+
+        list.pushMask(mask);
+        list.rect(new Rect(0, 0, 200, 200), GREEN);
+        list.popMask();
+
+        assertEquals(3, list.commands().size());
+        MaskBeginCommand begin = (MaskBeginCommand) list.commands().get(0);
+        assertEquals(mask, begin.vertices());
+        assertEquals(new Rect(10, 10, 90, 90), begin.bounds());
+        assertSame(VIEWPORT, begin.clip());
+        assertTrue(list.commands().get(1) instanceof RoundedRectCommand);
+        MaskEndCommand end = (MaskEndCommand) list.commands().get(2);
+        assertEquals(mask, end.vertices());
+        assertSame(VIEWPORT, end.clip());
+        assertThrows(IllegalStateException.class, list::popMask);
+    }
+
+    @Test
+    void emitsTextureMaskCommands() {
+        DrawList list = new DrawList(VIEWPORT);
+        Texture texture = new TestTexture(16, 16);
+        Rect bounds = new Rect(10, 20, 100, 50);
+        Rect uv = new Rect(0, 0, 0.5f, 0.5f);
+
+        list.pushMask(texture, bounds, uv);
+        list.popMask();
+
+        assertEquals(2, list.commands().size());
+        MaskTextureBeginCommand begin = (MaskTextureBeginCommand) list.commands().get(0);
+        assertSame(texture, begin.texture());
+        assertEquals(bounds, begin.bounds());
+        assertEquals(uv, begin.uv());
+        assertSame(VIEWPORT, begin.clip());
+        assertTrue(list.commands().get(1) instanceof MaskTextureEndCommand);
+    }
+
+    @Test
+    void resetClearsTheMaskStack() {
+        DrawList list = new DrawList(VIEWPORT);
+        list.pushMask(List.of(
+                new MeshVertex(0, 0, RED),
+                new MeshVertex(10, 0, RED),
+                new MeshVertex(0, 10, RED)));
+
+        list.reset(VIEWPORT);
+
+        assertThrows(IllegalStateException.class, list::popMask);
+    }
+
+    @Test
+    void nestsMaskScopesAndCapturesClip() {
+        DrawList list = new DrawList(VIEWPORT);
+        List<MeshVertex> outer = List.of(
+                new MeshVertex(0, 0, RED),
+                new MeshVertex(100, 0, RED),
+                new MeshVertex(0, 100, RED));
+        List<MeshVertex> inner = List.of(
+                new MeshVertex(20, 20, RED),
+                new MeshVertex(80, 20, RED),
+                new MeshVertex(20, 80, RED));
+        Rect clip = new Rect(10, 10, 60, 60);
+
+        list.pushMask(outer);
+        list.pushClip(clip);
+        list.pushMask(inner);
+        list.rect(new Rect(0, 0, 100, 100), GREEN);
+        list.popMask();
+        list.popClip();
+        list.popMask();
+
+        assertEquals(5, list.commands().size());
+        MaskBeginCommand outerBegin = (MaskBeginCommand) list.commands().get(0);
+        assertSame(VIEWPORT, outerBegin.clip());
+        assertEquals(outer, outerBegin.vertices());
+        MaskBeginCommand innerBegin = (MaskBeginCommand) list.commands().get(1);
+        assertEquals(clip, innerBegin.clip());
+        assertEquals(inner, innerBegin.vertices());
+        assertEquals(clip, list.commands().get(2).clip());
+        MaskEndCommand innerEnd = (MaskEndCommand) list.commands().get(3);
+        assertEquals(clip, innerEnd.clip());
+        assertEquals(inner, innerEnd.vertices());
+        MaskEndCommand outerEnd = (MaskEndCommand) list.commands().get(4);
+        assertSame(VIEWPORT, outerEnd.clip());
+        assertEquals(outer, outerEnd.vertices());
+    }
+
     private record TestTexture(int width, int height) implements Texture {
     }
 }
