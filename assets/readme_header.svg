@@ -76,7 +76,7 @@
     <g filter="url(#glow)">
         <text class="title" x="400" y="54" text-anchor="middle" dominant-baseline="middle" fill="url(#flow)">LixUI</text>
     </g>
-    <text class="subtitle" x="400" y="86" text-anchor="middle">IMMEDIATE MODE  •  LWJGL  •  JAVA</text>
+    <text class="subtitle" x="400" y="86" text-anchor="middle">RETAINED MODE  •  LWJGL  •  JAVA</text>
 
     <!-- Single accent line -->
     <rect x="200" y="100" width="400" height="1.5" rx="0.75" fill="url(#fade)"/>
