@@ -7,24 +7,24 @@ plugins {
 
 group = 'com.lixui'
 
-def archiveName = rootProject.name
 // Artifacts go into build/ unless BUILD_PATH points somewhere else.
-def customBuildPath = System.getenv('BUILD_PATH') ?: layout.buildDirectory.get().asFile
+def customBuildPath = providers.environmentVariable('BUILD_PATH').orNull ?: layout.buildDirectory.get().asFile
 def lwjglVersion = libs.versions.lwjgl.get()
+def lwjglModules = ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl', 'lwjgl-stb']
+def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
 
 repositories {
     mavenCentral()
 }
 
 def detectLwjglNatives = {
-    String os = System.getProperty('os.name').toLowerCase(Locale.ROOT)
     String arch = System.getProperty('os.arch').toLowerCase(Locale.ROOT)
     boolean arm = arch.contains('aarch64') || arch.contains('arm64')
 
-    if (os.contains('win')) {
+    if (osName.contains('win')) {
         return arm ? 'natives-windows-arm64' : 'natives-windows'
     }
-    if (os.contains('mac')) {
+    if (osName.contains('mac')) {
         return arm ? 'natives-macos-arm64' : 'natives-macos'
     }
     return arm ? 'natives-linux-arm64' : 'natives-linux'
@@ -37,6 +37,9 @@ configurations {
     demoNatives {
         canBeConsumed = false
         canBeResolved = true
+    }
+    testRuntimeOnly {
+        extendsFrom demoNatives
     }
 }
 
@@ -54,23 +57,22 @@ dependencies {
     testRuntimeOnly libs.junit.platform.launcher
 
     demoNatives platform(libs.lwjgl.bom)
-    ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl', 'lwjgl-stb'].each { String module ->
-        testRuntimeOnly("org.lwjgl:${module}::$lwjglNatives")
+    lwjglModules.each { String module ->
         demoNatives("org.lwjgl:${module}::$lwjglNatives")
     }
 }
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
+        languageVersion = JavaLanguageVersion.of(providers.gradleProperty('java_version').get())
     }
 
     withSourcesJar()
+    withJavadocJar()
 }
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
-    options.release = 25
     options.compilerArgs.addAll(['-Xlint:deprecation', '-Xlint:unchecked'])
 }
 
@@ -82,7 +84,6 @@ tasks.withType(Javadoc).configureEach {
 checkstyle {
     toolVersion = libs.versions.checkstyle.get()
     configFile = rootProject.file('config/checkstyle/checkstyle.xml')
-    maxErrors = 0
     maxWarnings = 0
 }
 
@@ -107,13 +108,6 @@ tasks.named('jar') {
     enabled = false
 }
 
-tasks.register('javadocJar', Jar) {
-    group = 'build'
-    description = 'Packages the generated Javadoc into a JAR.'
-    archiveClassifier.set('javadoc')
-    from(tasks.named('javadoc'))
-}
-
 tasks.named('shadowJar') {
     group = 'build'
     description = 'Builds the self-contained JAR with all non-LWJGL dependencies.'
@@ -127,27 +121,22 @@ tasks.named('shadowJar') {
         exclude(dependency('org.lwjgl:.*'))
     }
 
-    exclude 'META-INF/*.SF'
-    exclude 'META-INF/*.DSA'
-    exclude 'META-INF/*.RSA'
-    exclude 'META-INF/INDEX.LIST'
-    exclude 'module-info.class'
-    exclude 'META-INF/versions/*/module-info.class'
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'META-INF/INDEX.LIST',
+            'module-info.class', 'META-INF/versions/*/module-info.class'
 
     manifest {
         attributes(
-                'Implementation-Title': archiveName,
+                'Implementation-Title': rootProject.name,
                 'Implementation-Version': project.version.toString(),
                 'Implementation-Vendor': 'LixUI'
         )
     }
 }
 
-// ./gradlew buildReleaseJar -> build/LixUI-<version>[-sources|-javadoc].jar
 tasks.register('buildReleaseJar') {
     group = 'build'
     description = 'Builds the fat JAR, the sources JAR and the Javadoc JAR.'
-    dependsOn 'javadoc', 'sourcesJar', 'javadocJar', 'shadowJar'
+    dependsOn 'sourcesJar', 'javadocJar', 'shadowJar'
 }
 
 tasks.named('assemble') {
@@ -159,10 +148,10 @@ tasks.register('demo', JavaExec) {
     group = 'application'
     description = 'Runs the demo scene.'
     classpath = sourceSets.main.runtimeClasspath + configurations.demoNatives
-    mainClass = providers.gradleProperty('demoMainClass').getOrElse('com.lixui.demo.Demo')
+    mainClass = providers.gradleProperty('demoMainClass').orElse('com.lixui.demo.Demo')
 
     // GLFW must own the main thread on macOS.
-    if (System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('mac')) {
+    if (osName.contains('mac')) {
         jvmArgs '-XstartOnFirstThread'
     }
 }
@@ -175,8 +164,8 @@ publishing {
             artifact tasks.named('javadocJar')
 
             pom {
-                name = archiveName
-                description = 'A lightweight immediate-mode UI framework for LWJGL.'
+                name = rootProject.name
+                description = 'A lightweight retained UI framework for LWJGL.'
 
                 licenses {
                     license {
@@ -198,7 +187,7 @@ publishing {
                     bom.appendNode('scope', 'import')
 
                     Node dependencies = root.appendNode('dependencies')
-                    ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl', 'lwjgl-stb'].each { String artifactId ->
+                    lwjglModules.each { String artifactId ->
                         Node dependency = dependencies.appendNode('dependency')
                         dependency.appendNode('groupId', 'org.lwjgl')
                         dependency.appendNode('artifactId', artifactId)
@@ -212,7 +201,7 @@ publishing {
     repositories {
         maven {
             name = 'local'
-            url = layout.buildDirectory.dir('repo').get().asFile.toURI()
+            url = layout.buildDirectory.dir('repo')
         }
     }
 }

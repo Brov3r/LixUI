@@ -9,7 +9,7 @@
     <img alt="GitHub License" src="https://img.shields.io/github/license/Brov3r/LixUI?style=flat">
 </p>
 
-**LixUI** is a lightweight immediate-mode UI framework for LWJGL.
+**LixUI** is a lightweight retained UI framework for LWJGL.
 
 ## ✨ Features
 
