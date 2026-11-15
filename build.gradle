@@ -1,5 +1,3 @@
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-
 plugins {
     alias(libs.plugins.shadow)
     id 'checkstyle'
@@ -116,7 +114,7 @@ tasks.register('javadocJar', Jar) {
     from(tasks.named('javadoc'))
 }
 
-tasks.named('shadowJar', ShadowJar) {
+tasks.named('shadowJar') {
     group = 'build'
     description = 'Builds the self-contained JAR with all non-LWJGL dependencies.'
     archiveClassifier.set('')
