@@ -1,6 +1,7 @@
 package com.lixui.demo;
 
 import com.lixui.geometry.Rect;
+import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
 import com.lixui.render.DrawList;
 import com.lixui.render.Texture;
@@ -59,6 +60,14 @@ final class DemoScene {
                 Color.rgba(1, 0.5f, 0.5f, 0.8f));
         list.image(wrappedTexture, layout.rect(580, 444, 96, 96), layout.scale(16), fullUv,
                 Color.WHITE);
+        Rect tilted = layout.rect(700, 444, 96, 96);
+        float centerX = tilted.x() + tilted.width() / 2;
+        float centerY = tilted.y() + tilted.height() / 2;
+        Transform tilt = Transform.translation(centerX, centerY)
+                .multiply(Transform.rotation(0.18f))
+                .multiply(Transform.translation(-centerX, -centerY));
+        list.image(texture, tilted, layout.scale(16), new Rect(0.5f, 0.5f, 0.5f, 0.5f),
+                Color.WHITE, tilt);
         return list;
     }
 

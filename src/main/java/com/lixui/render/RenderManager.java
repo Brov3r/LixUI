@@ -20,10 +20,11 @@ import java.util.Objects;
  * Masks require a stencil buffer in OpenGL or a depth/stencil attachment in Vulkan.
  */
 public final class RenderManager {
+    private static final Rect FULL_UV = new Rect(0, 0, 1, 1);
+    private static final Paint MASK_PAINT = Paint.solid(Color.WHITE);
     private final RenderBackend backend;
     private final DrawList drawList = new DrawList(Rect.EMPTY);
     private final Deque<Transform> transforms = new ArrayDeque<>();
-    private static final Paint MASK_PAINT = Paint.solid(Color.WHITE);
     private Viewport viewport;
     private Rect logicalViewport = Rect.EMPTY;
     private Antialiasing antialiasing = Antialiasing.LOW;
@@ -122,6 +123,7 @@ public final class RenderManager {
 
     /**
      * Appends a texture with the full normalized UV range and no tint.
+     * The current transform is applied to the destination rectangle.
      *
      * @param texture texture to draw
      * @param bounds destination rectangle
@@ -129,11 +131,14 @@ public final class RenderManager {
      * @throws IllegalStateException if no frame is in progress
      */
     public void image(Texture texture, Rect bounds) {
-        list().image(texture, bounds);
+        list().image(texture, bounds, 0, FULL_UV, Color.WHITE, currentTransform());
     }
 
     /**
      * Appends a texture region with no tint.
+     * The UV region selects a normalized top-left sub-rectangle, which makes the overload suitable
+     * for sampling sprites from an atlas. The current transform is applied to the destination
+     * rectangle.
      *
      * @param texture texture to draw
      * @param bounds destination rectangle
@@ -142,11 +147,12 @@ public final class RenderManager {
      * @throws IllegalStateException if no frame is in progress
      */
     public void image(Texture texture, Rect bounds, Rect uv) {
-        list().image(texture, bounds, uv);
+        list().image(texture, bounds, 0, uv, Color.WHITE, currentTransform());
     }
 
     /**
      * Appends a textured rounded rectangle.
+     * The current transform is applied to the destination rectangle.
      *
      * @param texture texture to draw
      * @param bounds destination rectangle
@@ -158,7 +164,7 @@ public final class RenderManager {
      * @throws IllegalStateException if no frame is in progress
      */
     public void image(Texture texture, Rect bounds, float radius, Rect uv, Color tint) {
-        list().image(texture, bounds, radius, uv, tint);
+        list().image(texture, bounds, radius, uv, tint, currentTransform());
     }
 
     /**
@@ -192,9 +198,8 @@ public final class RenderManager {
     }
 
     /**
-     * Pushes a transform that applies to subsequent shape and mesh commands.
+     * Pushes a transform that applies to subsequent shape, mesh, image and texture-mask commands.
      * Transforms compose with the current transform; the new transform is applied first.
-     * Image commands keep their explicit bounds and are not transformed by this stack.
      *
      * @param transform transform to push
      * @throws NullPointerException if {@code transform} is null
@@ -588,8 +593,7 @@ public final class RenderManager {
 
     /**
      * Pushes a texture mask with an explicit sampled region.
-     * Pixels with zero alpha are outside the mask. The mask rectangle is not affected by the
-     * current transform.
+     * Pixels with zero alpha are outside the mask. The mask rectangle follows the current transform.
      *
      * @param texture mask texture
      * @param bounds destination rectangle in logical UI units
@@ -601,7 +605,7 @@ public final class RenderManager {
         Objects.requireNonNull(texture, "texture");
         Objects.requireNonNull(bounds, "bounds");
         Objects.requireNonNull(uv, "uv");
-        list().pushMask(texture, bounds, uv);
+        list().pushMask(texture, bounds, uv, currentTransform());
     }
 
     /**

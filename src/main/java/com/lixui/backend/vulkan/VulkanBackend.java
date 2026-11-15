@@ -1,6 +1,8 @@
 package com.lixui.backend.vulkan;
 
+import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
+import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
 import com.lixui.render.DrawCommand;
 import com.lixui.render.DrawList;
@@ -996,9 +998,9 @@ public final class VulkanBackend implements RenderBackend {
             } else if (command instanceof MaskEndCommand mask) {
                 appendMask(mask.vertices());
             } else if (command instanceof MaskTextureBeginCommand mask) {
-                appendTexturedQuad(mask.bounds(), mask.uv());
+                appendTexturedQuad(mask.bounds(), mask.uv(), mask.transform());
             } else if (command instanceof MaskTextureEndCommand mask) {
-                appendTexturedQuad(mask.bounds(), mask.uv());
+                appendTexturedQuad(mask.bounds(), mask.uv(), mask.transform());
             } else if (command instanceof MeshCommand mesh) {
                 appendMesh(mesh);
             } else {
@@ -1042,36 +1044,58 @@ public final class VulkanBackend implements RenderBackend {
     }
 
     private void appendQuad(DrawCommand command) {
-        Rect uv = command instanceof ImageCommand image ? image.uv() : FULL_UV;
-        appendQuad(command.bounds(), command.radius(), command.color(), uv);
+        if (command instanceof ImageCommand image) {
+            appendQuad(image.bounds(), image.radius(), image.color(), image.uv(), image.transform());
+        } else {
+            appendQuad(command.bounds(), command.radius(), command.color(), FULL_UV, Transform.IDENTITY);
+        }
     }
 
-    private void appendQuad(Rect bounds, float radius, Color color, Rect uv) {
+    private void appendQuad(Rect bounds, float radius, Color color, Rect uv, Transform transform) {
         float halfWidth = bounds.width() / 2;
         float halfHeight = bounds.height() / 2;
-        float left = bounds.x();
-        float top = bounds.y();
-        float right = bounds.right();
-        float bottom = bounds.bottom();
         float red = color.r();
         float green = color.g();
         float blue = color.b();
         float alpha = color.a();
+        float x0 = bounds.x();
+        float y0 = bounds.y();
+        float x1 = bounds.right();
+        float y1 = y0;
+        float x2 = x1;
+        float y2 = bounds.bottom();
+        float x3 = x0;
+        float y3 = y2;
+        if (!transform.isIdentity()) {
+            Point topLeft = transform.apply(new Point(x0, y0));
+            Point topRight = transform.apply(new Point(x1, y1));
+            Point bottomRight = transform.apply(new Point(x2, y2));
+            Point bottomLeft = transform.apply(new Point(x3, y3));
+            x0 = topLeft.x();
+            y0 = topLeft.y();
+            x1 = topRight.x();
+            y1 = topRight.y();
+            x2 = bottomRight.x();
+            y2 = bottomRight.y();
+            x3 = bottomLeft.x();
+            y3 = bottomLeft.y();
+        }
+
         float u0 = uv.x();
         float v0 = uv.y();
         float u1 = uv.right();
         float v1 = uv.bottom();
 
-        putVertex(left, top, -halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v0);
-        putVertex(right, top, halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v0);
-        putVertex(right, bottom, halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v1);
-        putVertex(left, top, -halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v0);
-        putVertex(right, bottom, halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v1);
-        putVertex(left, bottom, -halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v1);
+        putVertex(x0, y0, -halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v0);
+        putVertex(x1, y1, halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v0);
+        putVertex(x2, y2, halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v1);
+        putVertex(x0, y0, -halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v0);
+        putVertex(x2, y2, halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v1);
+        putVertex(x3, y3, -halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v1);
     }
 
-    private void appendTexturedQuad(Rect bounds, Rect uv) {
-        appendQuad(bounds, 0, Color.WHITE, uv);
+    private void appendTexturedQuad(Rect bounds, Rect uv, Transform transform) {
+        appendQuad(bounds, 0, Color.WHITE, uv, transform);
     }
 
     private void appendMesh(MeshCommand command) {

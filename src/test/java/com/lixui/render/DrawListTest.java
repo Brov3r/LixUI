@@ -1,6 +1,7 @@
 package com.lixui.render;
 
 import com.lixui.geometry.Rect;
+import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
 import org.junit.jupiter.api.Test;
 
@@ -155,6 +156,24 @@ class DrawListTest {
         assertEquals(tint, command.color());
         assertEquals(8, command.radius());
         assertSame(VIEWPORT, command.clip());
+        assertEquals(Transform.IDENTITY, command.transform());
+    }
+
+    @Test
+    void imageCommandsCaptureAtlasRegionAndTransform() {
+        DrawList list = new DrawList(VIEWPORT);
+        Texture atlas = new TestTexture(256, 256);
+        Rect atlasUv = new Rect(0.25f, 0.5f, 0.125f, 0.25f);
+        Rect bounds = new Rect(0, 0, 64, 32);
+        Transform transform = Transform.translation(10, 20).rotate(0.5f);
+
+        list.image(atlas, bounds, 4, atlasUv, Color.WHITE, transform);
+
+        ImageCommand command = (ImageCommand) list.commands().get(0);
+        assertSame(atlas, command.texture());
+        assertEquals(atlasUv, command.uv());
+        assertEquals(bounds, command.bounds());
+        assertEquals(transform, command.transform());
     }
 
     @Test
@@ -171,9 +190,11 @@ class DrawListTest {
         assertEquals(new Rect(0, 0, 1, 1), first.uv());
         assertEquals(Color.WHITE, first.color());
         assertEquals(0, first.radius());
+        assertEquals(Transform.IDENTITY, first.transform());
 
         ImageCommand second = (ImageCommand) list.commands().get(1);
         assertEquals(new Rect(0, 0, 0.5f, 0.5f), second.uv());
+        assertEquals(Transform.IDENTITY, second.transform());
     }
 
     @Test
@@ -205,6 +226,8 @@ class DrawListTest {
         assertThrows(NullPointerException.class, () -> list.image(null, bounds, 0, uv, Color.WHITE));
         assertThrows(NullPointerException.class, () -> list.image(texture, bounds, 0, null, Color.WHITE));
         assertThrows(NullPointerException.class, () -> list.image(texture, bounds, 0, uv, null));
+        assertThrows(NullPointerException.class, () -> list.image(texture, bounds, 0, uv, Color.WHITE, null));
+        assertThrows(NullPointerException.class, () -> list.pushMask(texture, bounds, uv, null));
     }
 
     @Test
@@ -293,7 +316,28 @@ class DrawListTest {
         assertEquals(bounds, begin.bounds());
         assertEquals(uv, begin.uv());
         assertSame(VIEWPORT, begin.clip());
-        assertTrue(list.commands().get(1) instanceof MaskTextureEndCommand);
+        assertEquals(Transform.IDENTITY, begin.transform());
+        MaskTextureEndCommand end = (MaskTextureEndCommand) list.commands().get(1);
+        assertEquals(Transform.IDENTITY, end.transform());
+    }
+
+    @Test
+    void textureMasksCaptureTheTransform() {
+        DrawList list = new DrawList(VIEWPORT);
+        Texture texture = new TestTexture(64, 64);
+        Rect bounds = new Rect(10, 20, 100, 50);
+        Rect uv = new Rect(0.25f, 0.5f, 0.5f, 0.25f);
+        Transform transform = Transform.translation(5, 7).rotate(0.75f);
+
+        list.pushMask(texture, bounds, uv, transform);
+        list.popMask();
+
+        MaskTextureBeginCommand begin = (MaskTextureBeginCommand) list.commands().get(0);
+        assertEquals(uv, begin.uv());
+        assertEquals(transform, begin.transform());
+        MaskTextureEndCommand end = (MaskTextureEndCommand) list.commands().get(1);
+        assertEquals(bounds, end.bounds());
+        assertEquals(transform, end.transform());
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.lixui.render;
 
 import com.lixui.geometry.Rect;
+import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
 
 import java.util.ArrayDeque;
@@ -106,7 +107,8 @@ public final class DrawList {
         }
         Rect clip = clips.peek();
         Rect bounds = boundsOf(vertices);
-        MaskState state = new MaskState(List.copyOf(vertices), null, bounds, Rect.EMPTY, clip);
+        MaskState state = new MaskState(List.copyOf(vertices), null, bounds, Rect.EMPTY,
+                Transform.IDENTITY, clip);
         masks.push(state);
         commands.add(new MaskBeginCommand(state.vertices(), state.bounds(), state.clip()));
     }
@@ -122,12 +124,28 @@ public final class DrawList {
      * @throws NullPointerException if any argument is null
      */
     public void pushMask(Texture texture, Rect bounds, Rect uv) {
+        pushMask(texture, bounds, uv, Transform.IDENTITY);
+    }
+
+    /**
+     * Pushes a stencil mask driven by a texture's alpha channel with an affine transform.
+     * Content submitted until the matching {@link #popMask()} is clipped to the non-transparent
+     * parts of the sampled texture region, mapped by the transform.
+     *
+     * @param texture mask texture
+     * @param bounds destination rectangle before {@code transform} is applied
+     * @param uv sampled texture region
+     * @param transform affine transform applied to the destination rectangle
+     * @throws NullPointerException if any argument is null
+     */
+    public void pushMask(Texture texture, Rect bounds, Rect uv, Transform transform) {
         Objects.requireNonNull(texture, "texture");
         Objects.requireNonNull(bounds, "bounds");
         Objects.requireNonNull(uv, "uv");
-        MaskState state = new MaskState(null, texture, bounds, uv, clips.peek());
+        Objects.requireNonNull(transform, "transform");
+        MaskState state = new MaskState(null, texture, bounds, uv, transform, clips.peek());
         masks.push(state);
-        commands.add(new MaskTextureBeginCommand(texture, bounds, uv, state.clip()));
+        commands.add(new MaskTextureBeginCommand(texture, bounds, uv, state.clip(), transform));
     }
 
     /**
@@ -144,7 +162,7 @@ public final class DrawList {
             commands.add(new MaskEndCommand(state.vertices(), state.bounds(), state.clip()));
         } else {
             commands.add(new MaskTextureEndCommand(
-                    state.texture(), state.bounds(), state.uv(), state.clip()));
+                    state.texture(), state.bounds(), state.uv(), state.clip(), state.transform()));
         }
     }
 
@@ -187,11 +205,13 @@ public final class DrawList {
      * @throws NullPointerException if {@code texture} or {@code bounds} is null
      */
     public void image(Texture texture, Rect bounds) {
-        image(texture, bounds, 0, FULL_UV, Color.WHITE);
+        image(texture, bounds, 0, FULL_UV, Color.WHITE, Transform.IDENTITY);
     }
 
     /**
      * Appends a texture with an explicit UV region and no tint.
+     * The UV region selects a normalized top-left sub-rectangle of the texture, so atlases can be
+     * sampled by supplying the sprite region.
      *
      * @param texture the texture to draw
      * @param bounds the destination rectangle
@@ -199,7 +219,7 @@ public final class DrawList {
      * @throws NullPointerException if any argument is null
      */
     public void image(Texture texture, Rect bounds, Rect uv) {
-        image(texture, bounds, 0, uv, Color.WHITE);
+        image(texture, bounds, 0, uv, Color.WHITE, Transform.IDENTITY);
     }
 
     /**
@@ -215,15 +235,35 @@ public final class DrawList {
      * @throws IllegalArgumentException if radius is non-finite or negative
      */
     public void image(Texture texture, Rect bounds, float radius, Rect uv, Color tint) {
+        image(texture, bounds, radius, uv, tint, Transform.IDENTITY);
+    }
+
+    /**
+     * Appends a textured rounded rectangle with an affine transform using the current clip.
+     * The transform maps {@code bounds}, so the corner radius and texture coordinates stay local.
+     * Commands with empty bounds or an empty clip are omitted.
+     *
+     * @param texture the texture to draw
+     * @param bounds the destination rectangle before {@code transform} is applied
+     * @param radius corner radius in logical UI units before {@code transform} is applied
+     * @param uv the sampled texture region
+     * @param tint straight-alpha tint multiplied with the sampled texel
+     * @param transform affine transform applied to the destination rectangle
+     * @throws NullPointerException if any reference argument is null
+     * @throws IllegalArgumentException if radius is non-finite or negative
+     */
+    public void image(Texture texture, Rect bounds, float radius, Rect uv, Color tint,
+                      Transform transform) {
         Objects.requireNonNull(texture, "texture");
         Objects.requireNonNull(bounds, "bounds");
         Objects.requireNonNull(uv, "uv");
         Objects.requireNonNull(tint, "tint");
+        Objects.requireNonNull(transform, "transform");
         Rect clip = clips.peek();
         if (bounds.isEmpty() || clip.isEmpty()) {
             return;
         }
-        commands.add(new ImageCommand(bounds, radius, uv, texture, tint, clip));
+        commands.add(new ImageCommand(bounds, radius, uv, texture, tint, clip, transform));
     }
 
     /**
@@ -289,6 +329,6 @@ public final class DrawList {
     }
 
     private record MaskState(List<MeshVertex> vertices, Texture texture,
-                             Rect bounds, Rect uv, Rect clip) {
+                             Rect bounds, Rect uv, Transform transform, Rect clip) {
     }
 }

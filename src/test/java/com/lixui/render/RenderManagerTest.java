@@ -210,6 +210,32 @@ class RenderManagerTest {
     }
 
     @Test
+    void transformsApplyToImageCommandsWithTheAtlasRegion() {
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+        Texture texture = new TestTexture(256, 256);
+        Rect bounds = new Rect(0, 0, 64, 32);
+        Rect atlasUv = new Rect(0.25f, 0.5f, 0.125f, 0.25f);
+        Transform transform = Transform.translation(10, 20).rotate(0.5f);
+
+        manager.begin();
+        manager.withTransform(transform, () -> manager.image(texture, bounds, atlasUv));
+        manager.image(texture, bounds);
+        manager.end();
+
+        List<DrawCommand> commands = backend.lastDrawList.commands();
+        ImageCommand transformed = (ImageCommand) commands.get(0);
+        assertSame(texture, transformed.texture());
+        assertEquals(bounds, transformed.bounds());
+        assertEquals(atlasUv, transformed.uv());
+        assertEquals(transform, transformed.transform());
+
+        ImageCommand plain = (ImageCommand) commands.get(1);
+        assertEquals(Transform.IDENTITY, plain.transform());
+    }
+
+    @Test
     void groupTransformsComposeAndResetEachFrame() {
         RecordingBackend backend = new RecordingBackend();
         RenderManager manager = new RenderManager(backend);
@@ -248,6 +274,32 @@ class RenderManagerTest {
 
         assertTrue(manager.currentTransform().isIdentity());
         manager.end();
+    }
+
+    @Test
+    void transformsApplyToTextureMasks() {
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+        Texture texture = new TestTexture(64, 64);
+        Rect bounds = new Rect(10, 20, 100, 50);
+        Rect atlasUv = new Rect(0.25f, 0.5f, 0.5f, 0.25f);
+        Transform transform = Transform.translation(5, 7).rotate(0.75f);
+
+        manager.begin();
+        manager.withTransform(transform, () -> {
+            manager.pushMaskTexture(texture, bounds, atlasUv);
+            manager.popMask();
+        });
+        manager.end();
+
+        List<DrawCommand> commands = backend.lastDrawList.commands();
+        MaskTextureBeginCommand begin = (MaskTextureBeginCommand) commands.get(0);
+        assertSame(texture, begin.texture());
+        assertEquals(bounds, begin.bounds());
+        assertEquals(atlasUv, begin.uv());
+        assertEquals(transform, begin.transform());
+        assertEquals(transform, ((MaskTextureEndCommand) commands.get(1)).transform());
     }
 
     @Test

@@ -11,6 +11,7 @@ public sealed interface DrawCommand permits RoundedRectCommand, ImageCommand, Me
         MaskBeginCommand, MaskEndCommand, MaskTextureBeginCommand, MaskTextureEndCommand {
     /**
      * Returns the rectangle occupied by the primitive.
+     * Transformed primitives report their local bounds, before the transform is applied.
      *
      * @return the primitive bounds
      */
