@@ -46,6 +46,8 @@ public final class Font {
     private final Map<Long, Float> kerning;
     private final Map<LayoutKey, List<TextGlyph>> layoutCache =
             new LinkedHashMap<>(16, 0.75f, true);
+    private final Map<TextLayoutKey, TextLayout> textLayoutCache =
+            new LinkedHashMap<>(16, 0.75f, true);
 
     Font(ImageData atlas, float pixelSize, float ascent, float descent, float lineHeight,
             float letterSpacing, FontStyle style, Map<Integer, Glyph> glyphs,
@@ -548,6 +550,192 @@ public final class Font {
         return walk(text, 0, 0, null);
     }
 
+    /**
+     * Measures a text block using wrapping and truncation options.
+     *
+     * @param text text to measure
+     * @param style layout options
+     * @return the measured width and height in logical UI units
+     * @throws NullPointerException if an argument is null
+     */
+    public Size measure(String text, TextStyle style) {
+        Objects.requireNonNull(text, "text");
+        Objects.requireNonNull(style, "style");
+        return layoutBlockRelative(text, style).size();
+    }
+
+    /**
+     * Positions the glyph quads of a wrapped text block.
+     * The origin is the top-left corner of the block.
+     *
+     * @param text text to lay out
+     * @param x horizontal origin in logical UI units
+     * @param y vertical origin in logical UI units
+     * @param style layout options
+     * @return glyph quads in drawing order
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if an origin is non-finite
+     */
+    public List<TextGlyph> layout(String text, float x, float y, TextStyle style) {
+        Objects.requireNonNull(style, "style");
+        validateOrigin(x, y);
+        List<TextGlyph> relative = layoutBlockRelative(text, style).glyphs();
+        if (x == 0 && y == 0) {
+            return relative;
+        }
+        List<TextGlyph> quads = new ArrayList<>(relative.size());
+        for (TextGlyph glyph : relative) {
+            Rect bounds = glyph.bounds();
+            quads.add(new TextGlyph(new Rect(bounds.x() + x, bounds.y() + y,
+                    bounds.width(), bounds.height()), glyph.uv()));
+        }
+        return quads;
+    }
+
+    /**
+     * Positions a wrapped text block relative to the origin {@code (0, 0)}.
+     * Results are cached by text and style and can be reused across frames.
+     *
+     * @param text text to lay out
+     * @param style layout options
+     * @return an immutable text layout
+     * @throws NullPointerException if an argument is null
+     */
+    public TextLayout layoutBlockRelative(String text, TextStyle style) {
+        Objects.requireNonNull(text, "text");
+        Objects.requireNonNull(style, "style");
+        TextLayoutKey key = new TextLayoutKey(text, style);
+        synchronized (textLayoutCache) {
+            TextLayout cached = textLayoutCache.get(key);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        TextLayout computed = buildTextLayout(text, style);
+        synchronized (textLayoutCache) {
+            textLayoutCache.put(key, computed);
+            if (textLayoutCache.size() > MAX_LAYOUT_CACHE_ENTRIES) {
+                Iterator<Map.Entry<TextLayoutKey, TextLayout>> iterator =
+                        textLayoutCache.entrySet().iterator();
+                if (iterator.hasNext()) {
+                    iterator.next();
+                    iterator.remove();
+                }
+            }
+        }
+        return computed;
+    }
+
+    private TextLayout buildTextLayout(String text, TextStyle style) {
+        List<LineSpec> specs = wrapLines(text, style);
+        float resolvedLineHeight = style.lineHeight() > 0 ? style.lineHeight() : lineHeight;
+        float top = alignedTop(0, specs.size() * resolvedLineHeight, style.vertical());
+        List<TextGlyph> quads = new ArrayList<>();
+        List<TextLine> lines = new ArrayList<>(specs.size());
+        float maxWidth = 0;
+        for (int index = 0; index < specs.size(); index++) {
+            LineSpec spec = specs.get(index);
+            float width = walk(spec.text(), 0, 0, null).width();
+            float lineX = alignedX(0, width, style.horizontal());
+            float lineY = top + index * resolvedLineHeight;
+            walk(spec.text(), lineX, lineY, quads);
+            lines.add(new TextLine(spec.start(), spec.end(), lineX, lineY, width));
+            maxWidth = Math.max(maxWidth, width);
+        }
+        return new TextLayout(this, text, style, new Size(maxWidth, specs.size() * resolvedLineHeight),
+                resolvedLineHeight, quads, lines);
+    }
+
+    private List<LineSpec> wrapLines(String text, TextStyle style) {
+        List<LineSpec> lines = new ArrayList<>();
+        int paragraphStart = 0;
+        for (int index = 0; index <= text.length(); index++) {
+            if (index == text.length() || text.charAt(index) == '\n') {
+                wrapParagraph(text.substring(paragraphStart, index), paragraphStart, style, lines);
+                paragraphStart = index + 1;
+            }
+        }
+        int maxLines = style.maxLines();
+        if (maxLines > 0 && lines.size() > maxLines) {
+            while (lines.size() > maxLines) {
+                lines.remove(lines.size() - 1);
+            }
+            if (style.overflow() == TextOverflow.ELLIPSIS) {
+                int lastIndex = lines.size() - 1;
+                LineSpec last = lines.get(lastIndex);
+                lines.set(lastIndex, truncate(last, style.maxWidth()));
+            }
+        }
+        return lines;
+    }
+
+    private void wrapParagraph(String paragraph, int paragraphStart, TextStyle style,
+                               List<LineSpec> lines) {
+        if (paragraph.isEmpty()) {
+            lines.add(new LineSpec(paragraphStart, paragraphStart, ""));
+            return;
+        }
+        float maxWidth = style.maxWidth();
+        if (maxWidth <= 0) {
+            lines.add(new LineSpec(paragraphStart, paragraphStart + paragraph.length(), paragraph));
+            return;
+        }
+        int lineStart = 0;
+        while (lineStart < paragraph.length()) {
+            int lineEnd = findLineEnd(paragraph, lineStart, maxWidth);
+            String lineText = paragraph.substring(lineStart, lineEnd);
+            lines.add(new LineSpec(paragraphStart + lineStart, paragraphStart + lineEnd, lineText));
+            lineStart = lineEnd;
+            while (lineStart < paragraph.length() && paragraph.charAt(lineStart) == ' ') {
+                lineStart++;
+            }
+        }
+    }
+
+    private int findLineEnd(String paragraph, int start, float maxWidth) {
+        int end = start;
+        int lastBreak = -1;
+        while (end < paragraph.length()) {
+            int codepoint = paragraph.codePointAt(end);
+            int next = end + Character.charCount(codepoint);
+            boolean overflow = walk(paragraph.substring(start, next), 0, 0, null).width() > maxWidth;
+            if (overflow) {
+                if (end == start) {
+                    end = next;
+                } else if (codepoint == ' ' || codepoint == '\t') {
+                    lastBreak = end;
+                }
+                break;
+            }
+            if (codepoint == ' ' || codepoint == '\t') {
+                lastBreak = end;
+            } else if (codepoint == '-') {
+                lastBreak = next;
+            }
+            end = next;
+        }
+        if (end < paragraph.length() && lastBreak > start) {
+            end = lastBreak;
+        }
+        return end;
+    }
+
+    private LineSpec truncate(LineSpec line, float maxWidth) {
+        String ellipsis = glyphs.containsKey(0x2026) ? "\u2026" : "...";
+        String text = line.text();
+        int keep = text.length();
+        if (maxWidth > 0) {
+            while (keep > 0 && walk(text.substring(0, keep) + ellipsis, 0, 0, null).width() > maxWidth) {
+                int previous = text.offsetByCodePoints(keep, -1);
+                keep = previous;
+            }
+            if (walk(ellipsis, 0, 0, null).width() > maxWidth) {
+                return new LineSpec(line.start(), line.start(), "");
+            }
+        }
+        return new LineSpec(line.start(), line.start() + keep, text.substring(0, keep) + ellipsis);
+    }
+
     private Size walk(String text, float x, float y, List<TextGlyph> quads) {
         float penX = x;
         float baseline = y + ascent;
@@ -805,6 +993,12 @@ public final class Font {
 
     private record LayoutKey(String text, HorizontalAlignment horizontal,
                              VerticalAlignment vertical) {
+    }
+
+    private record TextLayoutKey(String text, TextStyle style) {
+    }
+
+    private record LineSpec(int start, int end, String text) {
     }
 
     private record Packing(int width, int height, byte[] pixels, List<PlacedGlyph> placed) {

@@ -2,6 +2,7 @@ package com.lixui.render;
 
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
+import com.lixui.geometry.Size;
 import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
 import com.lixui.graphics.GradientStop;
@@ -12,6 +13,8 @@ import com.lixui.text.FontStyle;
 import com.lixui.text.Glyph;
 import com.lixui.text.HorizontalAlignment;
 import com.lixui.text.SystemFonts;
+import com.lixui.text.TextOverflow;
+import com.lixui.text.TextStyle;
 import com.lixui.text.VerticalAlignment;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -524,6 +527,26 @@ class RenderManagerTest {
                 glyph.width(), glyph.height());
         TextCommand command = (TextCommand) backend.lastDrawList.commands().get(0);
         assertEquals(expected, command.glyphs().get(0).bounds());
+    }
+
+    @Test
+    void textSupportsWrappedStyles() {
+        FontData data = SystemFonts.findDefault().orElse(null);
+        Assumptions.assumeTrue(data != null, "No readable system font is installed.");
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+        Font font = manager.createFont(data, 24, new int[]{'A', 'B', ' '});
+        TextStyle style = new TextStyle(font.measure("AAA").width() + 1, 0, 2,
+                TextOverflow.ELLIPSIS, HorizontalAlignment.LEFT, VerticalAlignment.TOP);
+
+        Size measured = manager.measureText(font, "AAA AAA AAA", style);
+        manager.begin();
+        manager.text(font, "AAA AAA AAA", 0, 0, RED, style);
+        manager.end();
+
+        assertTrue(measured.height() > font.lineHeight());
+        assertEquals(1, backend.lastDrawList.commands().size());
     }
 
     @Test

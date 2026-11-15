@@ -1,5 +1,7 @@
 package com.lixui.demo;
 
+import com.lixui.glfw.GlfwPlatform;
+import com.lixui.input.InputState;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -19,13 +21,14 @@ public final class VulkanDemo {
      */
     public static void main(String[] args) {
         DemoPlacement placement = DemoPlacement.fromArgs(args);
+        InputState input = new InputState();
         try (DemoWindow window = new DemoWindow("LixUI Demo - Vulkan", GLFW.GLFW_NO_API, placement);
-                DemoInput input = new DemoInput(window.handle());
-                VulkanRenderer renderer = new VulkanRenderer(window.handle())) {
+                DemoInput inputAdapter = new DemoInput(window.handle(), input);
+                GlfwPlatform platform = GlfwPlatform.install(window.handle());
+                VulkanRenderer renderer = new VulkanRenderer(window.handle(), input, platform)) {
             window.show();
             while (!window.shouldClose()) {
                 GLFW.glfwPollEvents();
-                input.poll();
                 if (!renderer.render()) {
                     GLFW.glfwWaitEventsTimeout(0.1);
                 }

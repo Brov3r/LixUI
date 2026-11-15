@@ -140,6 +140,83 @@ class FontTest {
     }
 
     @Test
+    void wrapsWordsAtTheMaximumWidth() {
+        Font font = testFont();
+        TextStyle style = new TextStyle(25, 0, 0, TextOverflow.CLIP,
+                HorizontalAlignment.LEFT, VerticalAlignment.TOP);
+
+        TextLayout layout = font.layoutBlockRelative("A A A", style);
+
+        assertSize(new Size(24, 36), layout.size());
+        assertEquals(2, layout.lines().size());
+        assertEquals(new TextLine(0, 3, 0, 0, 24), layout.lines().get(0));
+        assertEquals(new TextLine(4, 5, 0, 18, 10), layout.lines().get(1));
+        assertEquals(3, layout.glyphs().size());
+        assertSize(new Size(24, 36), font.measure("A A A", style));
+    }
+
+    @Test
+    void hardBreaksWordsThatExceedTheMaximumWidth() {
+        Font font = testFont();
+        TextStyle style = new TextStyle(12, 0, 0, TextOverflow.CLIP,
+                HorizontalAlignment.LEFT, VerticalAlignment.TOP);
+
+        TextLayout layout = font.layoutBlockRelative("AB", style);
+
+        assertEquals(2, layout.lines().size());
+        assertEquals(10, layout.lines().get(0).width());
+        assertEquals(7, layout.lines().get(1).width());
+        assertEquals(36, layout.size().height());
+    }
+
+    @Test
+    void appliesExplicitLineHeightAndAlignment() {
+        Font font = testFont();
+        TextStyle style = new TextStyle(25, 20, 0, TextOverflow.CLIP,
+                HorizontalAlignment.CENTER, VerticalAlignment.TOP);
+
+        TextLayout layout = font.layoutBlockRelative("A A A", style);
+
+        assertEquals(40, layout.size().height());
+        assertEquals(-12, layout.lines().get(0).x());
+        assertEquals(0, layout.lines().get(0).y());
+        assertEquals(20, layout.lines().get(1).y());
+    }
+
+    @Test
+    void clipsOrEllipsizesLinesBeyondTheMaximum() {
+        Font font = testFont();
+        TextStyle clip = new TextStyle(25, 0, 1, TextOverflow.CLIP,
+                HorizontalAlignment.LEFT, VerticalAlignment.TOP);
+        TextStyle ellipsis = new TextStyle(25, 0, 1, TextOverflow.ELLIPSIS,
+                HorizontalAlignment.LEFT, VerticalAlignment.TOP);
+
+        TextLayout clipped = font.layoutBlockRelative("A A A", clip);
+        TextLayout truncated = font.layoutBlockRelative("A A A", ellipsis);
+
+        assertEquals(1, clipped.lines().size());
+        assertEquals(24, clipped.lines().get(0).width());
+        assertEquals(1, truncated.lines().size());
+        assertEquals(22, truncated.lines().get(0).width());
+        assertEquals(1, truncated.lines().get(0).end());
+    }
+
+    @Test
+    void exposesCaretAndSelectionGeometry() {
+        Font font = testFont();
+        TextLayout layout = font.layoutBlockRelative("A A", TextStyle.DEFAULT);
+
+        assertSize(new Size(24, 18), layout.size());
+        assertEquals(10, layout.caretPosition(1).x());
+        assertEquals(14, layout.caretPosition(2).x());
+        assertEquals(24, layout.caretPosition(3).x());
+        assertEquals(1, layout.caretIndexAt(11, 5));
+        assertEquals(2, layout.caretIndexAt(13, 5));
+        assertEquals(List.of(new Rect(0, 0, 14, 18)), layout.selectionRects(0, 2));
+        assertEquals(List.of(new Rect(10, 0, 14, 18)), layout.selectionRects(1, 3));
+    }
+
+    @Test
     void letterSpacingAddsSpaceBetweenGlyphsOnly() {
         Font font = testFont(2);
 
@@ -294,6 +371,7 @@ class FontTest {
     private static Font testFont(float letterSpacing) {
         Map<Integer, Glyph> glyphs = new HashMap<>();
         glyphs.put((int) ' ', new Glyph(' ', Rect.EMPTY, 0, 0, 0, 0, 4));
+        glyphs.put((int) '.', new Glyph('.', Rect.EMPTY, 0, 0, 0, 0, 4));
         glyphs.put((int) 'A', new Glyph('A', UV, 1, -10, 8, 12, 10));
         glyphs.put((int) 'B', new Glyph('B', UV, 0, -8, 6, 10, 7));
         Map<Long, Float> kerning = Map.of(((long) 'A' << 32) | 'B', -1.5f);

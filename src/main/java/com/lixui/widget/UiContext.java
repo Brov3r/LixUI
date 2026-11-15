@@ -1,0 +1,379 @@
+package com.lixui.widget;
+
+import com.lixui.geometry.Rect;
+import com.lixui.input.MouseButton;
+import com.lixui.platform.Cursor;
+import com.lixui.platform.UiPlatform;
+import com.lixui.render.ImageData;
+import com.lixui.render.RenderManager;
+import com.lixui.render.Texture;
+import com.lixui.render.Viewport;
+import com.lixui.text.Font;
+import com.lixui.text.FontData;
+import com.lixui.text.FontStyle;
+import com.lixui.theme.Theme;
+
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+
+/**
+ * Shared services and state available to attached widgets.
+ * A context is owned by a {@link WidgetManager}; it exposes the logical viewport, display scale,
+ * theme, default font, clipboard, cursor and resource factories.
+ * Textures and fonts created through the context are tracked and released by {@link #close()}.
+ * Resources created directly through {@link RenderManager} are owned by the caller instead.
+ */
+public final class UiContext implements AutoCloseable {
+    private final RenderManager renderer;
+    private final UiPlatform platform;
+    private final WidgetManager manager;
+    private final Set<Texture> textures = identitySet();
+    private final Set<Font> fonts = identitySet();
+    private Rect viewport = Rect.EMPTY;
+    private float scaleX = 1;
+    private float scaleY = 1;
+    private Theme theme = Theme.dark();
+    private Font defaultFont;
+    private Cursor cursor = Cursor.DEFAULT;
+    private boolean closed;
+
+    UiContext(RenderManager renderer, UiPlatform platform) {
+        this(renderer, platform, null);
+    }
+
+    UiContext(RenderManager renderer, UiPlatform platform, WidgetManager manager) {
+        this.renderer = Objects.requireNonNull(renderer, "renderer");
+        this.platform = Objects.requireNonNull(platform, "platform");
+        this.manager = manager;
+    }
+
+    /**
+     * Returns the logical viewport in UI units.
+     *
+     * @return the viewport, or an empty rectangle before the first resize
+     */
+    public Rect viewport() {
+        return viewport;
+    }
+
+    /**
+     * Returns the horizontal number of physical pixels per logical UI unit.
+     *
+     * @return the positive horizontal display scale
+     */
+    public float scaleX() {
+        return scaleX;
+    }
+
+    /**
+     * Returns the vertical number of physical pixels per logical UI unit.
+     *
+     * @return the positive vertical display scale
+     */
+    public float scaleY() {
+        return scaleY;
+    }
+
+    /**
+     * Returns the average display scale, suitable for icons and stroke sizes on uniform displays.
+     *
+     * @return the positive average number of physical pixels per logical UI unit
+     */
+    public float density() {
+        return (scaleX + scaleY) / 2;
+    }
+
+    /**
+     * Returns the active theme.
+     *
+     * @return the current theme
+     */
+    public Theme theme() {
+        return theme;
+    }
+
+    /**
+     * Returns the font used by widgets when no explicit font is supplied.
+     *
+     * @return the default font, or null when the host has not assigned one
+     */
+    public Font defaultFont() {
+        return defaultFont;
+    }
+
+    /**
+     * Returns the current pointer cursor requested by the UI.
+     *
+     * @return the active cursor shape
+     */
+    public Cursor cursor() {
+        return cursor;
+    }
+
+    /**
+     * Returns the current clipboard text.
+     *
+     * @return the clipboard text, or an empty string when the clipboard is unavailable or empty
+     * @throws IllegalStateException if the context is closed
+     */
+    public String clipboardText() {
+        ensureOpen();
+        String text = platform.clipboardText();
+        return text == null ? "" : text;
+    }
+
+    /**
+     * Replaces the clipboard text.
+     *
+     * @param text text to copy
+     * @throws NullPointerException if {@code text} is null
+     * @throws IllegalStateException if the context is closed
+     */
+    public void setClipboardText(String text) {
+        ensureOpen();
+        platform.setClipboardText(Objects.requireNonNull(text, "text"));
+    }
+
+    /**
+     * Changes the pointer cursor.
+     * Repeated requests for the same cursor do not reach the platform.
+     *
+     * @param cursor requested cursor
+     * @throws NullPointerException if {@code cursor} is null
+     * @throws IllegalStateException if the context is closed
+     */
+    public void setCursor(Cursor cursor) {
+        ensureOpen();
+        Objects.requireNonNull(cursor, "cursor");
+        if (this.cursor == cursor) {
+            return;
+        }
+        platform.setCursor(cursor);
+        this.cursor = cursor;
+    }
+
+    /**
+     * Gives keyboard focus to a widget.
+     *
+     * @param widget widget to focus
+     * @throws NullPointerException if {@code widget} is null
+     * @throws IllegalArgumentException if the widget is not focusable, not interactive or not attached
+     * @throws IllegalStateException if the context has no manager or is closed
+     */
+    public void requestFocus(Widget widget) {
+        ensureOpen();
+        manager().focus(Objects.requireNonNull(widget, "widget"));
+    }
+
+    /**
+     * Captures pointer button events for a widget until the button is released or the capture is
+     * explicitly released.
+     *
+     * @param widget widget that receives captured pointer events
+     * @param button captured button
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the widget is not attached
+     * @throws IllegalStateException if the context has no manager or is closed
+     */
+    public void capturePointer(Widget widget, MouseButton button) {
+        ensureOpen();
+        manager().capturePointer(Objects.requireNonNull(widget, "widget"),
+                Objects.requireNonNull(button, "button"));
+    }
+
+    /**
+     * Releases a pointer capture for a button.
+     *
+     * @param button released button
+     * @throws NullPointerException if {@code button} is null
+     * @throws IllegalStateException if the context has no manager or is closed
+     */
+    public void releasePointerCapture(MouseButton button) {
+        ensureOpen();
+        manager().releasePointerCapture(Objects.requireNonNull(button, "button"));
+    }
+
+    /**
+     * Rasterizes and uploads a font with the default character set and tracks its atlas.
+     *
+     * @param data font data
+     * @param pixelSize requested line size in logical UI units
+     * @return the uploaded font
+     * @throws NullPointerException if {@code data} is null
+     * @throws IllegalArgumentException if the size is invalid or the data has no TrueType outlines
+     * @throws IllegalStateException if the context is closed
+     */
+    public Font createFont(FontData data, float pixelSize) {
+        ensureOpen();
+        return registerFont(renderer.createFont(data, pixelSize));
+    }
+
+    /**
+     * Rasterizes and uploads a styled font with the default character set and tracks its atlas.
+     *
+     * @param data font data
+     * @param pixelSize requested line size in logical UI units
+     * @param style synthetic bold or italic style
+     * @return the uploaded font
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the size is invalid or the data has no TrueType outlines
+     * @throws IllegalStateException if the context is closed
+     */
+    public Font createFont(FontData data, float pixelSize, FontStyle style) {
+        ensureOpen();
+        return registerFont(renderer.createFont(data, pixelSize, style));
+    }
+
+    /**
+     * Loads the best installed face of a system font family and tracks its atlas.
+     *
+     * @param family family name such as {@code "Arial"}
+     * @param pixelSize requested line size in logical UI units
+     * @param style requested face style
+     * @return the uploaded font, or empty when the family is not installed
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the size is invalid or a font atlas cannot be built
+     * @throws IllegalStateException if the context is closed
+     */
+    public Optional<Font> createFont(String family, float pixelSize, FontStyle style) {
+        ensureOpen();
+        return renderer.createFont(family, pixelSize, style).map(this::registerFont);
+    }
+
+    /**
+     * Releases a font created by this context and its atlas texture.
+     * Fonts created elsewhere, already released fonts, and calls after {@link #close()} are ignored.
+     *
+     * @param font font to release
+     * @throws NullPointerException if {@code font} is null
+     */
+    public void destroyFont(Font font) {
+        Objects.requireNonNull(font, "font");
+        if (closed || !fonts.remove(font)) {
+            return;
+        }
+        if (defaultFont == font) {
+            defaultFont = null;
+        }
+        renderer.destroyFont(font);
+    }
+
+    /**
+     * Creates and tracks a backend texture from CPU image data.
+     *
+     * @param image RGBA8 image data with a top-left origin
+     * @return the created texture
+     * @throws NullPointerException if {@code image} is null
+     * @throws IllegalStateException if the context is closed
+     */
+    public Texture createTexture(ImageData image) {
+        ensureOpen();
+        Texture texture = renderer.createTexture(Objects.requireNonNull(image, "image"));
+        textures.add(texture);
+        return texture;
+    }
+
+    /**
+     * Releases a texture created by this context.
+     * Textures created elsewhere, already released textures, and calls after {@link #close()} are
+     * ignored.
+     *
+     * @param texture texture to release
+     * @throws NullPointerException if {@code texture} is null
+     */
+    public void destroyTexture(Texture texture) {
+        Objects.requireNonNull(texture, "texture");
+        if (closed || !textures.remove(texture)) {
+            return;
+        }
+        renderer.destroyTexture(texture);
+    }
+
+    /**
+     * Releases every font and texture created through this context.
+     * The graphics context that owns the backend resources must be current. Closing is idempotent.
+     */
+    @Override
+    public void close() {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        RuntimeException failure = null;
+        for (Font font : List.copyOf(fonts)) {
+            try {
+                renderer.destroyFont(font);
+            } catch (RuntimeException exception) {
+                failure = recordFailure(failure, exception);
+            }
+        }
+        for (Texture texture : List.copyOf(textures)) {
+            try {
+                renderer.destroyTexture(texture);
+            } catch (RuntimeException exception) {
+                failure = recordFailure(failure, exception);
+            }
+        }
+        fonts.clear();
+        textures.clear();
+        defaultFont = null;
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    void setViewport(Viewport viewport) {
+        Objects.requireNonNull(viewport, "viewport");
+        this.viewport = new Rect(0, 0, viewport.logicalWidth(), viewport.logicalHeight());
+        scaleX = viewport.scaleX();
+        scaleY = viewport.scaleY();
+    }
+
+    void setTheme(Theme theme) {
+        this.theme = Objects.requireNonNull(theme, "theme");
+    }
+
+    void setDefaultFont(Font font) {
+        defaultFont = Objects.requireNonNull(font, "font");
+    }
+
+    void widgetStateChanged() {
+        if (manager != null) {
+            manager.pruneInteraction();
+        }
+    }
+
+    private WidgetManager manager() {
+        if (manager == null) {
+            throw new IllegalStateException("UI context is not attached to a widget manager.");
+        }
+        return manager;
+    }
+
+    private Font registerFont(Font font) {
+        fonts.add(font);
+        return font;
+    }
+
+    private void ensureOpen() {
+        if (closed) {
+            throw new IllegalStateException("UI context is closed.");
+        }
+    }
+
+    private static RuntimeException recordFailure(RuntimeException failure, RuntimeException exception) {
+        if (failure == null) {
+            return exception;
+        }
+        failure.addSuppressed(exception);
+        return failure;
+    }
+
+    private static <T> Set<T> identitySet() {
+        return Collections.newSetFromMap(new IdentityHashMap<>());
+    }
+}

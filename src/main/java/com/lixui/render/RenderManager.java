@@ -12,6 +12,7 @@ import com.lixui.text.FontStyle;
 import com.lixui.text.HorizontalAlignment;
 import com.lixui.text.SystemFonts;
 import com.lixui.text.TextGlyph;
+import com.lixui.text.TextStyle;
 import com.lixui.text.VerticalAlignment;
 
 import java.util.ArrayDeque;
@@ -519,17 +520,94 @@ public final class RenderManager {
      */
     public void text(Font font, String text, float x, float y, Paint paint,
                      HorizontalAlignment horizontal, VerticalAlignment vertical) {
+        Objects.requireNonNull(horizontal, "horizontal");
+        Objects.requireNonNull(vertical, "vertical");
+        drawText(font, text, x, y, paint, font.layoutRelative(text, horizontal, vertical));
+    }
+
+    /**
+     * Draws a text block with wrapping and truncation options.
+     * The anchor and alignments are taken from {@code style}. The current transform and clip apply
+     * to every glyph.
+     *
+     * @param font font created by this render manager
+     * @param text text to draw
+     * @param x horizontal anchor in logical UI units
+     * @param y vertical anchor in logical UI units
+     * @param paint text paint
+     * @param style layout options
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the font was not created by this render manager
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void text(Font font, String text, float x, float y, Paint paint, TextStyle style) {
+        Objects.requireNonNull(style, "style");
+        drawText(font, text, x, y, paint, font.layoutBlockRelative(text, style).glyphs());
+    }
+
+    /**
+     * Draws a text block with wrapping and truncation options at a point anchor.
+     *
+     * @param font font created by this render manager
+     * @param text text to draw
+     * @param position text anchor
+     * @param paint text paint
+     * @param style layout options
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the font was not created by this render manager
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void text(Font font, String text, Point position, Paint paint, TextStyle style) {
+        Objects.requireNonNull(position, "position");
+        text(font, text, position.x(), position.y(), paint, style);
+    }
+
+    /**
+     * Draws a color-filled text block with wrapping and truncation options.
+     *
+     * @param font font created by this render manager
+     * @param text text to draw
+     * @param x horizontal anchor in logical UI units
+     * @param y vertical anchor in logical UI units
+     * @param color straight-alpha text color
+     * @param style layout options
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the font was not created by this render manager
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void text(Font font, String text, float x, float y, Color color, TextStyle style) {
+        Objects.requireNonNull(color, "color");
+        text(font, text, x, y, Paint.solid(color), style);
+    }
+
+    /**
+     * Draws a color-filled text block with wrapping and truncation options at a point anchor.
+     *
+     * @param font font created by this render manager
+     * @param text text to draw
+     * @param position text anchor
+     * @param color straight-alpha text color
+     * @param style layout options
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the font was not created by this render manager
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void text(Font font, String text, Point position, Color color, TextStyle style) {
+        Objects.requireNonNull(position, "position");
+        text(font, text, position.x(), position.y(), color, style);
+    }
+
+    private void drawText(Font font, String text, float x, float y, Paint paint,
+                          List<TextGlyph> relative) {
         Objects.requireNonNull(font, "font");
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(paint, "paint");
-        Objects.requireNonNull(horizontal, "horizontal");
-        Objects.requireNonNull(vertical, "vertical");
+        Objects.requireNonNull(relative, "relative");
         DrawList target = list();
         Texture atlas = fontAtlases.get(font);
         if (atlas == null) {
             throw new IllegalArgumentException("Font was not created by this render manager.");
         }
-        List<TextGlyph> relative = font.layoutRelative(text, horizontal, vertical);
         if (relative.isEmpty()) {
             return;
         }
@@ -576,6 +654,22 @@ public final class RenderManager {
     }
 
     /**
+     * Measures a wrapped or truncated text block.
+     *
+     * @param font font created by this render manager
+     * @param text text to measure
+     * @param style layout options
+     * @return the measured width and height in logical UI units
+     * @throws NullPointerException if an argument is null
+     */
+    public Size measureText(Font font, String text, TextStyle style) {
+        Objects.requireNonNull(font, "font");
+        Objects.requireNonNull(text, "text");
+        Objects.requireNonNull(style, "style");
+        return font.measure(text, style);
+    }
+
+    /**
      * Returns the current tessellation quality and sample-count hint.
      *
      * @return the current antialiasing setting
@@ -603,6 +697,16 @@ public final class RenderManager {
      */
     public Transform currentTransform() {
         return transforms.peek();
+    }
+
+    /**
+     * Returns the current intersection of all active clips.
+     *
+     * @return the active clip rectangle in logical viewport coordinates
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public Rect clip() {
+        return list().clip();
     }
 
     /**

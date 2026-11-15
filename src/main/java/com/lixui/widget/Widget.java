@@ -1,10 +1,16 @@
 package com.lixui.widget;
 
+import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
+import com.lixui.geometry.Size;
+import com.lixui.geometry.Transform;
 import com.lixui.input.Key;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
+import com.lixui.platform.Cursor;
 import com.lixui.render.RenderManager;
+import com.lixui.text.Font;
+import com.lixui.theme.WidgetStyle;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -13,17 +19,29 @@ import java.util.Objects;
 
 /**
  * A retained UI node with bounds, children, drawing, logic and input hooks.
- * Coordinates are absolute logical UI units; adding a child does not translate its bounds.
+ * Bounds are local to the parent: the top-left corner is relative to the parent's top-left corner,
+ * and top-level widgets are positioned relative to the viewport. Drawing and hit testing use the
+ * widget's own local coordinate space whose origin is its top-left corner.
+ * The default layout keeps child bounds unchanged, which provides free positioning. Subclasses can
+ * override measurement and layout to arrange children automatically.
+ * Attached widgets have access to a {@link UiContext} through {@link #context()}. Attachment and
+ * removal invoke lifecycle hooks on the whole subtree.
  * Children are drawn after their parent and hit-tested in reverse insertion order, so the last
  * child is visually on top.
  */
 public abstract class Widget {
     private final List<Widget> children = new ArrayList<>();
     private Widget parent;
+    private UiContext context;
+    private Font font;
+    private WidgetStyle style;
+    private boolean detaching;
     private Rect bounds = Rect.EMPTY;
+    private boolean clipToBounds;
     private boolean visible = true;
     private boolean enabled = true;
     private boolean focusable;
+    private boolean focusScope;
     private boolean hovered;
     private boolean pressed;
     private boolean focused;
@@ -35,7 +53,8 @@ public abstract class Widget {
     }
 
     /**
-     * Returns the bounds assigned to this widget.
+     * Returns the bounds assigned to this widget in the parent coordinate space.
+     * For a top-level widget the parent coordinate space is the viewport.
      *
      * @return the bounds in logical UI units
      */
@@ -44,7 +63,50 @@ public abstract class Widget {
     }
 
     /**
-     * Replaces the widget bounds.
+     * Returns the bounds in this widget's own coordinate space.
+     * The result always starts at the origin and is convenient for drawing.
+     *
+     * @return a rectangle from the origin with the current widget size
+     */
+    public final Rect localBounds() {
+        return new Rect(0, 0, bounds.width(), bounds.height());
+    }
+
+    /**
+     * Returns the top-left corner in the parent coordinate space.
+     *
+     * @return the widget position in logical UI units
+     */
+    public final Point position() {
+        return new Point(bounds.x(), bounds.y());
+    }
+
+    /**
+     * Returns the widget size.
+     *
+     * @return the widget size in logical UI units
+     */
+    public final Size size() {
+        return new Size(bounds.width(), bounds.height());
+    }
+
+    /**
+     * Returns the top-left corner in viewport coordinates by accumulating parent positions.
+     *
+     * @return the absolute widget position in logical UI units
+     */
+    public final Point absolutePosition() {
+        float x = 0;
+        float y = 0;
+        for (Widget widget = this; widget != null; widget = widget.parent) {
+            x += widget.bounds.x();
+            y += widget.bounds.y();
+        }
+        return new Point(x, y);
+    }
+
+    /**
+     * Replaces the widget bounds in the parent coordinate space.
      *
      * @param bounds new bounds in logical UI units
      * @throws NullPointerException if {@code bounds} is null
@@ -54,12 +116,92 @@ public abstract class Widget {
     }
 
     /**
+     * Replaces the top-left corner while preserving the size.
+     *
+     * @param x horizontal position relative to the parent
+     * @param y vertical position relative to the parent
+     * @throws IllegalArgumentException if a coordinate is non-finite
+     */
+    public final void setPosition(float x, float y) {
+        setBounds(new Rect(x, y, bounds.width(), bounds.height()));
+    }
+
+    /**
+     * Replaces the size while preserving the position.
+     *
+     * @param width new width in logical UI units
+     * @param height new height in logical UI units
+     * @throws IllegalArgumentException if a dimension is negative or non-finite
+     */
+    public final void setSize(float width, float height) {
+        setBounds(new Rect(bounds.x(), bounds.y(), width, height));
+    }
+
+    /**
+     * Reports whether this widget and its subtree are clipped to the widget bounds.
+     *
+     * @return true when drawing is clipped to the widget bounds
+     */
+    public final boolean isClipToBounds() {
+        return clipToBounds;
+    }
+
+    /**
+     * Sets whether this widget and its subtree are clipped to the widget bounds.
+     * Clipping affects drawing only. Hit testing already stops at every widget bounds, so a clipped
+     * subtree cannot receive pointer events outside this widget.
+     *
+     * @param clipToBounds true to clip the widget and its children to the widget bounds
+     */
+    public final void setClipToBounds(boolean clipToBounds) {
+        this.clipToBounds = clipToBounds;
+    }
+
+    /**
+     * Measures this widget against the supplied constraints.
+     * The result is the value returned by {@link #onMeasure(LayoutConstraints)} clamped to the
+     * constraint range.
+     *
+     * @param constraints available and required dimensions
+     * @return the measured size within the constraint range
+     * @throws NullPointerException if {@code constraints} is null
+     * @throws NullPointerException if {@link #onMeasure(LayoutConstraints)} returns null
+     */
+    public final Size measure(LayoutConstraints constraints) {
+        Objects.requireNonNull(constraints, "constraints");
+        Size measured = Objects.requireNonNull(onMeasure(constraints), "onMeasure result");
+        return constraints.constrain(measured);
+    }
+
+    /**
+     * Assigns bounds in the parent coordinate space and lays out this widget.
+     * The widget itself keeps the supplied size; children are arranged by
+     * {@link #onLayout()} if the subclass overrides it.
+     *
+     * @param bounds new bounds in logical UI units
+     * @throws NullPointerException if {@code bounds} is null
+     */
+    public final void layout(Rect bounds) {
+        setBounds(bounds);
+        onLayout();
+    }
+
+    /**
      * Returns the parent widget.
      *
      * @return the parent, or null for a top-level widget
      */
     public final Widget parent() {
         return parent;
+    }
+
+    /**
+     * Returns the UI context shared by the attached widget tree.
+     *
+     * @return the context, or null when the widget is not attached to a manager
+     */
+    public final UiContext context() {
+        return context;
     }
 
     /**
@@ -94,6 +236,9 @@ public abstract class Widget {
         }
         children.add(child);
         child.setParent(this);
+        if (context != null && !detaching) {
+            child.attach(context);
+        }
         return this;
     }
 
@@ -109,6 +254,7 @@ public abstract class Widget {
         for (int index = 0; index < children.size(); index++) {
             if (children.get(index) == child) {
                 children.remove(index);
+                child.detach();
                 child.setParent(null);
                 return true;
             }
@@ -120,7 +266,8 @@ public abstract class Widget {
      * Removes every child and detaches all of them.
      */
     public final void removeAll() {
-        for (Widget child : children) {
+        for (Widget child : List.copyOf(children)) {
+            child.detach();
             child.setParent(null);
         }
         children.clear();
@@ -142,6 +289,7 @@ public abstract class Widget {
      */
     public final void setVisible(boolean visible) {
         this.visible = visible;
+        notifyStateChanged();
     }
 
     /**
@@ -161,6 +309,7 @@ public abstract class Widget {
      */
     public final void setEnabled(boolean enabled) {
         this.enabled = enabled;
+        notifyStateChanged();
     }
 
     /**
@@ -179,6 +328,27 @@ public abstract class Widget {
      */
     public final void setFocusable(boolean focusable) {
         this.focusable = focusable;
+        notifyStateChanged();
+    }
+
+    /**
+     * Reports whether this widget starts a focus scope.
+     * Tab traversal from a focused descendant wraps inside the nearest enclosing focus scope.
+     *
+     * @return true when this widget is a focus scope root
+     */
+    public final boolean isFocusScope() {
+        return focusScope;
+    }
+
+    /**
+     * Sets whether this widget starts a focus scope for Tab traversal.
+     *
+     * @param focusScope true to confine Tab traversal to this subtree
+     */
+    public final void setFocusScope(boolean focusScope) {
+        this.focusScope = focusScope;
+        notifyStateChanged();
     }
 
     /**
@@ -209,23 +379,102 @@ public abstract class Widget {
     }
 
     /**
-     * Reports whether a point can interact with this widget.
+     * Returns the pointer cursor requested while this widget or its subtree is hovered.
+     * The nearest ancestor with a non-default cursor wins.
+     *
+     * @return the requested cursor shape
+     */
+    public Cursor cursor() {
+        return Cursor.DEFAULT;
+    }
+
+    /**
+     * Resolves the inherited font for this subtree.
+     * The nearest local font wins, then the context default font.
+     *
+     * @return the resolved font, or null when neither the widget tree nor the context defines one
+     */
+    public final Font font() {
+        for (Widget widget = this; widget != null; widget = widget.parent) {
+            if (widget.font != null) {
+                return widget.font;
+            }
+        }
+        return context == null ? null : context.defaultFont();
+    }
+
+    /**
+     * Assigns a local font that is inherited by descendants.
+     *
+     * @param font font to use for this subtree
+     * @throws NullPointerException if {@code font} is null
+     */
+    public final void setFont(Font font) {
+        this.font = Objects.requireNonNull(font, "font");
+        notifyStateChanged();
+    }
+
+    /**
+     * Removes the local font and restores inheritance from the parent or context.
+     */
+    public final void clearFont() {
+        font = null;
+        notifyStateChanged();
+    }
+
+    /**
+     * Resolves the inherited visual style for this subtree.
+     * The nearest local style wins, then the context control style.
+     *
+     * @return the resolved style, or null when neither the widget tree nor the context defines one
+     */
+    public final WidgetStyle style() {
+        for (Widget widget = this; widget != null; widget = widget.parent) {
+            if (widget.style != null) {
+                return widget.style;
+            }
+        }
+        return context == null ? null : context.theme().controlStyle();
+    }
+
+    /**
+     * Assigns a local style that is inherited by descendants.
+     *
+     * @param style style to use for this subtree
+     * @throws NullPointerException if {@code style} is null
+     */
+    public final void setStyle(WidgetStyle style) {
+        this.style = Objects.requireNonNull(style, "style");
+        notifyStateChanged();
+    }
+
+    /**
+     * Removes the local style and restores inheritance from the parent or context.
+     */
+    public final void clearStyle() {
+        style = null;
+        notifyStateChanged();
+    }
+
+    /**
+     * Reports whether a point in this widget's local coordinate space can interact with it.
      * Invisible and disabled widgets never contain a point.
      *
-     * @param x horizontal coordinate in logical UI units
-     * @param y vertical coordinate in logical UI units
+     * @param x horizontal coordinate relative to the widget's top-left corner
+     * @param y vertical coordinate relative to the widget's top-left corner
      * @return true when the widget is visible, enabled and contains the point
      */
     public final boolean contains(float x, float y) {
-        return visible && enabled && bounds.contains(x, y);
+        return visible && enabled && localBounds().contains(x, y);
     }
 
     /**
      * Returns the deepest visible and enabled widget containing the supplied point.
-     * Children are tested in reverse drawing order.
+     * The point is expressed in this widget's local coordinate space. Children are tested in
+     * reverse drawing order against their parent-relative bounds.
      *
-     * @param x horizontal coordinate in logical UI units
-     * @param y vertical coordinate in logical UI units
+     * @param x horizontal coordinate relative to the widget's top-left corner
+     * @param y vertical coordinate relative to the widget's top-left corner
      * @return the hit widget, or null when the point is outside
      */
     public Widget hitTest(float x, float y) {
@@ -233,7 +482,8 @@ public abstract class Widget {
             return null;
         }
         for (int index = children.size() - 1; index >= 0; index--) {
-            Widget hit = children.get(index).hitTest(x, y);
+            Widget child = children.get(index);
+            Widget hit = child.hitTest(x - child.bounds.x(), y - child.bounds.y());
             if (hit != null) {
                 return hit;
             }
@@ -258,7 +508,10 @@ public abstract class Widget {
 
     /**
      * Draws this widget and its children into the supplied renderer.
-     * Invisible widgets and their subtrees are skipped.
+     * The renderer is translated by this widget's parent-relative position, so drawing code works
+     * in the widget's local coordinate space. Invisible widgets and their subtrees are skipped.
+     * When {@link #isClipToBounds()} is enabled, the widget and its children are clipped to the
+     * widget bounds intersected with the active clip.
      *
      * @param renderer drawing manager for the current frame
      * @param frame timing information for the current frame
@@ -270,10 +523,89 @@ public abstract class Widget {
         if (!visible) {
             return;
         }
+        Point origin = absolutePosition();
+        drawSubtree(renderer, frame, renderer.clip(), origin.x(), origin.y());
+    }
+
+    private void drawSubtree(RenderManager renderer, FrameInfo frame, Rect clip,
+                             float absoluteX, float absoluteY) {
+        if (!visible) {
+            return;
+        }
+        Rect effectiveClip = clipToBounds
+                ? clip.intersect(new Rect(absoluteX, absoluteY, bounds.width(), bounds.height()))
+                : clip;
+        if (effectiveClip.isEmpty()) {
+            return;
+        }
+        if (effectiveClip.equals(clip)) {
+            drawPositioned(renderer, frame, effectiveClip, absoluteX, absoluteY);
+        } else {
+            renderer.withClip(effectiveClip,
+                    () -> drawPositioned(renderer, frame, effectiveClip, absoluteX, absoluteY));
+        }
+    }
+
+    private void drawPositioned(RenderManager renderer, FrameInfo frame, Rect clip,
+                                float absoluteX, float absoluteY) {
+        if (bounds.x() == 0 && bounds.y() == 0) {
+            drawLocal(renderer, frame, clip, absoluteX, absoluteY);
+        } else {
+            renderer.withTransform(Transform.translation(bounds.x(), bounds.y()),
+                    () -> drawLocal(renderer, frame, clip, absoluteX, absoluteY));
+        }
+    }
+
+    private void drawLocal(RenderManager renderer, FrameInfo frame, Rect clip,
+                           float absoluteX, float absoluteY) {
         onDraw(renderer, frame);
         for (Widget child : children) {
-            child.draw(renderer, frame);
+            child.drawSubtree(renderer, frame, clip,
+                    absoluteX + child.bounds.x(), absoluteY + child.bounds.y());
         }
+    }
+
+    /**
+     * Called when this widget becomes part of a managed tree and receives a context.
+     * {@link #context()} is available during the callback. Resources created here can be released
+     * in {@link #onDetached()}.
+     */
+    protected void onAttached() {
+    }
+
+    /**
+     * Called when this widget leaves its managed tree.
+     * Children are detached first, and the context is still available through {@link #context()}
+     * while this callback runs.
+     */
+    protected void onDetached() {
+    }
+
+    /**
+     * Called after the context viewport, display scale, theme or default font changes.
+     * Parents receive the callback before their children.
+     */
+    protected void onContextChanged() {
+    }
+
+    /**
+     * Computes the natural size of this widget for the supplied constraints.
+     * The default returns the current widget size, which keeps manually assigned dimensions.
+     * Container widgets override this method to measure their children.
+     *
+     * @param constraints available and required dimensions
+     * @return the natural size before constraint clamping
+     */
+    protected Size onMeasure(LayoutConstraints constraints) {
+        return new Size(bounds.width(), bounds.height());
+    }
+
+    /**
+     * Arranges this widget after its bounds have been assigned.
+     * The default keeps child bounds unchanged, so children stay freely positioned relative to this
+     * widget. Container widgets override this method to measure and reposition their children.
+     */
+    protected void onLayout() {
     }
 
     /**
@@ -286,6 +618,7 @@ public abstract class Widget {
 
     /**
      * Paints this widget before its children are drawn.
+     * Drawing coordinates are local to this widget, so the top-left corner is {@code (0, 0)}.
      *
      * @param renderer drawing manager for the current frame
      * @param frame timing information for the current frame
@@ -307,71 +640,176 @@ public abstract class Widget {
 
     /**
      * Called for pointer movement over this widget or while it captures a pressed button.
+     * The event bubbles to ancestors until a callback returns true.
      *
-     * @param x horizontal pointer position in logical UI units
-     * @param y vertical pointer position in logical UI units
+     * @param x horizontal pointer position relative to the widget's top-left corner
+     * @param y vertical pointer position relative to the widget's top-left corner
+     * @return true when the event is consumed
      */
-    protected void onPointerMove(float x, float y) {
+    protected boolean onPointerMove(float x, float y) {
+        return false;
     }
 
     /**
      * Called when a pointer button is pressed on this widget.
+     * The event bubbles to ancestors until a callback returns true.
      *
-     * @param x horizontal pointer position in logical UI units
-     * @param y vertical pointer position in logical UI units
+     * @param x horizontal pointer position relative to the widget's top-left corner
+     * @param y vertical pointer position relative to the widget's top-left corner
      * @param button pressed button
      * @param modifiers active keyboard modifiers
+     * @return true when the event is consumed
      */
-    protected void onPointerPress(float x, float y, MouseButton button, Modifiers modifiers) {
+    protected boolean onPointerPress(float x, float y, MouseButton button, Modifiers modifiers) {
+        return false;
     }
 
     /**
      * Called when a captured pointer button is released.
+     * The event bubbles to ancestors until a callback returns true.
      *
-     * @param x horizontal pointer position in logical UI units
-     * @param y vertical pointer position in logical UI units
+     * @param x horizontal pointer position relative to the widget's top-left corner
+     * @param y vertical pointer position relative to the widget's top-left corner
      * @param button released button
      * @param modifiers active keyboard modifiers
+     * @return true when the event is consumed
      */
-    protected void onPointerRelease(float x, float y, MouseButton button, Modifiers modifiers) {
+    protected boolean onPointerRelease(float x, float y, MouseButton button, Modifiers modifiers) {
+        return false;
     }
 
     /**
      * Called when the pointer scrolls while this widget is hovered.
+     * The event bubbles to ancestors until a callback returns true.
      *
-     * @param x horizontal pointer position in logical UI units
-     * @param y vertical pointer position in logical UI units
+     * @param x horizontal pointer position relative to the widget's top-left corner
+     * @param y vertical pointer position relative to the widget's top-left corner
      * @param deltaX horizontal scroll amount in wheel steps
      * @param deltaY vertical scroll amount in wheel steps
+     * @return true when the event is consumed
      */
-    protected void onPointerScroll(float x, float y, float deltaX, float deltaY) {
+    protected boolean onPointerScroll(float x, float y, float deltaX, float deltaY) {
+        return false;
+    }
+
+    /**
+     * Called when a primary click is completed on this widget or one of its descendants.
+     * The event bubbles to ancestors until a callback returns true.
+     *
+     * @param x horizontal pointer position relative to the widget's top-left corner
+     * @param y vertical pointer position relative to the widget's top-left corner
+     * @param button clicked button
+     * @param modifiers active keyboard modifiers
+     * @return true when the event is consumed
+     */
+    protected boolean onClick(float x, float y, MouseButton button, Modifiers modifiers) {
+        return false;
+    }
+
+    /**
+     * Called when a second click is completed within the double-click interval.
+     * The event bubbles to ancestors until a callback returns true.
+     *
+     * @param x horizontal pointer position relative to the widget's top-left corner
+     * @param y vertical pointer position relative to the widget's top-left corner
+     * @param button clicked button
+     * @param modifiers active keyboard modifiers
+     * @return true when the event is consumed
+     */
+    protected boolean onDoubleClick(float x, float y, MouseButton button, Modifiers modifiers) {
+        return false;
+    }
+
+    /**
+     * Called when a pressed pointer moves beyond the drag threshold.
+     * The event bubbles to ancestors until a callback returns true.
+     *
+     * @param x horizontal pointer position relative to the widget's top-left corner
+     * @param y vertical pointer position relative to the widget's top-left corner
+     * @param button pressed button
+     * @param modifiers modifiers captured at press time
+     * @return true when the event is consumed
+     */
+    protected boolean onDragStart(float x, float y, MouseButton button, Modifiers modifiers) {
+        return false;
+    }
+
+    /**
+     * Called for pointer movement while a drag is active.
+     * The event bubbles to ancestors until a callback returns true.
+     *
+     * @param x horizontal pointer position relative to the widget's top-left corner
+     * @param y vertical pointer position relative to the widget's top-left corner
+     * @param button pressed button
+     * @param modifiers modifiers captured at press time
+     * @return true when the event is consumed
+     */
+    protected boolean onDrag(float x, float y, MouseButton button, Modifiers modifiers) {
+        return false;
+    }
+
+    /**
+     * Called when a dragged pointer button is released.
+     * The event bubbles to ancestors until a callback returns true.
+     *
+     * @param x horizontal pointer position relative to the widget's top-left corner
+     * @param y vertical pointer position relative to the widget's top-left corner
+     * @param button released button
+     * @param modifiers modifiers captured at press time
+     * @return true when the event is consumed
+     */
+    protected boolean onDragEnd(float x, float y, MouseButton button, Modifiers modifiers) {
+        return false;
+    }
+
+    /**
+     * Called when a pressed pointer stays within the long-press threshold.
+     * The event bubbles to ancestors until a callback returns true.
+     *
+     * @param x horizontal pointer position relative to the widget's top-left corner
+     * @param y vertical pointer position relative to the widget's top-left corner
+     * @param button pressed button
+     * @param modifiers modifiers captured at press time
+     * @return true when the event is consumed
+     */
+    protected boolean onLongPress(float x, float y, MouseButton button, Modifiers modifiers) {
+        return false;
     }
 
     /**
      * Called when a key is pressed while this widget is focused.
+     * The event bubbles to ancestors until a callback returns true.
      *
      * @param key pressed key
      * @param modifiers active keyboard modifiers
      * @param repeat true for a repeated key press
+     * @return true when the event is consumed
      */
-    protected void onKeyPressed(Key key, Modifiers modifiers, boolean repeat) {
+    protected boolean onKeyPressed(Key key, Modifiers modifiers, boolean repeat) {
+        return false;
     }
 
     /**
      * Called when a key is released while this widget is focused.
+     * The event bubbles to ancestors until a callback returns true.
      *
      * @param key released key
      * @param modifiers active keyboard modifiers
+     * @return true when the event is consumed
      */
-    protected void onKeyReleased(Key key, Modifiers modifiers) {
+    protected boolean onKeyReleased(Key key, Modifiers modifiers) {
+        return false;
     }
 
     /**
      * Called when a Unicode code point is typed while this widget is focused.
+     * The event bubbles to ancestors until a callback returns true.
      *
      * @param codepoint typed code point
+     * @return true when the event is consumed
      */
-    protected void onCharTyped(int codepoint) {
+    protected boolean onCharTyped(int codepoint) {
+        return false;
     }
 
     /**
@@ -380,6 +818,96 @@ public abstract class Widget {
      * @param focused true when this widget gained focus
      */
     protected void onFocusChanged(boolean focused) {
+    }
+
+    /**
+     * Requests keyboard focus for this widget.
+     *
+     * @throws IllegalStateException if the widget is not attached to a manager
+     */
+    protected final void requestFocus() {
+        requireContext().requestFocus(this);
+    }
+
+    /**
+     * Captures pointer button events for this widget until the button is released.
+     *
+     * @param button button to capture
+     * @throws NullPointerException if {@code button} is null
+     * @throws IllegalStateException if the widget is not attached to a manager
+     */
+    protected final void capturePointer(MouseButton button) {
+        requireContext().capturePointer(this, button);
+    }
+
+    /**
+     * Releases a pointer capture owned by this widget.
+     *
+     * @param button captured button
+     * @throws NullPointerException if {@code button} is null
+     * @throws IllegalStateException if the widget is not attached to a manager
+     */
+    protected final void releasePointerCapture(MouseButton button) {
+        requireContext().releasePointerCapture(button);
+    }
+
+    final void attach(UiContext newContext) {
+        Objects.requireNonNull(newContext, "context");
+        if (context == newContext) {
+            return;
+        }
+        if (context != null) {
+            detach();
+        }
+        context = newContext;
+        try {
+            onAttached();
+            for (Widget child : List.copyOf(children)) {
+                child.attach(newContext);
+            }
+        } catch (RuntimeException | Error exception) {
+            detach();
+            throw exception;
+        }
+    }
+
+    final void detach() {
+        if (context == null || detaching) {
+            return;
+        }
+        detaching = true;
+        try {
+            for (Widget child : List.copyOf(children)) {
+                child.detach();
+            }
+            onDetached();
+        } finally {
+            context = null;
+            detaching = false;
+        }
+    }
+
+    final void contextChanged() {
+        if (context == null) {
+            return;
+        }
+        onContextChanged();
+        for (Widget child : List.copyOf(children)) {
+            child.contextChanged();
+        }
+    }
+
+    private void notifyStateChanged() {
+        if (context != null) {
+            context.widgetStateChanged();
+        }
+    }
+
+    private UiContext requireContext() {
+        if (context == null) {
+            throw new IllegalStateException("Widget is not attached to a widget manager.");
+        }
+        return context;
     }
 
     final void setParent(Widget parent) {

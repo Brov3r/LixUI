@@ -1,6 +1,9 @@
 package com.lixui.widget;
 
+import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
+import com.lixui.geometry.Size;
+import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
 import com.lixui.render.DrawList;
 import com.lixui.render.ImageData;
@@ -8,10 +11,17 @@ import com.lixui.render.RenderBackend;
 import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
+import com.lixui.text.Font;
+import com.lixui.text.FontData;
+import com.lixui.text.SystemFonts;
+import com.lixui.theme.Theme;
+import com.lixui.theme.WidgetStyle;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -26,10 +36,10 @@ class WidgetTest {
     @Test
     void containmentRespectsVisibilityAndEnabledState() {
         Probe probe = new Probe("probe", new ArrayList<>());
-        probe.setBounds(new Rect(10, 10, 50, 50));
+        probe.setBounds(new Rect(0, 0, 50, 50));
 
         assertTrue(probe.contains(20, 20));
-        assertFalse(probe.contains(5, 20));
+        assertFalse(probe.contains(60, 20));
 
         probe.setVisible(false);
         assertFalse(probe.contains(20, 20));
@@ -37,6 +47,147 @@ class WidgetTest {
         probe.setVisible(true);
         probe.setEnabled(false);
         assertFalse(probe.contains(20, 20));
+    }
+
+    @Test
+    void boundsAreRelativeToParentAndLocalBoundsStartAtTheOrigin() {
+        Probe probe = new Probe("probe", new ArrayList<>());
+        probe.setBounds(new Rect(30, 40, 120, 80));
+
+        assertEquals(new Rect(30, 40, 120, 80), probe.bounds());
+        assertEquals(new Rect(0, 0, 120, 80), probe.localBounds());
+        assertEquals(new Point(30, 40), probe.position());
+        assertEquals(120, probe.size().width());
+        assertEquals(80, probe.size().height());
+
+        probe.setPosition(10, 20);
+        probe.setSize(200, 100);
+
+        assertEquals(new Rect(10, 20, 200, 100), probe.bounds());
+    }
+
+    @Test
+    void defaultLayoutKeepsChildrenFreelyPositioned() {
+        Probe root = new Probe("root", new ArrayList<>());
+        Probe child = new Probe("child", new ArrayList<>());
+        root.setBounds(new Rect(100, 50, 300, 200));
+        child.setBounds(new Rect(10, 20, 50, 40));
+        root.add(child);
+
+        root.layout(new Rect(100, 50, 300, 200));
+
+        assertEquals(new Rect(10, 20, 50, 40), child.bounds());
+        assertSame(child, root.hitTest(15, 25));
+        assertSame(root, root.hitTest(5, 5));
+        assertNull(root.hitTest(300, 250));
+
+        root.setPosition(200, 100);
+
+        assertEquals(new Rect(10, 20, 50, 40), child.bounds());
+    }
+
+    @Test
+    void measureAndLayoutUseTheSubclassContract() {
+        LayoutProbe probe = new LayoutProbe();
+
+        Size loose = probe.measure(LayoutConstraints.loose(200, 150));
+        assertEquals(80, loose.width());
+        assertEquals(40, loose.height());
+
+        Size tight = probe.measure(LayoutConstraints.tight(40, 30));
+        assertEquals(40, tight.width());
+        assertEquals(30, tight.height());
+
+        probe.layout(new Rect(10, 20, 80, 40));
+
+        assertEquals(new Rect(10, 20, 80, 40), probe.bounds());
+        assertEquals(1, probe.layoutCount);
+    }
+
+    @Test
+    void fontsInheritFromAncestorsAndCanBeCleared() {
+        Optional<FontData> data = SystemFonts.findDefault();
+        Assumptions.assumeTrue(data.isPresent(), "No readable system font is installed.");
+        Font font = Font.load(data.get(), 12);
+        Probe root = new Probe("root", new ArrayList<>());
+        Probe child = new Probe("child", new ArrayList<>());
+        root.add(child);
+
+        root.setFont(font);
+
+        assertSame(font, root.font());
+        assertSame(font, child.font());
+
+        root.clearFont();
+
+        assertNull(root.font());
+        assertNull(child.font());
+    }
+
+    @Test
+    void stylesInheritFromAncestorsAndCanBeCleared() {
+        WidgetStyle style = Theme.light().controlStyle();
+        Probe root = new Probe("root", new ArrayList<>());
+        Probe child = new Probe("child", new ArrayList<>());
+        root.add(child);
+
+        root.setStyle(style);
+
+        assertSame(style, root.style());
+        assertSame(style, child.style());
+
+        root.clearStyle();
+
+        assertNull(root.style());
+        assertNull(child.style());
+    }
+
+    @Test
+    void drawingTranslatesParentAndChildIntoTheirLocalOrigins() {
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager renderer = new RenderManager(backend);
+        renderer.resize(VIEWPORT);
+        Probe root = new Probe("root", new ArrayList<>());
+        Probe child = new Probe("child", new ArrayList<>());
+        root.setBounds(new Rect(100, 50, 300, 200));
+        child.setBounds(new Rect(10, 20, 50, 40));
+        root.add(child);
+
+        renderer.begin();
+        root.draw(renderer, FrameInfo.ZERO);
+        renderer.end();
+
+        assertEquals(Transform.translation(100, 50), root.lastDrawTransform);
+        assertEquals(Transform.translation(110, 70), child.lastDrawTransform);
+    }
+
+    @Test
+    void clipToBoundsClipsTheWidgetAndItsChildren() {
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager renderer = new RenderManager(backend);
+        renderer.resize(VIEWPORT);
+        Probe root = new Probe("root", new ArrayList<>());
+        Probe child = new Probe("child", new ArrayList<>());
+        root.setBounds(new Rect(0, 0, 50, 50));
+        child.setBounds(new Rect(40, 40, 40, 40));
+        root.setClipToBounds(true);
+        child.setClipToBounds(true);
+        root.add(child);
+
+        renderer.begin();
+        root.draw(renderer, FrameInfo.ZERO);
+        renderer.end();
+
+        assertEquals(2, backend.lastDrawList.commands().size());
+        assertEquals(new Rect(0, 0, 50, 50), backend.lastDrawList.commands().get(0).clip());
+        assertEquals(new Rect(40, 40, 10, 10), backend.lastDrawList.commands().get(1).clip());
+
+        child.setBounds(new Rect(60, 0, 40, 40));
+        renderer.begin();
+        root.draw(renderer, FrameInfo.ZERO);
+        renderer.end();
+
+        assertEquals(1, backend.lastDrawList.commands().size());
     }
 
     @Test
@@ -181,6 +332,8 @@ class WidgetTest {
         private final String name;
         private final List<String> log;
         private FrameInfo lastFrame;
+        private Transform lastDrawTransform;
+        private int layoutCount;
 
         Probe(String name, List<String> log) {
             this.name = name;
@@ -199,7 +352,7 @@ class WidgetTest {
         }
 
         /**
-         * Records the draw call and paints a white rectangle.
+         * Records the draw call, the active transform and paints a white rectangle.
          *
          * @param renderer drawing manager for the current frame
          * @param frame timing information for the current frame
@@ -207,8 +360,40 @@ class WidgetTest {
         @Override
         protected void onDraw(RenderManager renderer, FrameInfo frame) {
             lastFrame = frame;
+            lastDrawTransform = renderer.currentTransform();
             log.add("draw:" + name);
-            renderer.rect(bounds(), Color.WHITE);
+            renderer.rect(localBounds(), Color.WHITE);
+        }
+
+        /**
+         * Counts layout passes performed by the manager.
+         */
+        @Override
+        protected void onLayout() {
+            layoutCount++;
+        }
+    }
+
+    private static final class LayoutProbe extends Widget {
+        private int layoutCount;
+
+        /**
+         * Returns a fixed natural size for layout contract checks.
+         *
+         * @param constraints available and required dimensions
+         * @return the fixed natural size
+         */
+        @Override
+        protected Size onMeasure(LayoutConstraints constraints) {
+            return new Size(80, 40);
+        }
+
+        /**
+         * Counts layout calls.
+         */
+        @Override
+        protected void onLayout() {
+            layoutCount++;
         }
     }
 

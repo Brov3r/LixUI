@@ -1,12 +1,15 @@
 package com.lixui.widget;
 
+import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.input.CharTyped;
 import com.lixui.input.FocusChanged;
 import com.lixui.input.InputEvent;
 import com.lixui.input.InputState;
+import com.lixui.input.Key;
 import com.lixui.input.KeyPressed;
 import com.lixui.input.KeyReleased;
+import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
 import com.lixui.input.PointerEntered;
 import com.lixui.input.PointerExited;
@@ -14,10 +17,14 @@ import com.lixui.input.PointerMoved;
 import com.lixui.input.PointerPressed;
 import com.lixui.input.PointerReleased;
 import com.lixui.input.PointerScrolled;
+import com.lixui.platform.Cursor;
+import com.lixui.platform.UiPlatform;
 import com.lixui.render.Antialiasing;
 import com.lixui.render.RenderBackend;
 import com.lixui.render.RenderManager;
 import com.lixui.render.Viewport;
+import com.lixui.text.Font;
+import com.lixui.theme.Theme;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -30,35 +37,65 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Registers an input queue and a render backend, owns top-level widgets, and drives their logic
- * and drawing.
- * Widgets added to this manager have no parent. Add a widget to another widget to build a hierarchy.
+ * Registers an input queue and a render backend, owns top-level widgets, and drives their logic,
+ * layout and drawing.
+ * Widgets added to this manager have no parent and are positioned relative to the viewport. Add a
+ * widget to another widget to build a hierarchy with parent-relative coordinates.
  * Top-level widgets are drawn in insertion order and hit-tested in reverse order, so the last
- * widget is visually on top. Instances are single-threaded and are intended to be updated once
- * per frame.
+ * widget is visually on top. Added widgets receive a shared {@link UiContext} and are detached
+ * when removed or when the manager is closed. Instances are single-threaded and are intended to be
+ * updated once per frame.
  */
-public final class WidgetManager {
+public final class WidgetManager implements AutoCloseable {
+    private static final float DRAG_THRESHOLD = 4;
+    private static final float CLICK_SLOP = 4;
+    private static final double DOUBLE_CLICK_SECONDS = 0.4;
+    private static final double LONG_PRESS_SECONDS = 0.5;
+
     private final InputState input;
     private final RenderManager renderer;
+    private final UiContext context;
     private final List<Widget> widgets = new ArrayList<>();
     private final EnumMap<MouseButton, Widget> captures = new EnumMap<>(MouseButton.class);
+    private final EnumMap<MouseButton, PressState> presses = new EnumMap<>(MouseButton.class);
     private Widget hovered;
     private Widget focused;
+    private Widget lastClickTarget;
+    private MouseButton lastClickButton;
     private FrameInfo frame = FrameInfo.ZERO;
     private float pointerX;
     private float pointerY;
+    private float lastClickX;
+    private float lastClickY;
+    private double eventTime;
+    private double lastClickTime = Double.NEGATIVE_INFINITY;
     private boolean pointerInside;
+    private boolean closed;
 
     /**
-     * Creates a manager for the supplied input queue and backend.
+     * Creates a manager for the supplied input queue and backend without clipboard or cursor
+     * integration.
      *
      * @param input queue drained by {@link #update(float)}
      * @param backend backend that receives completed draw lists
      * @throws NullPointerException if {@code input} or {@code backend} is null
      */
     public WidgetManager(InputState input, RenderBackend backend) {
+        this(input, backend, UiPlatform.NONE);
+    }
+
+    /**
+     * Creates a manager for the supplied input queue, backend and platform adapter.
+     *
+     * @param input queue drained by {@link #update(float)}
+     * @param backend backend that receives completed draw lists
+     * @param platform host adapter used for clipboard access and cursor changes
+     * @throws NullPointerException if any argument is null
+     */
+    public WidgetManager(InputState input, RenderBackend backend, UiPlatform platform) {
         this.input = Objects.requireNonNull(input, "input");
         renderer = new RenderManager(Objects.requireNonNull(backend, "backend"));
+        context = new UiContext(renderer, Objects.requireNonNull(platform, "platform"), this);
     }
 
     /**
@@ -68,6 +105,51 @@ public final class WidgetManager {
      */
     public RenderManager renderer() {
         return renderer;
+    }
+
+    /**
+     * Returns the context shared by all attached widgets.
+     *
+     * @return the manager context
+     */
+    public UiContext context() {
+        return context;
+    }
+
+    /**
+     * Replaces the active theme and notifies every attached widget.
+     * Nothing happens when the theme is equal to the current one.
+     *
+     * @param theme new theme
+     * @throws NullPointerException if {@code theme} is null
+     * @throws IllegalStateException if the manager is closed
+     */
+    public void setTheme(Theme theme) {
+        Objects.requireNonNull(theme, "theme");
+        ensureOpen();
+        if (context.theme().equals(theme)) {
+            return;
+        }
+        context.setTheme(theme);
+        notifyContextChanged();
+    }
+
+    /**
+     * Replaces the font used by widgets when no explicit font is supplied and notifies every
+     * attached widget.
+     *
+     * @param font default font
+     * @throws NullPointerException if {@code font} is null
+     * @throws IllegalStateException if the manager is closed
+     */
+    public void setDefaultFont(Font font) {
+        Objects.requireNonNull(font, "font");
+        ensureOpen();
+        if (context.defaultFont() == font) {
+            return;
+        }
+        context.setDefaultFont(font);
+        notifyContextChanged();
     }
 
     /**
@@ -107,9 +189,11 @@ public final class WidgetManager {
      * @return this manager
      * @throws NullPointerException if {@code widget} is null
      * @throws IllegalArgumentException if the widget has a parent or is already registered
+     * @throws IllegalStateException if the manager is closed
      */
     public WidgetManager add(Widget widget) {
         Objects.requireNonNull(widget, "widget");
+        ensureOpen();
         if (widget.parent() != null) {
             throw new IllegalArgumentException("Only widgets without a parent can be added.");
         }
@@ -117,6 +201,12 @@ public final class WidgetManager {
             throw new IllegalArgumentException("Widget is already registered.");
         }
         widgets.add(widget);
+        try {
+            widget.attach(context);
+        } catch (RuntimeException | Error exception) {
+            widgets.remove(widgets.size() - 1);
+            throw exception;
+        }
         return this;
     }
 
@@ -133,6 +223,7 @@ public final class WidgetManager {
         for (int index = 0; index < widgets.size(); index++) {
             if (widgets.get(index) == widget) {
                 widgets.remove(index);
+                widget.detach();
                 pruneInteraction();
                 return true;
             }
@@ -145,9 +236,14 @@ public final class WidgetManager {
      *
      * @param viewport target viewport
      * @throws NullPointerException if {@code viewport} is null
+     * @throws IllegalStateException if the manager is closed
      */
     public void resize(Viewport viewport) {
+        Objects.requireNonNull(viewport, "viewport");
+        ensureOpen();
         renderer.resize(viewport);
+        context.setViewport(viewport);
+        notifyContextChanged();
     }
 
     /**
@@ -157,6 +253,23 @@ public final class WidgetManager {
      */
     public Rect viewport() {
         return renderer.viewport();
+    }
+
+    /**
+     * Runs a layout pass over every top-level widget and its subtree.
+     * Each top-level widget keeps its current position and size, while containers rearrange their
+     * children through {@link Widget#layout(Rect)}.
+     * {@link #render()} calls this method automatically before drawing.
+     *
+     * @throws IllegalStateException if the manager is closed
+     */
+    public void layout() {
+        ensureOpen();
+        for (Widget widget : widgets) {
+            widget.layout(widget.bounds());
+        }
+        updateHover();
+        refreshCursor();
     }
 
     /**
@@ -174,17 +287,23 @@ public final class WidgetManager {
      *
      * @param deltaSeconds elapsed time in seconds
      * @throws IllegalArgumentException if {@code deltaSeconds} is negative or non-finite
+     * @throws IllegalStateException if the manager is closed
      */
     public void update(float deltaSeconds) {
+        ensureOpen();
         frame = new FrameInfo(deltaSeconds, frame.elapsedSeconds() + deltaSeconds, frame.frameIndex() + 1);
+        eventTime = frame.elapsedSeconds();
         pruneInteraction();
         InputEvent event;
         while ((event = input.poll()) != null) {
             dispatch(event);
         }
+        updatePresses();
         for (Widget widget : widgets) {
             widget.update(frame);
         }
+        updateHover();
+        refreshCursor();
     }
 
     /**
@@ -192,27 +311,56 @@ public final class WidgetManager {
      *
      * @param event event to dispatch
      * @throws NullPointerException if {@code event} is null
+     * @throws IllegalStateException if the manager is closed
      */
     public void handle(InputEvent event) {
         Objects.requireNonNull(event, "event");
+        ensureOpen();
         pruneInteraction();
         dispatch(event);
     }
 
     /**
-     * Draws every top-level widget and submits the completed list to the backend.
+     * Lays out, draws every top-level widget and submits the completed list to the backend.
      * Widgets receive the current {@link #frame()} in their draw callbacks.
      *
      * @throws IllegalStateException if the viewport has not been set with
-     *                               {@link #resize(Viewport)}
+     *                               {@link #resize(Viewport)} or the manager is closed
      */
     public void render() {
+        ensureOpen();
         pruneInteraction();
+        layout();
         renderer.begin();
         for (Widget widget : widgets) {
             widget.draw(renderer, frame);
         }
         renderer.end();
+    }
+
+    /**
+     * Detaches every widget and releases resources created through the manager context.
+     * Hover, focus and pointer captures are cleared. The render backend and platform adapter are
+     * owned by the host and are not closed by this method.
+     */
+    @Override
+    public void close() {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        clearCaptures();
+        clearHover();
+        focus(null);
+        lastClickTarget = null;
+        lastClickButton = null;
+        lastClickTime = Double.NEGATIVE_INFINITY;
+        pointerInside = false;
+        for (Widget widget : List.copyOf(widgets)) {
+            widget.detach();
+        }
+        widgets.clear();
+        context.close();
     }
 
     /**
@@ -248,8 +396,8 @@ public final class WidgetManager {
             if (!widget.isFocusable()) {
                 throw new IllegalArgumentException("Widget is not focusable.");
             }
-            if (!isAttached(widget)) {
-                throw new IllegalArgumentException("Widget is not registered with the manager.");
+            if (!isAttached(widget) || !isInteractive(widget)) {
+                throw new IllegalArgumentException("Widget is not an interactive registered widget.");
             }
         }
         Widget previous = focused;
@@ -265,6 +413,92 @@ public final class WidgetManager {
         }
     }
 
+    /**
+     * Moves focus to the next or previous focusable widget in depth-first tree order.
+     *
+     * @param forward true to move forward, false to move backward
+     * @throws IllegalStateException if the manager is closed
+     */
+    public void focusNext(boolean forward) {
+        ensureOpen();
+        List<Widget> order = new ArrayList<>();
+        Widget scope = focusScope(focused);
+        if (scope != null) {
+            collectFocusable(scope, order);
+        } else {
+            for (Widget widget : widgets) {
+                collectFocusable(widget, order);
+            }
+        }
+        if (order.isEmpty()) {
+            focus(null);
+            return;
+        }
+        int current = order.indexOf(focused);
+        int next;
+        if (current < 0) {
+            next = forward ? 0 : order.size() - 1;
+        } else {
+            int step = forward ? 1 : -1;
+            next = Math.floorMod(current + step, order.size());
+        }
+        focus(order.get(next));
+    }
+
+    /**
+     * Captures pointer button events for a widget until the button is released or the capture is
+     * released explicitly.
+     *
+     * @param widget widget that receives captured pointer events
+     * @param button captured button
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the widget is not an interactive registered widget
+     * @throws IllegalStateException if the manager is closed
+     */
+    public void capturePointer(Widget widget, MouseButton button) {
+        Objects.requireNonNull(widget, "widget");
+        Objects.requireNonNull(button, "button");
+        ensureOpen();
+        if (!isAttached(widget) || !isInteractive(widget)) {
+            throw new IllegalArgumentException("Widget is not an interactive registered widget.");
+        }
+        Widget previous = captures.put(button, widget);
+        presses.remove(button);
+        if (previous != null && previous != widget) {
+            clearPressedIfUncaptured(previous);
+        }
+        widget.setPressed(true);
+    }
+
+    /**
+     * Releases a pointer capture and clears the pressed state when no other button is captured.
+     *
+     * @param button captured button
+     * @throws NullPointerException if {@code button} is null
+     * @throws IllegalStateException if the manager is closed
+     */
+    public void releasePointerCapture(MouseButton button) {
+        Objects.requireNonNull(button, "button");
+        ensureOpen();
+        Widget target = captures.remove(button);
+        presses.remove(button);
+        if (target != null) {
+            clearPressedIfUncaptured(target);
+        }
+    }
+
+    private void notifyContextChanged() {
+        for (Widget widget : widgets) {
+            widget.contextChanged();
+        }
+    }
+
+    private void ensureOpen() {
+        if (closed) {
+            throw new IllegalStateException("Widget manager is closed.");
+        }
+    }
+
     private void dispatch(InputEvent event) {
         switch (event) {
             case PointerMoved moved -> pointerMoved(moved.x(), moved.y());
@@ -274,18 +508,19 @@ public final class WidgetManager {
             case PointerReleased released -> pointerReleased(released);
             case PointerScrolled scrolled -> pointerScrolled(scrolled);
             case KeyPressed pressed -> {
-                if (focused != null) {
-                    focused.onKeyPressed(pressed.key(), pressed.modifiers(), pressed.repeat());
+                boolean consumed = focused != null && bubbleKeyPressed(pressed);
+                if (!consumed && pressed.key() == Key.TAB) {
+                    focusNext(!pressed.modifiers().shift());
                 }
             }
             case KeyReleased released -> {
                 if (focused != null) {
-                    focused.onKeyReleased(released.key(), released.modifiers());
+                    bubbleKeyReleased(released);
                 }
             }
             case CharTyped typed -> {
                 if (focused != null) {
-                    focused.onCharTyped(typed.codepoint());
+                    bubbleCharTyped(typed.codepoint());
                 }
             }
             case FocusChanged focus -> focusChanged(focus.focused());
@@ -311,18 +546,16 @@ public final class WidgetManager {
         pointerX = x;
         pointerY = y;
         Widget target = updateHover();
-        if (target != null) {
-            target.onPointerMove(x, y);
-        }
         Set<Widget> delivered = Collections.newSetFromMap(new IdentityHashMap<>());
         if (target != null) {
-            delivered.add(target);
+            bubblePointerMove(target, x, y, delivered);
         }
-        for (Widget widget : captures.values()) {
-            if (delivered.add(widget)) {
-                widget.onPointerMove(x, y);
+        for (Widget widget : List.copyOf(captures.values())) {
+            if (!delivered.contains(widget)) {
+                bubblePointerMove(widget, x, y, delivered);
             }
         }
+        updateDrag(x, y);
     }
 
     private void pointerPressed(PointerPressed pressed) {
@@ -334,17 +567,16 @@ public final class WidgetManager {
             focus(null);
             return;
         }
-        if (target.isFocusable()) {
-            focus(target);
-        } else {
-            focus(null);
-        }
+        focus(focusTarget(target));
         Widget previous = captures.put(pressed.button(), target);
-        if (previous != null) {
+        if (previous != null && previous != target) {
+            presses.remove(pressed.button());
             clearPressedIfUncaptured(previous);
         }
+        presses.put(pressed.button(), new PressState(target, pointerX, pointerY,
+                eventTime, pressed.modifiers()));
         target.setPressed(true);
-        target.onPointerPress(pointerX, pointerY, pressed.button(), pressed.modifiers());
+        bubblePointerPress(target, pressed);
     }
 
     private void pointerReleased(PointerReleased released) {
@@ -353,10 +585,18 @@ public final class WidgetManager {
         pointerY = released.y();
         updateHover();
         Widget target = captures.remove(released.button());
+        PressState state = presses.remove(released.button());
         if (target == null) {
             return;
         }
-        target.onPointerRelease(pointerX, pointerY, released.button(), released.modifiers());
+        bubblePointerRelease(target, released);
+        if (state != null) {
+            if (state.dragging) {
+                bubbleDragEnd(target, pointerX, pointerY, released.button(), state.modifiers);
+            } else if (!state.longPressed && hovered == target) {
+                completeClick(target, released.button(), released.modifiers());
+            }
+        }
         clearPressedIfUncaptured(target);
     }
 
@@ -366,8 +606,58 @@ public final class WidgetManager {
         pointerY = scrolled.y();
         Widget target = updateHover();
         if (target != null) {
-            target.onPointerScroll(pointerX, pointerY, scrolled.deltaX(), scrolled.deltaY());
+            bubblePointerScroll(target, scrolled);
         }
+    }
+
+    private void updateDrag(float x, float y) {
+        for (MouseButton button : List.copyOf(presses.keySet())) {
+            PressState state = presses.get(button);
+            if (state == null || captures.get(button) != state.target) {
+                continue;
+            }
+            if (!state.dragging && distance(state.x, state.y, x, y) >= DRAG_THRESHOLD) {
+                state.dragging = true;
+                bubbleDragStart(state.target, x, y, button, state.modifiers);
+            }
+            if (state.dragging) {
+                bubbleDrag(state.target, x, y, button, state.modifiers);
+            }
+        }
+    }
+
+    private void updatePresses() {
+        for (MouseButton button : List.copyOf(presses.keySet())) {
+            PressState state = presses.get(button);
+            if (state == null || captures.get(button) != state.target
+                    || state.dragging || state.longPressed) {
+                continue;
+            }
+            if (eventTime - state.time >= LONG_PRESS_SECONDS) {
+                state.longPressed = true;
+                bubbleLongPress(state.target, state.x, state.y, button, state.modifiers);
+            }
+        }
+    }
+
+    private void completeClick(Widget target, MouseButton button, Modifiers modifiers) {
+        boolean doubleClick = target == lastClickTarget
+                && button == lastClickButton
+                && eventTime - lastClickTime <= DOUBLE_CLICK_SECONDS
+                && distance(lastClickX, lastClickY, pointerX, pointerY) <= CLICK_SLOP;
+        if (doubleClick) {
+            bubbleDoubleClick(target, pointerX, pointerY, button, modifiers);
+            lastClickTarget = null;
+            lastClickButton = null;
+            lastClickTime = Double.NEGATIVE_INFINITY;
+            return;
+        }
+        bubbleClick(target, pointerX, pointerY, button, modifiers);
+        lastClickTarget = target;
+        lastClickButton = button;
+        lastClickTime = eventTime;
+        lastClickX = pointerX;
+        lastClickY = pointerY;
     }
 
     private void focusChanged(boolean focusedWindow) {
@@ -394,12 +684,200 @@ public final class WidgetManager {
             hit.setHovered(true);
             hit.onPointerEnter();
         }
+        refreshCursor();
         return hit;
+    }
+
+    private static Point localPoint(Widget widget, float x, float y) {
+        Point origin = widget.absolutePosition();
+        return new Point(x - origin.x(), y - origin.y());
+    }
+
+    private static Widget focusScope(Widget widget) {
+        for (Widget current = widget; current != null; current = current.parent()) {
+            if (current.isFocusScope()) {
+                return current;
+            }
+        }
+        return null;
+    }
+
+    private static void collectFocusable(Widget widget, List<Widget> order) {
+        if (!isInteractive(widget)) {
+            return;
+        }
+        if (widget.isFocusable()) {
+            order.add(widget);
+        }
+        for (Widget child : widget.children()) {
+            collectFocusable(child, order);
+        }
+    }
+
+    private static Widget focusTarget(Widget target) {
+        for (Widget widget = target; widget != null; widget = widget.parent()) {
+            if (widget.isFocusable() && isInteractive(widget)) {
+                return widget;
+            }
+        }
+        return null;
+    }
+
+    private static boolean isInteractive(Widget widget) {
+        for (Widget current = widget; current != null; current = current.parent()) {
+            if (!current.isVisible() || !current.isEnabled()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static float distance(float firstX, float firstY, float secondX, float secondY) {
+        return (float) Math.hypot(secondX - firstX, secondY - firstY);
+    }
+
+    private static boolean bubblePointerMove(Widget target, float x, float y,
+                                             Set<Widget> delivered) {
+        for (Widget widget = target; widget != null; widget = widget.parent()) {
+            if (!delivered.add(widget)) {
+                continue;
+            }
+            Point local = localPoint(widget, x, y);
+            if (widget.onPointerMove(local.x(), local.y())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean bubblePointerPress(Widget target, PointerPressed pressed) {
+        for (Widget widget = target; widget != null; widget = widget.parent()) {
+            Point local = localPoint(widget, pressed.x(), pressed.y());
+            if (widget.onPointerPress(local.x(), local.y(), pressed.button(), pressed.modifiers())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean bubblePointerRelease(Widget target, PointerReleased released) {
+        for (Widget widget = target; widget != null; widget = widget.parent()) {
+            Point local = localPoint(widget, released.x(), released.y());
+            if (widget.onPointerRelease(local.x(), local.y(), released.button(),
+                    released.modifiers())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean bubblePointerScroll(Widget target, PointerScrolled scrolled) {
+        for (Widget widget = target; widget != null; widget = widget.parent()) {
+            Point local = localPoint(widget, scrolled.x(), scrolled.y());
+            if (widget.onPointerScroll(local.x(), local.y(), scrolled.deltaX(), scrolled.deltaY())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean bubbleClick(Widget target, float x, float y, MouseButton button,
+                                       Modifiers modifiers) {
+        for (Widget widget = target; widget != null; widget = widget.parent()) {
+            Point local = localPoint(widget, x, y);
+            if (widget.onClick(local.x(), local.y(), button, modifiers)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean bubbleDoubleClick(Widget target, float x, float y, MouseButton button,
+                                             Modifiers modifiers) {
+        for (Widget widget = target; widget != null; widget = widget.parent()) {
+            Point local = localPoint(widget, x, y);
+            if (widget.onDoubleClick(local.x(), local.y(), button, modifiers)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean bubbleDragStart(Widget target, float x, float y, MouseButton button,
+                                           Modifiers modifiers) {
+        for (Widget widget = target; widget != null; widget = widget.parent()) {
+            Point local = localPoint(widget, x, y);
+            if (widget.onDragStart(local.x(), local.y(), button, modifiers)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean bubbleDrag(Widget target, float x, float y, MouseButton button,
+                                      Modifiers modifiers) {
+        for (Widget widget = target; widget != null; widget = widget.parent()) {
+            Point local = localPoint(widget, x, y);
+            if (widget.onDrag(local.x(), local.y(), button, modifiers)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean bubbleDragEnd(Widget target, float x, float y, MouseButton button,
+                                         Modifiers modifiers) {
+        for (Widget widget = target; widget != null; widget = widget.parent()) {
+            Point local = localPoint(widget, x, y);
+            if (widget.onDragEnd(local.x(), local.y(), button, modifiers)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean bubbleLongPress(Widget target, float x, float y, MouseButton button,
+                                           Modifiers modifiers) {
+        for (Widget widget = target; widget != null; widget = widget.parent()) {
+            Point local = localPoint(widget, x, y);
+            if (widget.onLongPress(local.x(), local.y(), button, modifiers)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean bubbleKeyPressed(KeyPressed pressed) {
+        for (Widget widget = focused; widget != null; widget = widget.parent()) {
+            if (widget.onKeyPressed(pressed.key(), pressed.modifiers(), pressed.repeat())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean bubbleKeyReleased(KeyReleased released) {
+        for (Widget widget = focused; widget != null; widget = widget.parent()) {
+            if (widget.onKeyReleased(released.key(), released.modifiers())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean bubbleCharTyped(int codepoint) {
+        for (Widget widget = focused; widget != null; widget = widget.parent()) {
+            if (widget.onCharTyped(codepoint)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private Widget hitTest(float x, float y) {
         for (int index = widgets.size() - 1; index >= 0; index--) {
-            Widget hit = widgets.get(index).hitTest(x, y);
+            Widget widget = widgets.get(index);
+            Widget hit = widget.hitTest(x - widget.bounds().x(), y - widget.bounds().y());
             if (hit != null) {
                 return hit;
             }
@@ -407,21 +885,24 @@ public final class WidgetManager {
         return null;
     }
 
-    private void pruneInteraction() {
-        if (hovered != null && !isAttached(hovered)) {
+    void pruneInteraction() {
+        if (hovered != null && (!isAttached(hovered) || !isInteractive(hovered))) {
             clearHover();
         }
-        if (focused != null && !isAttached(focused)) {
+        if (focused != null && (!isAttached(focused) || !isInteractive(focused)
+                || !focused.isFocusable())) {
             focus(null);
         }
         if (captures.isEmpty()) {
+            refreshCursor();
             return;
         }
         Set<Widget> released = Collections.newSetFromMap(new IdentityHashMap<>());
         Iterator<Map.Entry<MouseButton, Widget>> iterator = captures.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<MouseButton, Widget> entry = iterator.next();
-            if (!isAttached(entry.getValue())) {
+            if (!isAttached(entry.getValue()) || !isInteractive(entry.getValue())) {
+                presses.remove(entry.getKey());
                 released.add(entry.getValue());
                 iterator.remove();
             }
@@ -429,6 +910,7 @@ public final class WidgetManager {
         for (Widget widget : released) {
             clearPressedIfUncaptured(widget);
         }
+        refreshCursor();
     }
 
     private void clearHover() {
@@ -439,9 +921,14 @@ public final class WidgetManager {
         hovered = null;
         previous.setHovered(false);
         previous.onPointerExit();
+        refreshCursor();
     }
 
     private void clearCaptures() {
+        presses.clear();
+        lastClickTarget = null;
+        lastClickButton = null;
+        lastClickTime = Double.NEGATIVE_INFINITY;
         if (captures.isEmpty()) {
             return;
         }
@@ -451,6 +938,21 @@ public final class WidgetManager {
         for (Widget widget : pressedWidgets) {
             widget.setPressed(false);
         }
+    }
+
+    private void refreshCursor() {
+        if (closed) {
+            return;
+        }
+        Cursor cursor = Cursor.DEFAULT;
+        for (Widget widget = hovered; widget != null; widget = widget.parent()) {
+            Cursor candidate = widget.cursor();
+            if (candidate != null && candidate != Cursor.DEFAULT) {
+                cursor = candidate;
+                break;
+            }
+        }
+        context.setCursor(cursor);
     }
 
     private void clearPressedIfUncaptured(Widget widget) {
@@ -474,5 +976,23 @@ public final class WidgetManager {
             }
         }
         return false;
+    }
+
+    private static final class PressState {
+        private final Widget target;
+        private final float x;
+        private final float y;
+        private final double time;
+        private final Modifiers modifiers;
+        private boolean dragging;
+        private boolean longPressed;
+
+        PressState(Widget target, float x, float y, double time, Modifiers modifiers) {
+            this.target = target;
+            this.x = x;
+            this.y = y;
+            this.time = time;
+            this.modifiers = modifiers;
+        }
     }
 }

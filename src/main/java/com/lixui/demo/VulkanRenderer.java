@@ -1,8 +1,8 @@
 package com.lixui.demo;
 
 import com.lixui.backend.vulkan.VulkanBackend;
-import com.lixui.render.RenderManager;
-import com.lixui.render.Texture;
+import com.lixui.input.InputState;
+import com.lixui.platform.UiPlatform;
 import com.lixui.render.Viewport;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.glfw.GLFW;
@@ -80,18 +80,15 @@ final class VulkanRenderer implements AutoCloseable {
     private long[] renderFinished;
     private long frameFence;
     private VulkanBackend backend;
-    private Texture sceneTexture;
-    private Texture maskTexture;
-    private RenderManager renderer;
-    private DemoFonts fonts;
-    private final long startNanos = System.nanoTime();
+    private DemoWidgetScene scene;
+    private long previousFrameNanos;
     private int framebufferWidth;
     private int framebufferHeight;
     private int logicalWidth;
     private int logicalHeight;
     private boolean swapchainDirty = true;
 
-    VulkanRenderer(long window) {
+    VulkanRenderer(long window, InputState input, UiPlatform platform) {
         this.window = window;
         try {
             if (!GLFWVulkan.glfwVulkanSupported()) {
@@ -110,10 +107,7 @@ final class VulkanRenderer implements AutoCloseable {
             depthStencilFormat = chooseDepthStencilFormat();
             createRenderPass();
             backend = new VulkanBackend(physicalDevice, device, queue, queueFamily, renderPass, SAMPLE_COUNT);
-            sceneTexture = backend.createTexture(DemoTextures.checkerboard());
-            maskTexture = backend.createTexture(DemoTextures.mask());
-            renderer = new RenderManager(backend);
-            fonts = DemoFonts.load(renderer);
+            scene = new DemoWidgetScene(input, backend, platform);
             createFrameSynchronization();
         } catch (RuntimeException | Error exception) {
             close();
@@ -140,6 +134,15 @@ final class VulkanRenderer implements AutoCloseable {
                     return false;
                 }
             }
+
+            long now = System.nanoTime();
+            float deltaSeconds = previousFrameNanos == 0
+                    ? 0
+                    : (now - previousFrameNanos) / 1_000_000_000f;
+            previousFrameNanos = now;
+            scene.resize(new Viewport(framebufferWidth, framebufferHeight,
+                    logicalWidth, logicalHeight));
+            scene.update(deltaSeconds);
 
             check(VK10.vkWaitForFences(device, frameFence, true, -1L), "Wait for frame");
             IntBuffer imageIndex = stack.mallocInt(1);
@@ -194,13 +197,13 @@ final class VulkanRenderer implements AutoCloseable {
         if (device != null) {
             // Cleanup must also proceed after device loss.
             VK10.vkDeviceWaitIdle(device);
+            if (scene != null) {
+                scene.close();
+                scene = null;
+            }
             if (backend != null) {
                 backend.close();
                 backend = null;
-                sceneTexture = null;
-                maskTexture = null;
-                fonts = null;
-                renderer = null;
             }
             destroySwapchain();
             if (renderPass != VK10.VK_NULL_HANDLE) {
@@ -550,7 +553,6 @@ final class VulkanRenderer implements AutoCloseable {
             createDepthStencil();
             createFramebuffers(images.remaining());
             createCommands(images.remaining());
-            renderer.resize(new Viewport(extentWidth, extentHeight, viewportWidth, viewportHeight));
             swapchainDirty = false;
             return true;
         }
@@ -759,10 +761,7 @@ final class VulkanRenderer implements AutoCloseable {
 
             VK10.vkCmdBeginRenderPass(command, renderPassBegin, VK10.VK_SUBPASS_CONTENTS_INLINE);
             backend.beginFrame(command);
-            renderer.begin();
-            DemoRawScene.draw(renderer, sceneTexture, sceneTexture, maskTexture, fonts,
-                    (System.nanoTime() - startNanos) / 1_000_000_000f);
-            renderer.end();
+            scene.render();
             backend.endFrame();
             VK10.vkCmdEndRenderPass(command);
             check(VK10.vkEndCommandBuffer(command), "End command buffer");
