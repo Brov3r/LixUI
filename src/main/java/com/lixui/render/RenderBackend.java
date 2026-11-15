@@ -6,22 +6,32 @@ package com.lixui.render;
  */
 public interface RenderBackend extends AutoCloseable {
     /**
-     * Sets the size of the render target in pixels.
-     * Backends use it to map logical UI coordinates onto the target.
+     * Sets a pixel-for-pixel viewport where logical and framebuffer dimensions are equal.
      *
      * @param framebufferWidth target width in pixels
      * @param framebufferHeight target height in pixels
      * @throws IllegalArgumentException if a dimension is not positive
      */
-    void resize(int framebufferWidth, int framebufferHeight);
+    default void resize(int framebufferWidth, int framebufferHeight) {
+        resize(new Viewport(framebufferWidth, framebufferHeight, framebufferWidth, framebufferHeight));
+    }
+
+    /**
+     * Sets the physical framebuffer and logical UI viewport.
+     * Backends map the logical viewport onto the full framebuffer.
+     *
+     * @param viewport target viewport
+     * @throws NullPointerException if {@code viewport} is null
+     */
+    void resize(Viewport viewport);
 
     /**
      * Draws the supplied commands into the currently bound render target.
-     * The target size must have been reported with {@link #resize(int, int)}.
+     * The target viewport must have been reported with {@link #resize(Viewport)}.
      *
      * @param drawList commands to render
      * @throws NullPointerException if {@code drawList} is null
-     * @throws IllegalStateException if the target size is unknown
+     * @throws IllegalStateException if the target viewport is unknown
      */
     void draw(DrawList drawList);
 

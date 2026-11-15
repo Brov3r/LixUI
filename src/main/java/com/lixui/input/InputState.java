@@ -49,8 +49,8 @@ public final class InputState {
     /**
      * Queues a pointer move.
      *
-     * @param x horizontal position in framebuffer pixels
-     * @param y vertical position in framebuffer pixels
+     * @param x horizontal position in logical UI units
+     * @param y vertical position in logical UI units
      */
     public void pointerMoved(float x, float y) {
         add(new PointerMoved(x, y));
@@ -59,8 +59,8 @@ public final class InputState {
     /**
      * Queues a pointer enter.
      *
-     * @param x horizontal position in framebuffer pixels
-     * @param y vertical position in framebuffer pixels
+     * @param x horizontal position in logical UI units
+     * @param y vertical position in logical UI units
      */
     public void pointerEntered(float x, float y) {
         add(new PointerEntered(x, y));
@@ -69,8 +69,8 @@ public final class InputState {
     /**
      * Queues a pointer exit.
      *
-     * @param x horizontal position in framebuffer pixels
-     * @param y vertical position in framebuffer pixels
+     * @param x horizontal position in logical UI units
+     * @param y vertical position in logical UI units
      */
     public void pointerExited(float x, float y) {
         add(new PointerExited(x, y));
@@ -79,8 +79,8 @@ public final class InputState {
     /**
      * Queues a pointer press.
      *
-     * @param x horizontal position in framebuffer pixels
-     * @param y vertical position in framebuffer pixels
+     * @param x horizontal position in logical UI units
+     * @param y vertical position in logical UI units
      * @param button pressed button
      * @param modifiers active keyboard modifiers
      */
@@ -91,8 +91,8 @@ public final class InputState {
     /**
      * Queues a pointer release.
      *
-     * @param x horizontal position in framebuffer pixels
-     * @param y vertical position in framebuffer pixels
+     * @param x horizontal position in logical UI units
+     * @param y vertical position in logical UI units
      * @param button released button
      * @param modifiers active keyboard modifiers
      */
@@ -103,8 +103,8 @@ public final class InputState {
     /**
      * Queues a scroll event.
      *
-     * @param x horizontal position in framebuffer pixels
-     * @param y vertical position in framebuffer pixels
+     * @param x horizontal position in logical UI units
+     * @param y vertical position in logical UI units
      * @param deltaX horizontal scroll amount
      * @param deltaY vertical scroll amount
      */

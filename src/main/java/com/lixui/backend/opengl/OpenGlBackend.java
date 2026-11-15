@@ -8,6 +8,7 @@ import com.lixui.render.ImageCommand;
 import com.lixui.render.ImageData;
 import com.lixui.render.RenderBackend;
 import com.lixui.render.Texture;
+import com.lixui.render.Viewport;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
@@ -47,8 +48,7 @@ public final class OpenGlBackend implements RenderBackend {
     private int vertexBuffer;
     private int viewportLocation;
     private int textureLocation;
-    private int framebufferWidth;
-    private int framebufferHeight;
+    private Viewport viewport;
     private int floatCount;
 
     /**
@@ -73,19 +73,14 @@ public final class OpenGlBackend implements RenderBackend {
     }
 
     /**
-     * Stores the target size in pixels for the next draw.
+     * Stores the logical and physical viewport for the next draw.
      *
-     * @param framebufferWidth target width in pixels
-     * @param framebufferHeight target height in pixels
-     * @throws IllegalArgumentException if a dimension is not positive
+     * @param viewport target viewport
+     * @throws NullPointerException if {@code viewport} is null
      */
     @Override
-    public void resize(int framebufferWidth, int framebufferHeight) {
-        if (framebufferWidth <= 0 || framebufferHeight <= 0) {
-            throw new IllegalArgumentException("Framebuffer dimensions must be positive.");
-        }
-        this.framebufferWidth = framebufferWidth;
-        this.framebufferHeight = framebufferHeight;
+    public void resize(Viewport viewport) {
+        this.viewport = Objects.requireNonNull(viewport, "viewport");
     }
 
     /**
@@ -166,12 +161,12 @@ public final class OpenGlBackend implements RenderBackend {
      *
      * @param drawList commands to render
      * @throws NullPointerException if {@code drawList} is null
-     * @throws IllegalStateException if {@link #resize(int, int)} has not been called
+     * @throws IllegalStateException if {@link #resize(Viewport)} has not been called
      */
     @Override
     public void draw(DrawList drawList) {
         Objects.requireNonNull(drawList, "drawList");
-        if (framebufferWidth <= 0 || framebufferHeight <= 0) {
+        if (viewport == null) {
             throw new IllegalStateException("resize must be called before draw.");
         }
 
@@ -180,7 +175,7 @@ public final class OpenGlBackend implements RenderBackend {
             return;
         }
 
-        GL11.glViewport(0, 0, framebufferWidth, framebufferHeight);
+        GL11.glViewport(0, 0, viewport.framebufferWidth(), viewport.framebufferHeight());
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glDisable(GL11.GL_CULL_FACE);
         GL11.glEnable(GL11.GL_BLEND);
@@ -195,7 +190,7 @@ public final class OpenGlBackend implements RenderBackend {
         vertices.clear();
 
         GL20.glUseProgram(program);
-        GL20.glUniform2f(viewportLocation, framebufferWidth, framebufferHeight);
+        GL20.glUniform2f(viewportLocation, viewport.logicalWidth(), viewport.logicalHeight());
         GL20.glUniform1i(textureLocation, 0);
         for (Batch batch : batches) {
             if (!applyClip(batch.clip())) {
@@ -224,6 +219,7 @@ public final class OpenGlBackend implements RenderBackend {
         }
         textures.clear();
         whiteTexture = null;
+        viewport = null;
         if (vertexBuffer != 0) {
             GL15.glDeleteBuffers(vertexBuffer);
             vertexBuffer = 0;
@@ -355,10 +351,12 @@ public final class OpenGlBackend implements RenderBackend {
     }
 
     private boolean applyClip(Rect clip) {
-        float left = Math.max(clip.x(), 0);
-        float top = Math.max(clip.y(), 0);
-        float right = Math.min(clip.right(), framebufferWidth);
-        float bottom = Math.min(clip.bottom(), framebufferHeight);
+        float scaleX = viewport.scaleX();
+        float scaleY = viewport.scaleY();
+        float left = Math.max(clip.x() * scaleX, 0);
+        float top = Math.max(clip.y() * scaleY, 0);
+        float right = Math.min(clip.right() * scaleX, viewport.framebufferWidth());
+        float bottom = Math.min(clip.bottom() * scaleY, viewport.framebufferHeight());
         if (right <= left || bottom <= top) {
             return false;
         }
@@ -367,7 +365,10 @@ public final class OpenGlBackend implements RenderBackend {
         int scissorY = (int) Math.floor(top);
         int scissorWidth = (int) Math.ceil(right) - scissorX;
         int scissorHeight = (int) Math.ceil(bottom) - scissorY;
-        GL11.glScissor(scissorX, framebufferHeight - scissorY - scissorHeight, scissorWidth, scissorHeight);
+        GL11.glScissor(scissorX,
+                viewport.framebufferHeight() - scissorY - scissorHeight,
+                scissorWidth,
+                scissorHeight);
         return true;
     }
 

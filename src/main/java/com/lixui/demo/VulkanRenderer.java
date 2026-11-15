@@ -2,6 +2,7 @@ package com.lixui.demo;
 
 import com.lixui.backend.vulkan.VulkanBackend;
 import com.lixui.render.Texture;
+import com.lixui.render.Viewport;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWVulkan;
@@ -68,6 +69,8 @@ final class VulkanRenderer implements AutoCloseable {
     private Texture sceneTexture;
     private int framebufferWidth;
     private int framebufferHeight;
+    private int logicalWidth;
+    private int logicalHeight;
     private boolean swapchainDirty = true;
 
     VulkanRenderer(long window) {
@@ -102,6 +105,12 @@ final class VulkanRenderer implements AutoCloseable {
             GLFW.glfwGetFramebufferSize(window, width, height);
             if (width.get(0) == 0 || height.get(0) == 0) {
                 return false;
+            }
+            IntBuffer windowWidth = stack.mallocInt(1);
+            IntBuffer windowHeight = stack.mallocInt(1);
+            GLFW.glfwGetWindowSize(window, windowWidth, windowHeight);
+            if (windowWidth.get(0) != logicalWidth || windowHeight.get(0) != logicalHeight) {
+                swapchainDirty = true;
             }
             if (swapchainDirty || width.get(0) != framebufferWidth || height.get(0) != framebufferHeight) {
                 if (!recreateSwapchain(width.get(0), height.get(0))) {
@@ -404,6 +413,15 @@ final class VulkanRenderer implements AutoCloseable {
                 return false;
             }
 
+            IntBuffer windowWidth = stack.mallocInt(1);
+            IntBuffer windowHeight = stack.mallocInt(1);
+            GLFW.glfwGetWindowSize(window, windowWidth, windowHeight);
+            int viewportWidth = windowWidth.get(0);
+            int viewportHeight = windowHeight.get(0);
+            if (viewportWidth <= 0 || viewportHeight <= 0) {
+                return false;
+            }
+
             int imageCount = capabilities.minImageCount() + 1;
             if (capabilities.maxImageCount() > 0) {
                 imageCount = Math.min(imageCount, capabilities.maxImageCount());
@@ -412,6 +430,8 @@ final class VulkanRenderer implements AutoCloseable {
             destroySwapchain();
             framebufferWidth = extentWidth;
             framebufferHeight = extentHeight;
+            logicalWidth = viewportWidth;
+            logicalHeight = viewportHeight;
 
             VkSwapchainCreateInfoKHR info = VkSwapchainCreateInfoKHR.calloc(stack)
                     .sType$Default()
@@ -440,7 +460,7 @@ final class VulkanRenderer implements AutoCloseable {
             createImageViews(images);
             createFramebuffers(images.remaining());
             createCommands(images.remaining());
-            backend.resize(extentWidth, extentHeight);
+            backend.resize(new Viewport(extentWidth, extentHeight, viewportWidth, viewportHeight));
             swapchainDirty = false;
             return true;
         }
@@ -534,7 +554,7 @@ final class VulkanRenderer implements AutoCloseable {
 
             VK10.vkCmdBeginRenderPass(command, renderPassBegin, VK10.VK_SUBPASS_CONTENTS_INLINE);
             backend.beginFrame(command);
-            backend.draw(DemoScene.create(framebufferWidth, framebufferHeight, sceneTexture, sceneTexture));
+            backend.draw(DemoScene.create(logicalWidth, logicalHeight, sceneTexture, sceneTexture));
             backend.endFrame();
             VK10.vkCmdEndRenderPass(command);
             check(VK10.vkEndCommandBuffer(command), "End command buffer");

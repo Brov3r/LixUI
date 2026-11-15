@@ -59,6 +59,10 @@ final class DemoWindow implements AutoCloseable {
         GLFW.glfwGetFramebufferSize(handle, width, height);
     }
 
+    void windowSize(IntBuffer width, IntBuffer height) {
+        GLFW.glfwGetWindowSize(handle, width, height);
+    }
+
     void show() {
         GLFW.glfwShowWindow(handle);
         GLFW.glfwFocusWindow(handle);

@@ -16,14 +16,12 @@ import org.lwjgl.system.Callback;
 import org.lwjgl.system.MemoryStack;
 
 import java.nio.DoubleBuffer;
-import java.nio.FloatBuffer;
 import java.util.Objects;
 
 /**
  * A GLFW input adapter that translates callbacks into backend-neutral {@link InputState} events.
  * Existing callbacks installed by the host are chained and restored on {@link #close()}.
- * Pointer coordinates are reported in framebuffer pixels, so they match a UI viewport sized from
- * {@code glfwGetFramebufferSize}.
+ * Pointer coordinates are reported in logical UI units, matching the window content size.
  */
 public final class GlfwInput implements AutoCloseable {
     private final long window;
@@ -44,14 +42,11 @@ public final class GlfwInput implements AutoCloseable {
     private GLFWCursorEnterCallback previousCursorEnter;
     private float pointerX;
     private float pointerY;
-    private float scaleX = 1;
-    private float scaleY = 1;
     private boolean closed;
 
     private GlfwInput(long window, InputState input) {
         this.window = window;
         this.input = input;
-        refreshScale();
         readPointer();
     }
 
@@ -127,9 +122,8 @@ public final class GlfwInput implements AutoCloseable {
     }
 
     private void onCursorPos(long ignoredWindow, double xpos, double ypos) {
-        refreshScale();
-        pointerX = (float) xpos * scaleX;
-        pointerY = (float) ypos * scaleY;
+        pointerX = (float) xpos;
+        pointerY = (float) ypos;
         input.pointerMoved(pointerX, pointerY);
         if (previousCursorPos != null) {
             previousCursorPos.invoke(ignoredWindow, xpos, ypos);
@@ -188,7 +182,6 @@ public final class GlfwInput implements AutoCloseable {
     }
 
     private void onCursorEnter(long ignoredWindow, boolean entered) {
-        refreshScale();
         readPointer();
         if (entered) {
             input.pointerEntered(pointerX, pointerY);
@@ -205,18 +198,8 @@ public final class GlfwInput implements AutoCloseable {
             DoubleBuffer xpos = stack.mallocDouble(1);
             DoubleBuffer ypos = stack.mallocDouble(1);
             GLFW.glfwGetCursorPos(window, xpos, ypos);
-            pointerX = (float) xpos.get(0) * scaleX;
-            pointerY = (float) ypos.get(0) * scaleY;
-        }
-    }
-
-    private void refreshScale() {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            FloatBuffer xscale = stack.mallocFloat(1);
-            FloatBuffer yscale = stack.mallocFloat(1);
-            GLFW.glfwGetWindowContentScale(window, xscale, yscale);
-            scaleX = xscale.get(0);
-            scaleY = yscale.get(0);
+            pointerX = (float) xpos.get(0);
+            pointerY = (float) ypos.get(0);
         }
     }
 

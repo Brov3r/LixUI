@@ -4,6 +4,7 @@ import com.lixui.backend.opengl.OpenGlBackend;
 import com.lixui.render.DrawList;
 import com.lixui.render.ImageData;
 import com.lixui.render.Texture;
+import com.lixui.render.Viewport;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
@@ -50,17 +51,24 @@ public final class OpenGlDemo {
                         try (MemoryStack stack = MemoryStack.stackPush()) {
                             IntBuffer width = stack.mallocInt(1);
                             IntBuffer height = stack.mallocInt(1);
+                            IntBuffer logicalWidth = stack.mallocInt(1);
+                            IntBuffer logicalHeight = stack.mallocInt(1);
                             while (!window.shouldClose()) {
                                 GLFW.glfwPollEvents();
                                 input.poll();
                                 window.framebufferSize(width, height);
+                                window.windowSize(logicalWidth, logicalHeight);
                                 int framebufferWidth = width.get(0);
                                 int framebufferHeight = height.get(0);
-                                if (framebufferWidth > 0 && framebufferHeight > 0) {
+                                int viewportWidth = logicalWidth.get(0);
+                                int viewportHeight = logicalHeight.get(0);
+                                if (framebufferWidth > 0 && framebufferHeight > 0
+                                        && viewportWidth > 0 && viewportHeight > 0) {
                                     GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
-                                    backend.resize(framebufferWidth, framebufferHeight);
-                                    DrawList drawList = DemoScene.create(framebufferWidth, framebufferHeight,
-                                            texture, wrapped);
+                                    backend.resize(new Viewport(
+                                            framebufferWidth, framebufferHeight, viewportWidth, viewportHeight));
+                                    DrawList drawList = DemoScene.create(
+                                            viewportWidth, viewportHeight, texture, wrapped);
                                     backend.draw(drawList);
                                 }
                                 GLFW.glfwSwapBuffers(window.handle());

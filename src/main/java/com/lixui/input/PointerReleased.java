@@ -5,8 +5,8 @@ import java.util.Objects;
 /**
  * A mouse button was released.
  *
- * @param x horizontal position in framebuffer pixels
- * @param y vertical position in framebuffer pixels
+ * @param x horizontal position in logical UI units
+ * @param y vertical position in logical UI units
  * @param button released button
  * @param modifiers active keyboard modifiers
  */
@@ -14,8 +14,8 @@ public record PointerReleased(float x, float y, MouseButton button, Modifiers mo
     /**
      * Creates a pointer release event.
      *
-     * @param x horizontal position in framebuffer pixels
-     * @param y vertical position in framebuffer pixels
+     * @param x horizontal position in logical UI units
+     * @param y vertical position in logical UI units
      * @param button released button
      * @param modifiers active keyboard modifiers
      * @throws NullPointerException if {@code button} or {@code modifiers} is null

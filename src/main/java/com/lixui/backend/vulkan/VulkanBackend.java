@@ -7,6 +7,7 @@ import com.lixui.render.ImageCommand;
 import com.lixui.render.ImageData;
 import com.lixui.render.RenderBackend;
 import com.lixui.render.Texture;
+import com.lixui.render.Viewport;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -101,8 +102,7 @@ public final class VulkanBackend implements RenderBackend {
     private FloatBuffer mappedVertices;
     private int vertexCapacity;
     private VkCommandBuffer commandBuffer;
-    private int framebufferWidth;
-    private int framebufferHeight;
+    private Viewport viewport;
 
     /**
      * Creates the backend, its graphics pipeline and the default texture sampler.
@@ -146,19 +146,14 @@ public final class VulkanBackend implements RenderBackend {
     }
 
     /**
-     * Stores the render target size in pixels for the next draw.
+     * Stores the logical and physical viewport for the next draw.
      *
-     * @param framebufferWidth target width in pixels
-     * @param framebufferHeight target height in pixels
-     * @throws IllegalArgumentException if a dimension is not positive
+     * @param viewport target viewport
+     * @throws NullPointerException if {@code viewport} is null
      */
     @Override
-    public void resize(int framebufferWidth, int framebufferHeight) {
-        if (framebufferWidth <= 0 || framebufferHeight <= 0) {
-            throw new IllegalArgumentException("Framebuffer dimensions must be positive.");
-        }
-        this.framebufferWidth = framebufferWidth;
-        this.framebufferHeight = framebufferHeight;
+    public void resize(Viewport viewport) {
+        this.viewport = Objects.requireNonNull(viewport, "viewport");
     }
 
     /**
@@ -363,7 +358,7 @@ public final class VulkanBackend implements RenderBackend {
      *
      * @param drawList commands to render
      * @throws NullPointerException if {@code drawList} is null
-     * @throws IllegalStateException if {@link #beginFrame(VkCommandBuffer)} or {@link #resize(int, int)}
+     * @throws IllegalStateException if {@link #beginFrame(VkCommandBuffer)} or {@link #resize(Viewport)}
      *         has not been called
      */
     @Override
@@ -372,7 +367,7 @@ public final class VulkanBackend implements RenderBackend {
         if (commandBuffer == null) {
             throw new IllegalStateException("beginFrame must be called before draw.");
         }
-        if (framebufferWidth <= 0 || framebufferHeight <= 0) {
+        if (viewport == null) {
             throw new IllegalStateException("resize must be called before draw.");
         }
 
@@ -396,19 +391,19 @@ public final class VulkanBackend implements RenderBackend {
             VK10.vkCmdPipelineBarrier(commandBuffer, VK10.VK_PIPELINE_STAGE_HOST_BIT,
                     VK10.VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, barrier, null, null);
 
-            VkViewport.Buffer viewport = VkViewport.calloc(1, stack);
-            viewport.get(0)
+            VkViewport.Buffer commandViewport = VkViewport.calloc(1, stack);
+            commandViewport.get(0)
                     .x(0)
                     .y(0)
-                    .width(framebufferWidth)
-                    .height(framebufferHeight)
+                    .width(viewport.framebufferWidth())
+                    .height(viewport.framebufferHeight())
                     .minDepth(0)
                     .maxDepth(1);
-            VK10.vkCmdSetViewport(commandBuffer, 0, viewport);
+            VK10.vkCmdSetViewport(commandBuffer, 0, commandViewport);
 
             VK10.vkCmdBindPipeline(commandBuffer, VK10.VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             VK10.vkCmdPushConstants(commandBuffer, pipelineLayout, VK10.VK_SHADER_STAGE_VERTEX_BIT, 0,
-                    stack.floats(framebufferWidth, framebufferHeight));
+                    stack.floats(viewport.logicalWidth(), viewport.logicalHeight()));
 
             LongBuffer buffers = stack.longs(vertexBuffer);
             LongBuffer offsets = stack.longs(0);
@@ -436,6 +431,7 @@ public final class VulkanBackend implements RenderBackend {
     @Override
     public void close() {
         commandBuffer = null;
+        viewport = null;
         batches.clear();
         List<VulkanTexture> ownedTextures = new ArrayList<>(textures);
         textures.clear();
@@ -1007,10 +1003,12 @@ public final class VulkanBackend implements RenderBackend {
     }
 
     private boolean applyScissor(VkRect2D scissor, Rect clip) {
-        float left = Math.max(clip.x(), 0);
-        float top = Math.max(clip.y(), 0);
-        float right = Math.min(clip.right(), framebufferWidth);
-        float bottom = Math.min(clip.bottom(), framebufferHeight);
+        float scaleX = viewport.scaleX();
+        float scaleY = viewport.scaleY();
+        float left = Math.max(clip.x() * scaleX, 0);
+        float top = Math.max(clip.y() * scaleY, 0);
+        float right = Math.min(clip.right() * scaleX, viewport.framebufferWidth());
+        float bottom = Math.min(clip.bottom() * scaleY, viewport.framebufferHeight());
         if (right <= left || bottom <= top) {
             return false;
         }
