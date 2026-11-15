@@ -3,6 +3,7 @@ package com.lixui.demo;
 import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
 import com.lixui.render.DrawList;
+import com.lixui.render.Texture;
 
 /**
  * Builds the sample draw list shared by the OpenGL and Vulkan demos.
@@ -15,14 +16,16 @@ final class DemoScene {
     }
 
     /**
-     * Creates a draw list with a few overlapping cards and a clipped row.
+     * Creates a draw list with a few overlapping cards, a clipped row and textured quads.
      * The layout is authored at 1280x720 and scaled uniformly to fit the viewport.
      *
      * @param width viewport width in pixels
      * @param height viewport height in pixels
+     * @param texture texture sampled by the first image commands
+     * @param wrappedTexture texture sampled by the tinted image command, typically a host-owned texture
      * @return the populated draw list
      */
-    static DrawList create(int width, int height) {
+    static DrawList create(int width, int height, Texture texture, Texture wrappedTexture) {
         DrawList list = new DrawList(new Rect(0, 0, width, height));
         Layout layout = Layout.fit(width, height);
 
@@ -45,6 +48,17 @@ final class DemoScene {
         list.roundedRect(layout.rect(80, 380, 1120, 180), layout.scale(20), Color.hex("#23262E"));
         list.roundedRect(layout.rect(104, 404, 1072, 24), layout.scale(12), Color.hex("#2C303A"));
         list.roundedRect(layout.rect(104, 404, 640, 24), layout.scale(12), Color.hex("#5B8CFF"));
+
+        Rect fullUv = new Rect(0, 0, 1, 1);
+        list.image(texture, layout.rect(104, 444, 160, 96), layout.scale(16), fullUv, Color.WHITE);
+        list.pushClip(layout.rect(284, 444, 160, 96));
+        list.image(texture, layout.rect(284, 444, 320, 192), layout.scale(16),
+                new Rect(0, 0, 0.5f, 0.5f), Color.WHITE);
+        list.popClip();
+        list.image(texture, layout.rect(464, 444, 96, 96), layout.scale(16), fullUv,
+                Color.rgba(1, 0.5f, 0.5f, 0.8f));
+        list.image(wrappedTexture, layout.rect(580, 444, 96, 96), layout.scale(16), fullUv,
+                Color.WHITE);
         return list;
     }
 

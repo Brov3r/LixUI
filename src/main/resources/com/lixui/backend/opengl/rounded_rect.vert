@@ -4,11 +4,13 @@ layout (location = 1) in vec2 aLocal;
 layout (location = 2) in vec2 aHalfSize;
 layout (location = 3) in float aRadius;
 layout (location = 4) in vec4 aColor;
+layout (location = 5) in vec2 aUv;
 uniform vec2 uViewport;
 out vec2 vLocal;
 out vec2 vHalfSize;
 out float vRadius;
 out vec4 vColor;
+out vec2 vUv;
 void main() {
     vec2 ndc = vec2(aPosition.x / uViewport.x * 2.0 - 1.0,
                     1.0 - aPosition.y / uViewport.y * 2.0);
@@ -17,4 +19,5 @@ void main() {
     vHalfSize = aHalfSize;
     vRadius = aRadius;
     vColor = aColor;
+    vUv = aUv;
 }

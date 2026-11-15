@@ -88,4 +88,17 @@ class RectTest {
     void rejectsNullIntersectionTarget() {
         assertThrows(NullPointerException.class, () -> new Rect(0, 0, 1, 1).intersect(null));
     }
+
+    @Test
+    void containsPointsUsingHalfOpenEdges() {
+        Rect rect = new Rect(10, 20, 100, 50);
+
+        assertTrue(rect.contains(10, 20));
+        assertTrue(rect.contains(109, 69));
+        assertFalse(rect.contains(110, 20));
+        assertFalse(rect.contains(10, 70));
+        assertFalse(rect.contains(9, 20));
+        assertFalse(rect.contains(10, 19));
+        assertFalse(Rect.EMPTY.contains(0, 0));
+    }
 }

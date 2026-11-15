@@ -3,35 +3,36 @@ package com.lixui.render;
 import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
 
-import java.util.Objects;
-
 /**
- * A single rounded rectangle emitted by the UI and consumed by a render backend.
- * Bounds and clipping are in logical UI units, and the radius is clamped to half of the smaller dimension.
- *
- * @param bounds the rectangle to fill
- * @param radius corner radius in logical UI units
- * @param color straight-alpha fill color
- * @param clip clipping rectangle that applies to this command
+ * A backend-neutral drawing primitive emitted by the UI.
+ * Bounds, clipping and the optional corner radius are expressed in logical UI units.
  */
-public record DrawCommand(Rect bounds, float radius, Color color, Rect clip) {
+public sealed interface DrawCommand permits RoundedRectCommand, ImageCommand {
     /**
-     * Creates a draw command, clamping the radius to the bounds.
+     * Returns the rectangle occupied by the primitive.
      *
-     * @param bounds the rectangle to fill
-     * @param radius corner radius in logical UI units
-     * @param color straight-alpha fill color
-     * @param clip clipping rectangle that applies to this command
-     * @throws NullPointerException if any reference argument is null
-     * @throws IllegalArgumentException if radius is non-finite or negative
+     * @return the primitive bounds
      */
-    public DrawCommand {
-        Objects.requireNonNull(bounds, "bounds");
-        Objects.requireNonNull(color, "color");
-        Objects.requireNonNull(clip, "clip");
-        if (!Float.isFinite(radius) || radius < 0) {
-            throw new IllegalArgumentException("Corner radius must be finite and non-negative.");
-        }
-        radius = Math.min(radius, Math.min(bounds.width(), bounds.height()) / 2);
-    }
+    Rect bounds();
+
+    /**
+     * Returns the corner radius, clamped to half of the smaller bound dimension.
+     *
+     * @return the non-negative corner radius
+     */
+    float radius();
+
+    /**
+     * Returns the fill color or image tint.
+     *
+     * @return the straight-alpha color
+     */
+    Color color();
+
+    /**
+     * Returns the clipping rectangle captured when the command was submitted.
+     *
+     * @return the active clipping rectangle
+     */
+    Rect clip();
 }

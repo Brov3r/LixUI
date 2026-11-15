@@ -152,6 +152,17 @@ tasks.named('assemble') {
     dependsOn 'buildReleaseJar'
 }
 
+def demoJvmArgs = ['--enable-native-access=ALL-UNNAMED', '--sun-misc-unsafe-memory-access=allow',
+                   '-Dfile.encoding=UTF-8',
+                   '-Dstdout.encoding=UTF-8',
+                   '-Dstderr.encoding=UTF-8',
+                   '-Dorg.slf4j.simpleLogger.showDateTime=false',
+                   '-Dorg.slf4j.simpleLogger.showThreadName=false',
+                   '-Dorg.slf4j.simpleLogger.showLogName=false']
+if (osName.contains('mac')) {
+    demoJvmArgs.add('-XstartOnFirstThread')
+}
+
 [
         demoOpenGl: 'com.lixui.demo.OpenGlDemo',
         demoVulkan: 'com.lixui.demo.VulkanDemo'
@@ -163,19 +174,10 @@ tasks.named('assemble') {
         mainClass = providers.gradleProperty('demoMainClass').orElse(entryPoint)
 
         // LWJGL loads native libraries and uses Unsafe for direct memory access on Java 25.
-        jvmArgs '--enable-native-access=ALL-UNNAMED', '--sun-misc-unsafe-memory-access=allow'
-
-        // GLFW must own the main thread on macOS.
-        if (osName.contains('mac')) {
-            jvmArgs '-XstartOnFirstThread'
-        }
+        jvmArgs demoJvmArgs
     }
 }
 
-def demoJvmArgs = ['--enable-native-access=ALL-UNNAMED', '--sun-misc-unsafe-memory-access=allow']
-if (osName.contains('mac')) {
-    demoJvmArgs.add('-XstartOnFirstThread')
-}
 def demoRuntimeClasspath = sourceSets.main.runtimeClasspath + configurations.demoNatives +
         configurations.demoRuntime
 def demoJavaExecutable = javaToolchains.launcherFor(java.toolchain).get().executablePath.asFile.absolutePath

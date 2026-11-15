@@ -20,10 +20,12 @@ public final class VulkanDemo {
     public static void main(String[] args) {
         DemoPlacement placement = DemoPlacement.fromArgs(args);
         try (DemoWindow window = new DemoWindow("LixUI Demo - Vulkan", GLFW.GLFW_NO_API, placement);
+                DemoInput input = new DemoInput(window.handle());
                 VulkanRenderer renderer = new VulkanRenderer(window.handle())) {
             window.show();
             while (!window.shouldClose()) {
                 GLFW.glfwPollEvents();
+                input.poll();
                 if (!renderer.render()) {
                     GLFW.glfwWaitEventsTimeout(0.1);
                 }

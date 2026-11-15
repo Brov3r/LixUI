@@ -96,6 +96,14 @@
             <property name="scope" value="protected"/>
             <property name="allowedAnnotations" value=""/>
         </module>
+        <module name="JavadocVariable">
+            <property name="tokens" value="ENUM_CONSTANT_DEF"/>
+        </module>
+        <!-- JavadocVariable always checks VARIABLE_DEF, so suppress it to require Javadoc for enum constants only. -->
+        <module name="SuppressionXpathSingleFilter">
+            <property name="checks" value="JavadocVariable"/>
+            <property name="query" value="//VARIABLE_DEF"/>
+        </module>
         <module name="JavadocMethod">
             <property name="accessModifiers" value="public, protected"/>
             <property name="allowedAnnotations" value=""/>

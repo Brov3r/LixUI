@@ -26,7 +26,28 @@ public interface RenderBackend extends AutoCloseable {
     void draw(DrawList drawList);
 
     /**
-     * Releases GPU resources owned by this backend.
+     * Creates a texture from CPU image data and transfers it to the GPU.
+     * The backend owns the returned texture until {@link #destroyTexture(Texture)} or {@link #close()}.
+     *
+     * @param image RGBA8 image data with a top-left origin
+     * @return the created texture
+     * @throws NullPointerException if {@code image} is null
+     */
+    Texture createTexture(ImageData image);
+
+    /**
+     * Releases a texture created by this backend.
+     * Wrapped host textures are managed by the host and are ignored by this method.
+     *
+     * @param texture texture to release
+     * @throws NullPointerException if {@code texture} is null
+     * @throws IllegalArgumentException if the texture belongs to another backend
+     */
+    void destroyTexture(Texture texture);
+
+    /**
+     * Releases GPU resources owned by this backend, including textures created through
+     * {@link #createTexture(ImageData)}.
      * The graphics context that created the resources must be current when this method is called.
      */
     @Override

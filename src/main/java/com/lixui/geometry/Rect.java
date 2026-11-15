@@ -65,6 +65,18 @@ public record Rect(float x, float y, float width, float height) {
     }
 
     /**
+     * Reports whether a point lies inside this rectangle using half-open edges.
+     * Points on the right or bottom edge are outside, so adjacent rectangles never overlap.
+     *
+     * @param pointX horizontal coordinate in logical UI units
+     * @param pointY vertical coordinate in logical UI units
+     * @return true if the point is inside the rectangle
+     */
+    public boolean contains(float pointX, float pointY) {
+        return pointX >= x && pointX < right() && pointY >= y && pointY < bottom();
+    }
+
+    /**
      * Computes the overlap between this rectangle and another rectangle.
      * Rectangles that touch without overlapping produce an empty rectangle.
      *

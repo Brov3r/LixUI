@@ -3,15 +3,31 @@ package com.lixui.backend.vulkan;
 import com.lixui.geometry.Rect;
 import com.lixui.render.DrawCommand;
 import com.lixui.render.DrawList;
+import com.lixui.render.ImageCommand;
+import com.lixui.render.ImageData;
 import com.lixui.render.RenderBackend;
+import com.lixui.render.Texture;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.VK10;
 import org.lwjgl.vulkan.VkBufferCreateInfo;
+import org.lwjgl.vulkan.VkBufferImageCopy;
 import org.lwjgl.vulkan.VkCommandBuffer;
+import org.lwjgl.vulkan.VkCommandBufferAllocateInfo;
+import org.lwjgl.vulkan.VkCommandBufferBeginInfo;
+import org.lwjgl.vulkan.VkCommandPoolCreateInfo;
+import org.lwjgl.vulkan.VkDescriptorImageInfo;
+import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
+import org.lwjgl.vulkan.VkDescriptorPoolSize;
+import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
+import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
+import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
 import org.lwjgl.vulkan.VkDevice;
 import org.lwjgl.vulkan.VkGraphicsPipelineCreateInfo;
+import org.lwjgl.vulkan.VkImageCreateInfo;
+import org.lwjgl.vulkan.VkImageMemoryBarrier;
+import org.lwjgl.vulkan.VkImageViewCreateInfo;
 import org.lwjgl.vulkan.VkMemoryAllocateInfo;
 import org.lwjgl.vulkan.VkMemoryBarrier;
 import org.lwjgl.vulkan.VkMemoryRequirements;
@@ -28,11 +44,15 @@ import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPipelineVertexInputStateCreateInfo;
 import org.lwjgl.vulkan.VkPipelineViewportStateCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
+import org.lwjgl.vulkan.VkQueue;
 import org.lwjgl.vulkan.VkRect2D;
+import org.lwjgl.vulkan.VkSamplerCreateInfo;
 import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
+import org.lwjgl.vulkan.VkSubmitInfo;
 import org.lwjgl.vulkan.VkVertexInputAttributeDescription;
 import org.lwjgl.vulkan.VkVertexInputBindingDescription;
 import org.lwjgl.vulkan.VkViewport;
+import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -45,27 +65,36 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * A Vulkan render backend for rounded rectangle draw lists.
+ * A Vulkan render backend for rounded rectangles and textured quads.
  * The caller owns the render pass, framebuffers and command buffers: it must begin a render pass,
  * call {@link #beginFrame(VkCommandBuffer)}, {@link #draw(DrawList)} and {@link #endFrame()},
- * then end the render pass. Commands sharing a clip rectangle are batched into one draw call.
+ * then end the render pass. Commands sharing a clip rectangle and texture are batched into one draw call.
  * The vertex buffer is host-visible and overwritten by each draw, so the caller must not record a
  * frame while a previous submission still uses the backend.
  * SPIR-V binaries are generated from the adjacent GLSL sources, for example:
  * {@code glslc --target-env=vulkan1.0 rounded_rect.vert -o rounded_rect.vert.spv}.
  */
 public final class VulkanBackend implements RenderBackend {
-    private static final int FLOATS_PER_VERTEX = 11;
+    private static final Rect FULL_UV = new Rect(0, 0, 1, 1);
+    private static final int FLOATS_PER_VERTEX = 13;
     private static final int VERTICES_PER_QUAD = 6;
     private static final int FLOATS_PER_QUAD = FLOATS_PER_VERTEX * VERTICES_PER_QUAD;
     private static final int VERTEX_STRIDE = FLOATS_PER_VERTEX * Float.BYTES;
     private static final int INITIAL_VERTEX_BYTES = 4096;
+    private static final int MAX_TEXTURES = 1024;
 
     private final VkPhysicalDevice physicalDevice;
     private final VkDevice device;
+    private final VkQueue queue;
     private final List<Batch> batches = new ArrayList<>();
+    private final List<VulkanTexture> textures = new ArrayList<>();
+    private long descriptorSetLayout;
+    private long descriptorPool;
+    private long sampler;
     private long pipelineLayout;
     private long pipeline;
+    private long uploadCommandPool;
+    private VulkanTexture whiteTexture;
     private long vertexBuffer;
     private long vertexMemory;
     private ByteBuffer mappedMemory;
@@ -76,19 +105,23 @@ public final class VulkanBackend implements RenderBackend {
     private int framebufferHeight;
 
     /**
-     * Creates the backend and its graphics pipeline.
+     * Creates the backend, its graphics pipeline and the default texture sampler.
      *
-     * @param physicalDevice physical device used to select vertex buffer memory
+     * @param physicalDevice physical device used to select buffer and image memory
      * @param device logical device that owns the created resources
+     * @param queue queue used for one-time texture uploads
+     * @param queueFamily family index of {@code queue}
      * @param renderPass render pass the pipeline must be compatible with
      * @param sampleCount rasterization sample count of the render pass
      * @throws NullPointerException if a device reference is null
      * @throws IllegalArgumentException if the render pass handle is null or sample count is not positive
-     * @throws IllegalStateException if pipeline creation fails
+     * @throws IllegalStateException if resource creation fails
      */
-    public VulkanBackend(VkPhysicalDevice physicalDevice, VkDevice device, long renderPass, int sampleCount) {
+    public VulkanBackend(VkPhysicalDevice physicalDevice, VkDevice device, VkQueue queue,
+                         int queueFamily, long renderPass, int sampleCount) {
         this.physicalDevice = Objects.requireNonNull(physicalDevice, "physicalDevice");
         this.device = Objects.requireNonNull(device, "device");
+        this.queue = Objects.requireNonNull(queue, "queue");
         if (renderPass == VK10.VK_NULL_HANDLE) {
             throw new IllegalArgumentException("Render pass must be a valid handle.");
         }
@@ -97,8 +130,15 @@ public final class VulkanBackend implements RenderBackend {
         }
 
         try {
+            descriptorSetLayout = createDescriptorSetLayout();
             pipelineLayout = createPipelineLayout();
             pipeline = createPipeline(renderPass, sampleCount);
+            uploadCommandPool = createUploadCommandPool(queueFamily);
+            descriptorPool = createDescriptorPool();
+            sampler = createSampler();
+            whiteTexture = (VulkanTexture) createTexture(new ImageData(1, 1, new byte[] {
+                    (byte) 255, (byte) 255, (byte) 255, (byte) 255
+            }));
         } catch (RuntimeException | Error exception) {
             close();
             throw exception;
@@ -137,6 +177,185 @@ public final class VulkanBackend implements RenderBackend {
      */
     public void endFrame() {
         commandBuffer = null;
+    }
+
+    /**
+     * Creates a device-local texture from RGBA8 image data and uploads it synchronously.
+     *
+     * @param image image data with a top-left origin
+     * @return the created texture
+     * @throws NullPointerException if {@code image} is null
+     * @throws IllegalStateException if the texture or its descriptor cannot be created
+     */
+    @Override
+    public Texture createTexture(ImageData image) {
+        Objects.requireNonNull(image, "image");
+        int width = image.width();
+        int height = image.height();
+        long imageSize = (long) width * height * 4;
+
+        BufferResource staging = createBuffer(imageSize,
+                VK10.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                VK10.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK10.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        long imageHandle = VK10.VK_NULL_HANDLE;
+        long imageMemory = VK10.VK_NULL_HANDLE;
+        long imageView = VK10.VK_NULL_HANDLE;
+        long descriptorSet = VK10.VK_NULL_HANDLE;
+        try {
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                PointerBuffer mapped = stack.mallocPointer(1);
+                check(VK10.vkMapMemory(device, staging.memory(), 0, imageSize, 0, mapped), "Map staging buffer");
+                ByteBuffer data = MemoryUtil.memByteBuffer(mapped.get(0), (int) imageSize);
+                data.put(image.pixels());
+                VK10.vkUnmapMemory(device, staging.memory());
+
+                LongBuffer result = stack.mallocLong(1);
+                VkImageCreateInfo imageInfo = VkImageCreateInfo.calloc(stack)
+                        .sType$Default()
+                        .imageType(VK10.VK_IMAGE_TYPE_2D)
+                        .format(VK10.VK_FORMAT_R8G8B8A8_UNORM)
+                        .mipLevels(1)
+                        .arrayLayers(1)
+                        .samples(VK10.VK_SAMPLE_COUNT_1_BIT)
+                        .tiling(VK10.VK_IMAGE_TILING_OPTIMAL)
+                        .usage(VK10.VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK10.VK_IMAGE_USAGE_SAMPLED_BIT)
+                        .sharingMode(VK10.VK_SHARING_MODE_EXCLUSIVE)
+                        .initialLayout(VK10.VK_IMAGE_LAYOUT_UNDEFINED);
+                imageInfo.extent().set(width, height, 1);
+                check(VK10.vkCreateImage(device, imageInfo, null, result), "Create texture image");
+                imageHandle = result.get(0);
+
+                VkMemoryRequirements requirements = VkMemoryRequirements.malloc(stack);
+                VK10.vkGetImageMemoryRequirements(device, imageHandle, requirements);
+                VkMemoryAllocateInfo allocateInfo = VkMemoryAllocateInfo.calloc(stack)
+                        .sType$Default()
+                        .allocationSize(requirements.size())
+                        .memoryTypeIndex(findMemoryType(requirements.memoryTypeBits(),
+                                VK10.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
+                check(VK10.vkAllocateMemory(device, allocateInfo, null, result), "Allocate texture memory");
+                imageMemory = result.get(0);
+                check(VK10.vkBindImageMemory(device, imageHandle, imageMemory, 0), "Bind texture memory");
+
+                VkImageViewCreateInfo viewInfo = VkImageViewCreateInfo.calloc(stack)
+                        .sType$Default()
+                        .image(imageHandle)
+                        .viewType(VK10.VK_IMAGE_VIEW_TYPE_2D)
+                        .format(VK10.VK_FORMAT_R8G8B8A8_UNORM);
+                viewInfo.subresourceRange()
+                        .aspectMask(VK10.VK_IMAGE_ASPECT_COLOR_BIT)
+                        .levelCount(1)
+                        .layerCount(1);
+                check(VK10.vkCreateImageView(device, viewInfo, null, result), "Create texture view");
+                imageView = result.get(0);
+
+                VkCommandBuffer upload = beginOneTime();
+                transitionImage(upload, imageHandle,
+                        VK10.VK_IMAGE_LAYOUT_UNDEFINED, VK10.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        0, VK10.VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK10.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK10.VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+                VkBufferImageCopy.Buffer region = VkBufferImageCopy.calloc(1, stack);
+                region.get(0)
+                        .bufferOffset(0)
+                        .bufferRowLength(0)
+                        .bufferImageHeight(0);
+                region.get(0).imageSubresource()
+                        .aspectMask(VK10.VK_IMAGE_ASPECT_COLOR_BIT)
+                        .mipLevel(0)
+                        .baseArrayLayer(0)
+                        .layerCount(1);
+                region.get(0).imageOffset().set(0, 0, 0);
+                region.get(0).imageExtent().set(width, height, 1);
+                VK10.vkCmdCopyBufferToImage(upload, staging.buffer(), imageHandle,
+                        VK10.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, region);
+
+                transitionImage(upload, imageHandle,
+                        VK10.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK10.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        VK10.VK_ACCESS_TRANSFER_WRITE_BIT, VK10.VK_ACCESS_SHADER_READ_BIT,
+                        VK10.VK_PIPELINE_STAGE_TRANSFER_BIT, VK10.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+                endOneTime(upload);
+
+                descriptorSet = allocateDescriptorSet();
+                updateDescriptorSet(descriptorSet, imageView, sampler,
+                        VK10.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            }
+        } catch (RuntimeException | Error exception) {
+            if (descriptorSet != VK10.VK_NULL_HANDLE) {
+                freeDescriptorSet(descriptorSet);
+            }
+            destroyTextureResources(imageHandle, imageView, imageMemory);
+            destroyBuffer(staging);
+            throw exception;
+        }
+
+        destroyBuffer(staging);
+        VulkanTexture texture = new VulkanTexture(imageHandle, imageView, imageMemory,
+                descriptorSet, width, height, true);
+        textures.add(texture);
+        return texture;
+    }
+
+    /**
+     * Wraps an existing Vulkan image view owned by the host application using the backend sampler.
+     * The image must stay alive and remain in the supplied layout while it is used. The backend
+     * never deletes the host image view or sampler.
+     *
+     * @param imageView host image view in {@code VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
+     * @param width texture width in pixels
+     * @param height texture height in pixels
+     * @return a non-owning texture handle
+     * @throws IllegalArgumentException if the image view or a dimension is not positive
+     */
+    public Texture wrapTexture(long imageView, int width, int height) {
+        return wrapTexture(imageView, sampler, VK10.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, width, height);
+    }
+
+    /**
+     * Wraps an existing Vulkan image view and sampler owned by the host application.
+     * The image must stay alive and remain in {@code imageLayout} while it is used. The backend
+     * never deletes the host image view or sampler.
+     *
+     * @param imageView host image view
+     * @param imageSampler sampler used to sample the image
+     * @param imageLayout current layout of the image
+     * @param width texture width in pixels
+     * @param height texture height in pixels
+     * @return a non-owning texture handle
+     * @throws IllegalArgumentException if a handle or a dimension is not positive
+     */
+    public Texture wrapTexture(long imageView, long imageSampler, int imageLayout, int width, int height) {
+        if (imageView == VK10.VK_NULL_HANDLE || imageSampler == VK10.VK_NULL_HANDLE) {
+            throw new IllegalArgumentException("Image view and sampler must be valid handles.");
+        }
+        if (width <= 0 || height <= 0) {
+            throw new IllegalArgumentException("Texture dimensions must be positive.");
+        }
+        long descriptorSet = allocateDescriptorSet();
+        updateDescriptorSet(descriptorSet, imageView, imageSampler, imageLayout);
+        VulkanTexture texture = new VulkanTexture(VK10.VK_NULL_HANDLE, imageView, VK10.VK_NULL_HANDLE,
+                descriptorSet, width, height, false);
+        textures.add(texture);
+        return texture;
+    }
+
+    /**
+     * Releases a texture created by this backend. Wrapped host textures only release their descriptor set.
+     *
+     * @param texture texture to release
+     * @throws NullPointerException if {@code texture} is null
+     * @throws IllegalArgumentException if the texture belongs to another backend
+     */
+    @Override
+    public void destroyTexture(Texture texture) {
+        VulkanTexture vulkanTexture = asVulkanTexture(texture);
+        textures.remove(vulkanTexture);
+        if (whiteTexture == vulkanTexture) {
+            whiteTexture = null;
+        }
+        freeDescriptorSet(vulkanTexture.descriptorSet());
+        if (vulkanTexture.owned()) {
+            destroyTextureResources(vulkanTexture.image(), vulkanTexture.imageView(), vulkanTexture.memory());
+        }
     }
 
     /**
@@ -196,10 +415,14 @@ public final class VulkanBackend implements RenderBackend {
             VK10.vkCmdBindVertexBuffers(commandBuffer, 0, buffers, offsets);
 
             VkRect2D.Buffer scissor = VkRect2D.calloc(1, stack);
+            LongBuffer descriptorSet = stack.mallocLong(1);
             for (Batch batch : batches) {
                 if (!applyScissor(scissor.get(0), batch.clip())) {
                     continue;
                 }
+                descriptorSet.put(0, batch.texture().descriptorSet());
+                VK10.vkCmdBindDescriptorSets(commandBuffer, VK10.VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        pipelineLayout, 0, descriptorSet, null);
                 VK10.vkCmdSetScissor(commandBuffer, 0, scissor);
                 VK10.vkCmdDraw(commandBuffer, batch.vertexCount(), 1, batch.firstVertex(), 0);
             }
@@ -207,14 +430,35 @@ public final class VulkanBackend implements RenderBackend {
     }
 
     /**
-     * Releases the pipeline, pipeline layout and vertex buffer owned by this backend.
-     * The logical device must still be alive when this method is called.
+     * Releases owned textures, the descriptor pool, sampler, pipeline and vertex buffer.
+     * The logical device must be idle and still alive when this method is called.
      */
     @Override
     public void close() {
         commandBuffer = null;
         batches.clear();
+        List<VulkanTexture> ownedTextures = new ArrayList<>(textures);
+        textures.clear();
+        for (VulkanTexture texture : ownedTextures) {
+            freeDescriptorSet(texture.descriptorSet());
+            if (texture.owned()) {
+                destroyTextureResources(texture.image(), texture.imageView(), texture.memory());
+            }
+        }
+        whiteTexture = null;
         destroyVertexBuffer();
+        if (sampler != VK10.VK_NULL_HANDLE) {
+            VK10.vkDestroySampler(device, sampler, null);
+            sampler = VK10.VK_NULL_HANDLE;
+        }
+        if (descriptorPool != VK10.VK_NULL_HANDLE) {
+            VK10.vkDestroyDescriptorPool(device, descriptorPool, null);
+            descriptorPool = VK10.VK_NULL_HANDLE;
+        }
+        if (uploadCommandPool != VK10.VK_NULL_HANDLE) {
+            VK10.vkDestroyCommandPool(device, uploadCommandPool, null);
+            uploadCommandPool = VK10.VK_NULL_HANDLE;
+        }
         if (pipeline != VK10.VK_NULL_HANDLE) {
             VK10.vkDestroyPipeline(device, pipeline, null);
             pipeline = VK10.VK_NULL_HANDLE;
@@ -222,6 +466,28 @@ public final class VulkanBackend implements RenderBackend {
         if (pipelineLayout != VK10.VK_NULL_HANDLE) {
             VK10.vkDestroyPipelineLayout(device, pipelineLayout, null);
             pipelineLayout = VK10.VK_NULL_HANDLE;
+        }
+        if (descriptorSetLayout != VK10.VK_NULL_HANDLE) {
+            VK10.vkDestroyDescriptorSetLayout(device, descriptorSetLayout, null);
+            descriptorSetLayout = VK10.VK_NULL_HANDLE;
+        }
+    }
+
+    private long createDescriptorSetLayout() {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkDescriptorSetLayoutBinding.Buffer binding = VkDescriptorSetLayoutBinding.calloc(1, stack);
+            binding.get(0)
+                    .binding(0)
+                    .descriptorType(VK10.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                    .descriptorCount(1)
+                    .stageFlags(VK10.VK_SHADER_STAGE_FRAGMENT_BIT);
+            VkDescriptorSetLayoutCreateInfo info = VkDescriptorSetLayoutCreateInfo.calloc(stack)
+                    .sType$Default()
+                    .pBindings(binding);
+            LongBuffer result = stack.mallocLong(1);
+            check(VK10.vkCreateDescriptorSetLayout(device, info, null, result),
+                    "Create descriptor set layout");
+            return result.get(0);
         }
     }
 
@@ -233,6 +499,7 @@ public final class VulkanBackend implements RenderBackend {
                     .size(2 * Float.BYTES);
             VkPipelineLayoutCreateInfo info = VkPipelineLayoutCreateInfo.calloc(stack)
                     .sType$Default()
+                    .pSetLayouts(stack.longs(descriptorSetLayout))
                     .pPushConstantRanges(range);
             LongBuffer result = stack.mallocLong(1);
             check(VK10.vkCreatePipelineLayout(device, info, null, result), "Create pipeline layout");
@@ -271,7 +538,7 @@ public final class VulkanBackend implements RenderBackend {
                         .inputRate(VK10.VK_VERTEX_INPUT_RATE_VERTEX);
 
                 VkVertexInputAttributeDescription.Buffer attributes =
-                        VkVertexInputAttributeDescription.calloc(5, stack);
+                        VkVertexInputAttributeDescription.calloc(6, stack);
                 attributes.get(0)
                         .location(0)
                         .binding(0)
@@ -297,6 +564,11 @@ public final class VulkanBackend implements RenderBackend {
                         .binding(0)
                         .format(VK10.VK_FORMAT_R32G32B32A32_SFLOAT)
                         .offset(7 * Float.BYTES);
+                attributes.get(5)
+                        .location(5)
+                        .binding(0)
+                        .format(VK10.VK_FORMAT_R32G32_SFLOAT)
+                        .offset(11 * Float.BYTES);
 
                 VkPipelineVertexInputStateCreateInfo vertexInput = VkPipelineVertexInputStateCreateInfo.calloc(stack)
                         .sType$Default()
@@ -389,6 +661,59 @@ public final class VulkanBackend implements RenderBackend {
         }
     }
 
+    private long createUploadCommandPool(int queueFamily) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkCommandPoolCreateInfo info = VkCommandPoolCreateInfo.calloc(stack)
+                    .sType$Default()
+                    .queueFamilyIndex(queueFamily)
+                    .flags(VK10.VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
+            LongBuffer result = stack.mallocLong(1);
+            check(VK10.vkCreateCommandPool(device, info, null, result), "Create upload command pool");
+            return result.get(0);
+        }
+    }
+
+    private long createDescriptorPool() {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(1, stack);
+            sizes.get(0)
+                    .type(VK10.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                    .descriptorCount(MAX_TEXTURES);
+            VkDescriptorPoolCreateInfo info = VkDescriptorPoolCreateInfo.calloc(stack)
+                    .sType$Default()
+                    .maxSets(MAX_TEXTURES)
+                    .pPoolSizes(sizes);
+            LongBuffer result = stack.mallocLong(1);
+            check(VK10.vkCreateDescriptorPool(device, info, null, result), "Create descriptor pool");
+            return result.get(0);
+        }
+    }
+
+    private long createSampler() {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkSamplerCreateInfo info = VkSamplerCreateInfo.calloc(stack)
+                    .sType$Default()
+                    .magFilter(VK10.VK_FILTER_LINEAR)
+                    .minFilter(VK10.VK_FILTER_LINEAR)
+                    .mipmapMode(VK10.VK_SAMPLER_MIPMAP_MODE_NEAREST)
+                    .addressModeU(VK10.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)
+                    .addressModeV(VK10.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)
+                    .addressModeW(VK10.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)
+                    .mipLodBias(0)
+                    .anisotropyEnable(false)
+                    .maxAnisotropy(1)
+                    .compareEnable(false)
+                    .compareOp(VK10.VK_COMPARE_OP_ALWAYS)
+                    .minLod(0)
+                    .maxLod(0)
+                    .borderColor(VK10.VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK)
+                    .unnormalizedCoordinates(false);
+            LongBuffer result = stack.mallocLong(1);
+            check(VK10.vkCreateSampler(device, info, null, result), "Create texture sampler");
+            return result.get(0);
+        }
+    }
+
     private long createShaderModule(ByteBuffer code) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkShaderModuleCreateInfo info = VkShaderModuleCreateInfo.calloc(stack)
@@ -414,18 +739,179 @@ public final class VulkanBackend implements RenderBackend {
         }
     }
 
+    private VkCommandBuffer beginOneTime() {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkCommandBufferAllocateInfo allocate = VkCommandBufferAllocateInfo.calloc(stack)
+                    .sType$Default()
+                    .commandPool(uploadCommandPool)
+                    .level(VK10.VK_COMMAND_BUFFER_LEVEL_PRIMARY)
+                    .commandBufferCount(1);
+            PointerBuffer result = stack.mallocPointer(1);
+            check(VK10.vkAllocateCommandBuffers(device, allocate, result), "Allocate upload commands");
+            VkCommandBuffer upload = new VkCommandBuffer(result.get(0), device);
+            VkCommandBufferBeginInfo begin = VkCommandBufferBeginInfo.calloc(stack).sType$Default();
+            check(VK10.vkBeginCommandBuffer(upload, begin), "Begin upload commands");
+            return upload;
+        }
+    }
+
+    private void endOneTime(VkCommandBuffer upload) {
+        check(VK10.vkEndCommandBuffer(upload), "End upload commands");
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkSubmitInfo submit = VkSubmitInfo.calloc(stack)
+                    .sType$Default()
+                    .pCommandBuffers(stack.pointers(upload.address()));
+            check(VK10.vkQueueSubmit(queue, submit, VK10.VK_NULL_HANDLE), "Submit upload");
+            check(VK10.vkQueueWaitIdle(queue), "Wait for upload");
+            VK10.vkFreeCommandBuffers(device, uploadCommandPool, upload);
+        }
+    }
+
+    private void transitionImage(VkCommandBuffer command, long image,
+                                 int oldLayout, int newLayout, int srcAccess, int dstAccess,
+                                 int srcStage, int dstStage) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkImageMemoryBarrier.Buffer barrier = VkImageMemoryBarrier.calloc(1, stack);
+            barrier.get(0)
+                    .sType$Default()
+                    .oldLayout(oldLayout)
+                    .newLayout(newLayout)
+                    .srcAccessMask(srcAccess)
+                    .dstAccessMask(dstAccess)
+                    .srcQueueFamilyIndex(VK10.VK_QUEUE_FAMILY_IGNORED)
+                    .dstQueueFamilyIndex(VK10.VK_QUEUE_FAMILY_IGNORED)
+                    .image(image);
+            barrier.get(0).subresourceRange()
+                    .aspectMask(VK10.VK_IMAGE_ASPECT_COLOR_BIT)
+                    .levelCount(1)
+                    .layerCount(1);
+            VK10.vkCmdPipelineBarrier(command, srcStage, dstStage, 0, null, null, barrier);
+        }
+    }
+
+    private long allocateDescriptorSet() {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkDescriptorSetAllocateInfo info = VkDescriptorSetAllocateInfo.calloc(stack)
+                    .sType$Default()
+                    .descriptorPool(descriptorPool)
+                    .pSetLayouts(stack.longs(descriptorSetLayout));
+            LongBuffer result = stack.mallocLong(1);
+            check(VK10.vkAllocateDescriptorSets(device, info, result), "Allocate descriptor set");
+            return result.get(0);
+        }
+    }
+
+    private void updateDescriptorSet(long descriptorSet, long imageView, long imageSampler, int imageLayout) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkDescriptorImageInfo.Buffer imageInfo = VkDescriptorImageInfo.calloc(1, stack);
+            imageInfo.get(0)
+                    .imageView(imageView)
+                    .imageLayout(imageLayout)
+                    .sampler(imageSampler);
+            VkWriteDescriptorSet.Buffer write = VkWriteDescriptorSet.calloc(1, stack);
+            write.get(0)
+                    .sType$Default()
+                    .dstSet(descriptorSet)
+                    .dstBinding(0)
+                    .descriptorCount(1)
+                    .descriptorType(VK10.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                    .pImageInfo(imageInfo);
+            VK10.vkUpdateDescriptorSets(device, write, null);
+        }
+    }
+
+    private void freeDescriptorSet(long descriptorSet) {
+        if (descriptorSet != VK10.VK_NULL_HANDLE && descriptorPool != VK10.VK_NULL_HANDLE) {
+            VK10.vkFreeDescriptorSets(device, descriptorPool, descriptorSet);
+        }
+    }
+
+    private BufferResource createBuffer(long size, int usage, int properties) {
+        long buffer = VK10.VK_NULL_HANDLE;
+        long memory = VK10.VK_NULL_HANDLE;
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkBufferCreateInfo info = VkBufferCreateInfo.calloc(stack)
+                    .sType$Default()
+                    .size(size)
+                    .usage(usage)
+                    .sharingMode(VK10.VK_SHARING_MODE_EXCLUSIVE);
+            LongBuffer result = stack.mallocLong(1);
+            check(VK10.vkCreateBuffer(device, info, null, result), "Create buffer");
+            buffer = result.get(0);
+
+            VkMemoryRequirements requirements = VkMemoryRequirements.malloc(stack);
+            VK10.vkGetBufferMemoryRequirements(device, buffer, requirements);
+            VkMemoryAllocateInfo allocateInfo = VkMemoryAllocateInfo.calloc(stack)
+                    .sType$Default()
+                    .allocationSize(requirements.size())
+                    .memoryTypeIndex(findMemoryType(requirements.memoryTypeBits(), properties));
+            check(VK10.vkAllocateMemory(device, allocateInfo, null, result), "Allocate buffer memory");
+            memory = result.get(0);
+            check(VK10.vkBindBufferMemory(device, buffer, memory, 0), "Bind buffer memory");
+            return new BufferResource(buffer, memory);
+        } catch (RuntimeException | Error exception) {
+            if (buffer != VK10.VK_NULL_HANDLE) {
+                VK10.vkDestroyBuffer(device, buffer, null);
+            }
+            if (memory != VK10.VK_NULL_HANDLE) {
+                VK10.vkFreeMemory(device, memory, null);
+            }
+            throw exception;
+        }
+    }
+
+    private void destroyBuffer(BufferResource buffer) {
+        if (buffer.buffer() != VK10.VK_NULL_HANDLE) {
+            VK10.vkDestroyBuffer(device, buffer.buffer(), null);
+        }
+        if (buffer.memory() != VK10.VK_NULL_HANDLE) {
+            VK10.vkFreeMemory(device, buffer.memory(), null);
+        }
+    }
+
+    private void destroyTextureResources(long image, long imageView, long memory) {
+        if (imageView != VK10.VK_NULL_HANDLE) {
+            VK10.vkDestroyImageView(device, imageView, null);
+        }
+        if (image != VK10.VK_NULL_HANDLE) {
+            VK10.vkDestroyImage(device, image, null);
+        }
+        if (memory != VK10.VK_NULL_HANDLE) {
+            VK10.vkFreeMemory(device, memory, null);
+        }
+    }
+
+    private int findMemoryType(int typeFilter, int properties) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkPhysicalDeviceMemoryProperties memoryProperties =
+                    VkPhysicalDeviceMemoryProperties.malloc(stack);
+            VK10.vkGetPhysicalDeviceMemoryProperties(physicalDevice, memoryProperties);
+            for (int index = 0; index < memoryProperties.memoryTypeCount(); index++) {
+                if ((typeFilter & (1 << index)) != 0
+                        && (memoryProperties.memoryTypes(index).propertyFlags() & properties) == properties) {
+                    return index;
+                }
+            }
+        }
+        throw new IllegalStateException("No suitable Vulkan memory type.");
+    }
+
     private void collect(List<DrawCommand> commands) {
         batches.clear();
         Rect currentClip = null;
+        VulkanTexture currentTexture = null;
         int batchStartVertex = 0;
         int batchVertexCount = 0;
         int vertexIndex = 0;
         for (DrawCommand command : commands) {
-            if (!command.clip().equals(currentClip)) {
+            VulkanTexture texture = asVulkanTexture(command instanceof ImageCommand image
+                    ? image.texture() : whiteTexture);
+            if (!command.clip().equals(currentClip) || texture != currentTexture) {
                 if (batchVertexCount > 0) {
-                    batches.add(new Batch(batchStartVertex, batchVertexCount, currentClip));
+                    batches.add(new Batch(batchStartVertex, batchVertexCount, currentClip, currentTexture));
                 }
                 currentClip = command.clip();
+                currentTexture = texture;
                 batchStartVertex = vertexIndex;
                 batchVertexCount = 0;
             }
@@ -434,12 +920,13 @@ public final class VulkanBackend implements RenderBackend {
             batchVertexCount += VERTICES_PER_QUAD;
         }
         if (batchVertexCount > 0) {
-            batches.add(new Batch(batchStartVertex, batchVertexCount, currentClip));
+            batches.add(new Batch(batchStartVertex, batchVertexCount, currentClip, currentTexture));
         }
     }
 
     private void appendQuad(DrawCommand command) {
         Rect bounds = command.bounds();
+        Rect uv = command instanceof ImageCommand image ? image.uv() : FULL_UV;
         float halfWidth = bounds.width() / 2;
         float halfHeight = bounds.height() / 2;
         float left = bounds.x();
@@ -451,23 +938,28 @@ public final class VulkanBackend implements RenderBackend {
         float green = command.color().g();
         float blue = command.color().b();
         float alpha = command.color().a();
+        float u0 = uv.x();
+        float v0 = uv.y();
+        float u1 = uv.right();
+        float v1 = uv.bottom();
 
-        putVertex(left, top, -halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha);
-        putVertex(right, top, halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha);
-        putVertex(right, bottom, halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha);
-        putVertex(left, top, -halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha);
-        putVertex(right, bottom, halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha);
-        putVertex(left, bottom, -halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha);
+        putVertex(left, top, -halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v0);
+        putVertex(right, top, halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v0);
+        putVertex(right, bottom, halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v1);
+        putVertex(left, top, -halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v0);
+        putVertex(right, bottom, halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v1);
+        putVertex(left, bottom, -halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v1);
     }
 
     private void putVertex(float x, float y, float localX, float localY,
                           float halfWidth, float halfHeight, float radius,
-                          float red, float green, float blue, float alpha) {
+                          float red, float green, float blue, float alpha, float u, float v) {
         mappedVertices.put(x).put(y)
                 .put(localX).put(localY)
                 .put(halfWidth).put(halfHeight)
                 .put(radius)
-                .put(red).put(green).put(blue).put(alpha);
+                .put(red).put(green).put(blue).put(alpha)
+                .put(u).put(v);
     }
 
     private void ensureVertexCapacity(int floats) {
@@ -514,21 +1006,6 @@ public final class VulkanBackend implements RenderBackend {
         }
     }
 
-    private int findMemoryType(int typeFilter, int properties) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkPhysicalDeviceMemoryProperties memoryProperties =
-                    VkPhysicalDeviceMemoryProperties.malloc(stack);
-            VK10.vkGetPhysicalDeviceMemoryProperties(physicalDevice, memoryProperties);
-            for (int index = 0; index < memoryProperties.memoryTypeCount(); index++) {
-                if ((typeFilter & (1 << index)) != 0
-                        && (memoryProperties.memoryTypes(index).propertyFlags() & properties) == properties) {
-                    return index;
-                }
-            }
-        }
-        throw new IllegalStateException("No suitable Vulkan memory type.");
-    }
-
     private boolean applyScissor(VkRect2D scissor, Rect clip) {
         float left = Math.max(clip.x(), 0);
         float top = Math.max(clip.y(), 0);
@@ -567,12 +1044,23 @@ public final class VulkanBackend implements RenderBackend {
         vertexCapacity = 0;
     }
 
+    private static VulkanTexture asVulkanTexture(Texture texture) {
+        Objects.requireNonNull(texture, "texture");
+        if (!(texture instanceof VulkanTexture vulkanTexture)) {
+            throw new IllegalArgumentException("Texture belongs to a different render backend.");
+        }
+        return vulkanTexture;
+    }
+
     private static void check(int result, String operation) {
         if (result != VK10.VK_SUCCESS) {
             throw new IllegalStateException(operation + " failed with VkResult " + result + ".");
         }
     }
 
-    private record Batch(int firstVertex, int vertexCount, Rect clip) {
+    private record Batch(int firstVertex, int vertexCount, Rect clip, VulkanTexture texture) {
+    }
+
+    private record BufferResource(long buffer, long memory) {
     }
 }

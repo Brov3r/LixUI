@@ -16,6 +16,8 @@ import java.util.Objects;
  * Instances are reusable through {@link #reset(Rect)}.
  */
 public final class DrawList {
+    private static final Rect FULL_UV = new Rect(0, 0, 1, 1);
+
     private final List<DrawCommand> commands = new ArrayList<>();
     private final Deque<Rect> clips = new ArrayDeque<>();
     private Rect viewport;
@@ -114,7 +116,54 @@ public final class DrawList {
         if (bounds.isEmpty() || clip.isEmpty()) {
             return;
         }
-        commands.add(new DrawCommand(bounds, radius, color, clip));
+        commands.add(new RoundedRectCommand(bounds, radius, color, clip));
+    }
+
+    /**
+     * Appends a texture with the full normalized UV range and no tint.
+     *
+     * @param texture the texture to draw
+     * @param bounds the destination rectangle
+     * @throws NullPointerException if {@code texture} or {@code bounds} is null
+     */
+    public void image(Texture texture, Rect bounds) {
+        image(texture, bounds, 0, FULL_UV, Color.WHITE);
+    }
+
+    /**
+     * Appends a texture with an explicit UV region and no tint.
+     *
+     * @param texture the texture to draw
+     * @param bounds the destination rectangle
+     * @param uv the sampled texture region
+     * @throws NullPointerException if any argument is null
+     */
+    public void image(Texture texture, Rect bounds, Rect uv) {
+        image(texture, bounds, 0, uv, Color.WHITE);
+    }
+
+    /**
+     * Appends a textured rounded rectangle using the current clip.
+     * Commands with empty bounds or an empty clip are omitted.
+     *
+     * @param texture the texture to draw
+     * @param bounds the destination rectangle
+     * @param radius corner radius in logical UI units
+     * @param uv the sampled texture region
+     * @param tint straight-alpha tint multiplied with the sampled texel
+     * @throws NullPointerException if any reference argument is null
+     * @throws IllegalArgumentException if radius is non-finite or negative
+     */
+    public void image(Texture texture, Rect bounds, float radius, Rect uv, Color tint) {
+        Objects.requireNonNull(texture, "texture");
+        Objects.requireNonNull(bounds, "bounds");
+        Objects.requireNonNull(uv, "uv");
+        Objects.requireNonNull(tint, "tint");
+        Rect clip = clips.peek();
+        if (bounds.isEmpty() || clip.isEmpty()) {
+            return;
+        }
+        commands.add(new ImageCommand(bounds, radius, uv, texture, tint, clip));
     }
 
     /**

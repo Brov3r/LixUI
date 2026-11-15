@@ -1,6 +1,7 @@
 package com.lixui.demo;
 
 import com.lixui.backend.vulkan.VulkanBackend;
+import com.lixui.render.Texture;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWVulkan;
@@ -64,6 +65,7 @@ final class VulkanRenderer implements AutoCloseable {
     private long[] renderFinished;
     private long frameFence;
     private VulkanBackend backend;
+    private Texture sceneTexture;
     private int framebufferWidth;
     private int framebufferHeight;
     private boolean swapchainDirty = true;
@@ -84,7 +86,8 @@ final class VulkanRenderer implements AutoCloseable {
             createDevice();
             chooseSurfaceFormat();
             createRenderPass();
-            backend = new VulkanBackend(physicalDevice, device, renderPass, SAMPLE_COUNT);
+            backend = new VulkanBackend(physicalDevice, device, queue, queueFamily, renderPass, SAMPLE_COUNT);
+            sceneTexture = backend.createTexture(DemoTextures.checkerboard());
             createFrameSynchronization();
         } catch (RuntimeException | Error exception) {
             close();
@@ -162,6 +165,7 @@ final class VulkanRenderer implements AutoCloseable {
             if (backend != null) {
                 backend.close();
                 backend = null;
+                sceneTexture = null;
             }
             destroySwapchain();
             if (renderPass != VK10.VK_NULL_HANDLE) {
@@ -530,7 +534,7 @@ final class VulkanRenderer implements AutoCloseable {
 
             VK10.vkCmdBeginRenderPass(command, renderPassBegin, VK10.VK_SUBPASS_CONTENTS_INLINE);
             backend.beginFrame(command);
-            backend.draw(DemoScene.create(framebufferWidth, framebufferHeight));
+            backend.draw(DemoScene.create(framebufferWidth, framebufferHeight, sceneTexture, sceneTexture));
             backend.endFrame();
             VK10.vkCmdEndRenderPass(command);
             check(VK10.vkEndCommandBuffer(command), "End command buffer");
