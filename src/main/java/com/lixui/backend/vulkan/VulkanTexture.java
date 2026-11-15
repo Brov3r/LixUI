@@ -3,7 +3,8 @@ package com.lixui.backend.vulkan;
 import com.lixui.render.Texture;
 
 /**
- * A Vulkan texture handle that references a descriptor set and an optionally owned image.
+ * A Vulkan texture handle that references a descriptor set and an optionally
+ * owned image.
  */
 final class VulkanTexture implements Texture {
     private final long image;
@@ -14,8 +15,7 @@ final class VulkanTexture implements Texture {
     private final int height;
     private final boolean owned;
 
-    VulkanTexture(long image, long imageView, long memory, long descriptorSet, int width, int height,
-                  boolean owned) {
+    VulkanTexture(long image, long imageView, long memory, long descriptorSet, int width, int height, boolean owned) {
         this.image = image;
         this.imageView = imageView;
         this.memory = memory;
