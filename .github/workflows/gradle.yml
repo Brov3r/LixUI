@@ -76,7 +76,6 @@ jobs:
         name: lixui-${{ runner.os }}
         path: build/*.jar
         if-no-files-found: error
-        if-no-files-found: error
 
   dependency-submission:
     runs-on: ubuntu-latest
