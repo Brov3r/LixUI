@@ -2,6 +2,7 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
 plugins {
     alias(libs.plugins.shadow)
+    id 'checkstyle'
     id 'java-library'
     id 'maven-publish'
 }
@@ -78,6 +79,13 @@ tasks.withType(JavaCompile).configureEach {
 tasks.withType(Javadoc).configureEach {
     options.encoding = 'UTF-8'
     options.addStringOption('Xdoclint:all', '-quiet')
+}
+
+checkstyle {
+    toolVersion = libs.versions.checkstyle.get()
+    configFile = rootProject.file('config/checkstyle/checkstyle.xml')
+    maxErrors = 0
+    maxWarnings = 0
 }
 
 tasks.withType(Test).configureEach {
