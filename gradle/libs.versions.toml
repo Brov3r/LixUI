@@ -10,6 +10,7 @@ lwjgl-bom = { module = "org.lwjgl:lwjgl-bom", version.ref = "lwjgl" }
 lwjgl = { module = "org.lwjgl:lwjgl" }
 lwjgl-glfw = { module = "org.lwjgl:lwjgl-glfw" }
 lwjgl-opengl = { module = "org.lwjgl:lwjgl-opengl" }
+lwjgl-vulkan = { module = "org.lwjgl:lwjgl-vulkan" }
 lwjgl-stb = { module = "org.lwjgl:lwjgl-stb" }
 
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }

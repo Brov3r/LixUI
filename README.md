@@ -19,9 +19,18 @@
 
 **WIP**
 
-## 🧪 Running the Demo
+## 🧪 Running the Demos
 
-**WIP**
+Both demos open a centered 1280×720 window with an empty dark background.
+
+```shell
+./gradlew demoOpenGl
+./gradlew demoVulkan
+```
+
+- **OpenGL:** requires OpenGL 4.5 Core (Windows/Linux; macOS supports only OpenGL 4.1).
+- **Vulkan:** requires a Vulkan-capable driver and loader. The demo clears swapchain images and
+  presents them with FIFO synchronization, recreating the swapchain on resize.
 
 ## ⚖️ License
 

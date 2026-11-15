@@ -11,6 +11,7 @@ group = 'com.lixui'
 def customBuildPath = providers.environmentVariable('BUILD_PATH').orNull ?: layout.buildDirectory.get().asFile
 def lwjglVersion = libs.versions.lwjgl.get()
 def lwjglModules = ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl', 'lwjgl-stb']
+def lwjglApiModules = lwjglModules + ['lwjgl-vulkan']
 def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
 
 repositories {
@@ -48,6 +49,7 @@ dependencies {
     api libs.lwjgl
     api libs.lwjgl.glfw
     api libs.lwjgl.opengl
+    api libs.lwjgl.vulkan
     api libs.lwjgl.stb
     api libs.slf4j.api
 
@@ -143,16 +145,23 @@ tasks.named('assemble') {
     dependsOn 'buildReleaseJar'
 }
 
-// ./gradlew demo [-PdemoMainClass=com.lixui.demo.Demo]
-tasks.register('demo', JavaExec) {
-    group = 'application'
-    description = 'Runs the demo scene.'
-    classpath = sourceSets.main.runtimeClasspath + configurations.demoNatives
-    mainClass = providers.gradleProperty('demoMainClass').orElse('com.lixui.demo.Demo')
+[
+        demoOpenGl: 'com.lixui.demo.OpenGlDemo',
+        demoVulkan: 'com.lixui.demo.VulkanDemo'
+].each { String taskName, String entryPoint ->
+    tasks.register(taskName, JavaExec) {
+        group = 'application'
+        description = "Runs ${taskName == 'demoVulkan' ? 'the Vulkan' : 'the OpenGL'} demo."
+        classpath = sourceSets.main.runtimeClasspath + configurations.demoNatives
+        mainClass = providers.gradleProperty('demoMainClass').orElse(entryPoint)
 
-    // GLFW must own the main thread on macOS.
-    if (osName.contains('mac')) {
-        jvmArgs '-XstartOnFirstThread'
+        // LWJGL loads native libraries and uses Unsafe for direct memory access on Java 25.
+        jvmArgs '--enable-native-access=ALL-UNNAMED', '--sun-misc-unsafe-memory-access=allow'
+
+        // GLFW must own the main thread on macOS.
+        if (osName.contains('mac')) {
+            jvmArgs '-XstartOnFirstThread'
+        }
     }
 }
 
@@ -187,7 +196,7 @@ publishing {
                     bom.appendNode('scope', 'import')
 
                     Node dependencies = root.appendNode('dependencies')
-                    lwjglModules.each { String artifactId ->
+                    lwjglApiModules.each { String artifactId ->
                         Node dependency = dependencies.appendNode('dependency')
                         dependency.appendNode('groupId', 'org.lwjgl')
                         dependency.appendNode('artifactId', artifactId)
