@@ -8,6 +8,9 @@ import com.lixui.graphics.GradientStop;
 import com.lixui.graphics.Paint;
 import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
+import com.lixui.text.Font;
+import com.lixui.text.HorizontalAlignment;
+import com.lixui.text.VerticalAlignment;
 
 import java.util.List;
 
@@ -28,16 +31,18 @@ final class DemoRawScene {
      * @param texture checkerboard texture
      * @param wrappedTexture host-owned checkerboard texture
      * @param maskTexture circular alpha mask texture
+     * @param fonts system font styles used for labels, or null when no system font is available
      * @param time elapsed time in seconds, used for rotation
      */
     static void draw(RenderManager renderer, Texture texture, Texture wrappedTexture,
-                     Texture maskTexture, float time) {
+                     Texture maskTexture, DemoFonts fonts, float time) {
         Layout layout = Layout.fit(renderer.viewport());
         renderer.fillRect(renderer.viewport(), Paint.solid(Color.hex("#12141A")));
 
         drawTopRow(renderer, layout);
         drawMaskRow(renderer, layout, texture, wrappedTexture);
         drawTransformRow(renderer, layout, maskTexture, time);
+        drawText(renderer, layout, fonts);
     }
 
     private static void drawTopRow(RenderManager renderer, Layout layout) {
@@ -181,6 +186,66 @@ final class DemoRawScene {
 
     private static Point center(Rect rect) {
         return new Point(rect.x() + rect.width() / 2, rect.y() + rect.height() / 2);
+    }
+
+    private static void drawText(RenderManager renderer, Layout layout, DemoFonts fonts) {
+        if (fonts == null) {
+            return;
+        }
+        drawTextLine(renderer, layout, fonts.regular(), 40, 6, "LixUI · текст и шрифты", Color.WHITE);
+        drawTextLine(renderer, layout, fonts.regular(), 440, 6,
+                "Системный шрифт · кириллица · атлас глифов", Color.WHITE.withAlpha(0.6f));
+        drawRotatedTextLine(renderer, layout, fonts.boldItalic(), 92, 118, -0.12f, "Поворот текста");
+        drawTextLine(renderer, layout, fonts.regular(), 40, 205,
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789",
+                Paint.linear(new Point(0, 0), new Point(900, 0),
+                        new GradientStop(0, Color.hex("#5B8CFF")),
+                        new GradientStop(0.5f, Color.hex("#A66CFF")),
+                        new GradientStop(1, Color.hex("#FF6B8B"))));
+        drawTextLine(renderer, layout, fonts.bold(), 640, 468,
+                "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
+                Color.hex("#48C78E").withAlpha(0.7f),
+                HorizontalAlignment.CENTER, VerticalAlignment.TOP);
+        drawTextLine(renderer, layout, fonts.italic(), 1240, 695,
+                "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~«»№—–…•€",
+                Color.hex("#FFD166").withAlpha(0.7f),
+                HorizontalAlignment.RIGHT, VerticalAlignment.CENTER);
+    }
+
+    private static void drawRotatedTextLine(RenderManager renderer, Layout layout, Font font,
+                                            float x, float y, float angle, String text) {
+        Point origin = layout.point(x, y);
+        Transform transform = Transform.translation(origin.x(), origin.y())
+                .multiply(Transform.rotation(angle))
+                .multiply(Transform.scaling(layout.scale(), layout.scale()));
+        renderer.withTransform(transform, () -> renderer.text(font, text, 0, 0, Color.WHITE));
+    }
+
+    private static void drawTextLine(RenderManager renderer, Layout layout, Font font,
+                                     float x, float y, String text, Color color) {
+        drawTextLine(renderer, layout, font, x, y, text, Paint.solid(color));
+    }
+
+    private static void drawTextLine(RenderManager renderer, Layout layout, Font font,
+                                     float x, float y, String text, Paint paint) {
+        drawTextLine(renderer, layout, font, x, y, text, paint,
+                HorizontalAlignment.LEFT, VerticalAlignment.TOP);
+    }
+
+    private static void drawTextLine(RenderManager renderer, Layout layout, Font font,
+                                     float x, float y, String text, Color color,
+                                     HorizontalAlignment horizontal, VerticalAlignment vertical) {
+        drawTextLine(renderer, layout, font, x, y, text, Paint.solid(color), horizontal, vertical);
+    }
+
+    private static void drawTextLine(RenderManager renderer, Layout layout, Font font,
+                                     float x, float y, String text, Paint paint,
+                                     HorizontalAlignment horizontal, VerticalAlignment vertical) {
+        Point origin = layout.point(x, y);
+        Transform transform = Transform.translation(origin.x(), origin.y())
+                .multiply(Transform.scaling(layout.scale(), layout.scale()));
+        renderer.withTransform(transform,
+                () -> renderer.text(font, text, 0, 0, paint, horizontal, vertical));
     }
 
     private static Transform rotateAround(Point center, float angle) {

@@ -6,6 +6,14 @@ import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
 import com.lixui.graphics.GradientStop;
 import com.lixui.graphics.Paint;
+import com.lixui.text.Font;
+import com.lixui.text.FontData;
+import com.lixui.text.FontStyle;
+import com.lixui.text.Glyph;
+import com.lixui.text.HorizontalAlignment;
+import com.lixui.text.SystemFonts;
+import com.lixui.text.VerticalAlignment;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -403,6 +411,125 @@ class RenderManagerTest {
     }
 
     @Test
+    void createsFontsDrawsTextAndReleasesTheirAtlases() {
+        FontData data = SystemFonts.findDefault().orElse(null);
+        Assumptions.assumeTrue(data != null, "No readable system font is installed.");
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+        Font font = manager.createFont(data, 20, new int[]{'A', 'B'});
+        assertSame(font.atlas(), backend.createdImage);
+
+        manager.begin();
+        manager.text(font, "AB", new Point(10, 20), RED);
+        assertThrows(NullPointerException.class, () -> manager.text(null, "A", 0, 0, RED));
+        assertThrows(NullPointerException.class, () -> manager.text(font, null, 0, 0, RED));
+        assertThrows(NullPointerException.class, () -> manager.text(font, "A", 0, 0, (Color) null));
+        manager.end();
+
+        List<DrawCommand> commands = backend.lastDrawList.commands();
+        assertEquals(2, commands.size());
+        ImageCommand first = (ImageCommand) commands.get(0);
+        assertSame(backend.createdTexture, first.texture());
+        assertEquals(RED, first.color());
+        assertEquals(Transform.IDENTITY, first.transform());
+        assertEquals(font.glyph('A').uv(), first.uv());
+        assertEquals(new Rect(Math.round(10 + font.glyph('A').offsetX()),
+                Math.round(20 + font.ascent() + font.glyph('A').offsetY()),
+                font.glyph('A').width(), font.glyph('A').height()), first.bounds());
+
+        assertThrows(NullPointerException.class, () -> manager.measureText(null, "A"));
+        assertThrows(NullPointerException.class, () -> manager.measureText(font, null));
+        assertEquals(font.measure("AB").width(), manager.measureText(font, "AB").width(), 0.0001f);
+        assertEquals(font.measure("AB").height(), manager.measureText(font, "AB").height(), 0.0001f);
+
+        manager.destroyFont(font);
+        assertSame(backend.createdTexture, backend.destroyedTexture);
+    }
+
+    @Test
+    void createsStyledFontVariants() {
+        FontData data = SystemFonts.findDefault().orElse(null);
+        Assumptions.assumeTrue(data != null, "No readable system font is installed.");
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+
+        Font bold = manager.createFont(data, 20, new int[]{'A'}, FontStyle.BOLD, 1.5f);
+
+        assertEquals(FontStyle.BOLD, bold.style());
+        assertEquals(1.5f, bold.letterSpacing(), 0.0001f);
+        assertSame(bold.atlas(), backend.createdImage);
+    }
+
+    @Test
+    void alignsTextAroundTheAnchor() {
+        FontData data = SystemFonts.findDefault().orElse(null);
+        Assumptions.assumeTrue(data != null, "No readable system font is installed.");
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+        Font font = manager.createFont(data, 30, new int[]{'A', 'B'});
+        Glyph glyph = font.glyph('A');
+        float width = font.measure("AB").width();
+        float height = font.measure("AB").height();
+
+        manager.begin();
+        manager.text(font, "AB", new Point(400, 300), RED,
+                HorizontalAlignment.CENTER, VerticalAlignment.CENTER);
+        assertThrows(NullPointerException.class,
+                () -> manager.text(font, "A", 0, 0, RED, null, VerticalAlignment.TOP));
+        assertThrows(NullPointerException.class,
+                () -> manager.text(font, "A", 0, 0, RED, HorizontalAlignment.LEFT, null));
+        manager.end();
+
+        Rect expected = new Rect(Math.round(400 - width / 2 + glyph.offsetX()),
+                Math.round(300 - height / 2 + font.ascent() + glyph.offsetY()),
+                glyph.width(), glyph.height());
+        assertEquals(expected, backend.lastDrawList.commands().get(0).bounds());
+    }
+
+    @Test
+    void textSupportsPaintGradients() {
+        FontData data = SystemFonts.findDefault().orElse(null);
+        Assumptions.assumeTrue(data != null, "No readable system font is installed.");
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+        Font font = manager.createFont(data, 40, new int[]{'A', 'B'});
+        Paint gradient = Paint.linear(new Point(0, 0), new Point(200, 0),
+                new GradientStop(0, RED), new GradientStop(1, Color.rgb(0, 0, 255)));
+
+        manager.begin();
+        manager.text(font, "AB", new Point(0, 0), gradient);
+        assertThrows(NullPointerException.class, () -> manager.text(font, "A", 0, 0, (Paint) null));
+        manager.end();
+
+        List<DrawCommand> commands = backend.lastDrawList.commands();
+        assertEquals(2, commands.size());
+        Color first = commands.get(0).color();
+        Color second = commands.get(1).color();
+        assertTrue(first.r() > second.r());
+        assertTrue(first.b() < second.b());
+        assertEquals(1, first.a(), 0.0001f);
+        assertEquals(1, second.a(), 0.0001f);
+    }
+
+    @Test
+    void textRejectsFontsCreatedByAnotherManager() {
+        FontData data = SystemFonts.findDefault().orElse(null);
+        Assumptions.assumeTrue(data != null, "No readable system font is installed.");
+        RenderManager manager = new RenderManager(new RecordingBackend());
+        manager.resize(VIEWPORT);
+        Font font = Font.load(data, 16, new int[]{'A'});
+
+        manager.begin();
+        assertThrows(IllegalArgumentException.class,
+                () -> manager.text(font, "A", new Point(0, 0), RED));
+        manager.end();
+    }
+
+    @Test
     void rejectsNullArguments() {
         RecordingBackend backend = new RecordingBackend();
         RenderManager manager = new RenderManager(backend);
@@ -429,6 +556,7 @@ class RenderManagerTest {
         private DrawList lastDrawList;
         private int drawCalls;
         private ImageData createdImage;
+        private Texture createdTexture;
         private Texture destroyedTexture;
 
         @Override
@@ -445,7 +573,8 @@ class RenderManagerTest {
         @Override
         public Texture createTexture(ImageData image) {
             createdImage = image;
-            return new TestTexture(image.width(), image.height());
+            createdTexture = new TestTexture(image.width(), image.height());
+            return createdTexture;
         }
 
         @Override

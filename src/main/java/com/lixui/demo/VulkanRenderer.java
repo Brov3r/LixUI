@@ -83,6 +83,7 @@ final class VulkanRenderer implements AutoCloseable {
     private Texture sceneTexture;
     private Texture maskTexture;
     private RenderManager renderer;
+    private DemoFonts fonts;
     private final long startNanos = System.nanoTime();
     private int framebufferWidth;
     private int framebufferHeight;
@@ -112,6 +113,7 @@ final class VulkanRenderer implements AutoCloseable {
             sceneTexture = backend.createTexture(DemoTextures.checkerboard());
             maskTexture = backend.createTexture(DemoTextures.mask());
             renderer = new RenderManager(backend);
+            fonts = DemoFonts.load(renderer);
             createFrameSynchronization();
         } catch (RuntimeException | Error exception) {
             close();
@@ -197,6 +199,7 @@ final class VulkanRenderer implements AutoCloseable {
                 backend = null;
                 sceneTexture = null;
                 maskTexture = null;
+                fonts = null;
                 renderer = null;
             }
             destroySwapchain();
@@ -757,7 +760,7 @@ final class VulkanRenderer implements AutoCloseable {
             VK10.vkCmdBeginRenderPass(command, renderPassBegin, VK10.VK_SUBPASS_CONTENTS_INLINE);
             backend.beginFrame(command);
             renderer.begin();
-            DemoRawScene.draw(renderer, sceneTexture, sceneTexture, maskTexture,
+            DemoRawScene.draw(renderer, sceneTexture, sceneTexture, maskTexture, fonts,
                     (System.nanoTime() - startNanos) / 1_000_000_000f);
             renderer.end();
             backend.endFrame();

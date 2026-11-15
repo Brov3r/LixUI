@@ -2,20 +2,29 @@ package com.lixui.render;
 
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
+import com.lixui.geometry.Size;
 import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
 import com.lixui.graphics.Paint;
+import com.lixui.text.Font;
+import com.lixui.text.FontData;
+import com.lixui.text.FontStyle;
+import com.lixui.text.HorizontalAlignment;
+import com.lixui.text.TextGlyph;
+import com.lixui.text.VerticalAlignment;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
  * Backend-specific drawing manager used by widgets and custom draw code.
- * It owns a {@link DrawList}, exposes raw primitives, gradients, transforms and stencil masks, and
- * submits the completed list to the registered {@link RenderBackend}.
+ * It owns a {@link DrawList}, exposes raw primitives, gradients, transforms, text and stencil masks,
+ * and submits the completed list to the registered {@link RenderBackend}.
  * Drawing methods are valid only between {@link #begin()} and {@link #end()}.
  * Masks require a stencil buffer in OpenGL or a depth/stencil attachment in Vulkan.
  */
@@ -25,6 +34,7 @@ public final class RenderManager {
     private final RenderBackend backend;
     private final DrawList drawList = new DrawList(Rect.EMPTY);
     private final Deque<Transform> transforms = new ArrayDeque<>();
+    private final Map<Font, Texture> fontAtlases = new IdentityHashMap<>();
     private Viewport viewport;
     private Rect logicalViewport = Rect.EMPTY;
     private Antialiasing antialiasing = Antialiasing.LOW;
@@ -165,6 +175,345 @@ public final class RenderManager {
      */
     public void image(Texture texture, Rect bounds, float radius, Rect uv, Color tint) {
         list().image(texture, bounds, radius, uv, tint, currentTransform());
+    }
+
+    /**
+     * Rasterizes a TrueType font and uploads its glyph atlas to the backend.
+     * The default character set covers printable ASCII, Latin-1 and Cyrillic. The returned font is
+     * bound to this render manager and must be released with {@link #destroyFont(Font)} when it is
+     * no longer needed, unless the backend is closed first.
+     *
+     * @param data font data
+     * @param pixelSize requested line size in logical UI units
+     * @return the uploaded font
+     * @throws NullPointerException if {@code data} is null
+     * @throws IllegalArgumentException if the size is invalid or the data has no TrueType outlines
+     */
+    public Font createFont(FontData data, float pixelSize) {
+        return createFont(data, pixelSize, Font.defaultCodepoints(), FontStyle.REGULAR, 0);
+    }
+
+    /**
+     * Rasterizes a TrueType font with letter spacing and uploads its glyph atlas to the backend.
+     * The default character set covers printable ASCII, Latin-1 and Cyrillic.
+     *
+     * @param data font data
+     * @param pixelSize requested line size in logical UI units
+     * @param letterSpacing extra space between glyphs in logical UI units
+     * @return the uploaded font
+     * @throws NullPointerException if {@code data} is null
+     * @throws IllegalArgumentException if the size or spacing is invalid, or the data has no
+     *                                  TrueType outlines
+     */
+    public Font createFont(FontData data, float pixelSize, float letterSpacing) {
+        return createFont(data, pixelSize, Font.defaultCodepoints(), FontStyle.REGULAR, letterSpacing);
+    }
+
+    /**
+     * Rasterizes a styled TrueType font and uploads its glyph atlas to the backend.
+     * The default character set covers printable ASCII, Latin-1 and Cyrillic. Bold and italic are
+     * synthetic: coverage is thickened and glyphs are sheared while the atlas is baked.
+     *
+     * @param data font data
+     * @param pixelSize requested line size in logical UI units
+     * @param style synthetic bold or italic style
+     * @return the uploaded font
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the size is invalid or the data has no TrueType outlines
+     */
+    public Font createFont(FontData data, float pixelSize, FontStyle style) {
+        return createFont(data, pixelSize, Font.defaultCodepoints(), style, 0);
+    }
+
+    /**
+     * Rasterizes a styled TrueType font with letter spacing and uploads its glyph atlas.
+     * The default character set covers printable ASCII, Latin-1 and Cyrillic.
+     *
+     * @param data font data
+     * @param pixelSize requested line size in logical UI units
+     * @param style synthetic bold or italic style
+     * @param letterSpacing extra space between glyphs in logical UI units
+     * @return the uploaded font
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the size or spacing is invalid, or the data has no
+     *                                  TrueType outlines
+     */
+    public Font createFont(FontData data, float pixelSize, FontStyle style, float letterSpacing) {
+        return createFont(data, pixelSize, Font.defaultCodepoints(), style, letterSpacing);
+    }
+
+    /**
+     * Rasterizes a TrueType font for an explicit set of Unicode code points and uploads its atlas.
+     * Kerning pairs are baked when at most 512 code points are requested.
+     *
+     * @param data font data
+     * @param pixelSize requested line size in logical UI units
+     * @param codepoints Unicode code points to bake
+     * @return the uploaded font
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the size or a code point is invalid, the data has no
+     *                                  TrueType outlines, or the atlas is too large
+     */
+    public Font createFont(FontData data, float pixelSize, int[] codepoints) {
+        return createFont(data, pixelSize, codepoints, FontStyle.REGULAR, 0);
+    }
+
+    /**
+     * Rasterizes a styled TrueType font for an explicit set of Unicode code points and uploads its atlas.
+     * Kerning pairs are baked when at most 512 code points are requested.
+     *
+     * @param data font data
+     * @param pixelSize requested line size in logical UI units
+     * @param codepoints Unicode code points to bake
+     * @param style synthetic bold or italic style
+     * @return the uploaded font
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the size or a code point is invalid, the data has no
+     *                                  TrueType outlines, or the atlas is too large
+     */
+    public Font createFont(FontData data, float pixelSize, int[] codepoints, FontStyle style) {
+        return createFont(data, pixelSize, codepoints, style, 0);
+    }
+
+    /**
+     * Rasterizes a styled TrueType font with letter spacing for explicit code points and uploads its atlas.
+     * Kerning pairs are baked when at most 512 code points are requested.
+     *
+     * @param data font data
+     * @param pixelSize requested line size in logical UI units
+     * @param codepoints Unicode code points to bake
+     * @param style synthetic bold or italic style
+     * @param letterSpacing extra space between glyphs in logical UI units
+     * @return the uploaded font
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the size or spacing is invalid, a code point is out of
+     *                                  range, the data has no TrueType outlines, or the atlas is too large
+     */
+    public Font createFont(FontData data, float pixelSize, int[] codepoints,
+                           FontStyle style, float letterSpacing) {
+        Font font = Font.load(data, pixelSize, codepoints, style, letterSpacing);
+        fontAtlases.put(font, backend.createTexture(font.atlas()));
+        return font;
+    }
+
+    /**
+     * Releases the atlas texture of a font created by this render manager.
+     * Fonts that were already released, or that belong to another render manager, are ignored.
+     *
+     * @param font font to release
+     * @throws NullPointerException if {@code font} is null
+     */
+    public void destroyFont(Font font) {
+        Objects.requireNonNull(font, "font");
+        Texture atlas = fontAtlases.remove(font);
+        if (atlas != null) {
+            backend.destroyTexture(atlas);
+        }
+    }
+
+    /**
+     * Draws a text block with its top-left corner at the supplied point.
+     * Newlines start a new line, tabs advance by four spaces and unsupported code points are
+     * skipped. The current transform and clip apply to every glyph.
+     *
+     * @param font font created by this render manager
+     * @param text text to draw
+     * @param position top-left corner of the first line
+     * @param color straight-alpha text color
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the font was not created by this render manager
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void text(Font font, String text, Point position, Color color) {
+        Objects.requireNonNull(position, "position");
+        text(font, text, position.x(), position.y(), Paint.solid(color));
+    }
+
+    /**
+     * Draws a text block with its top-left corner at the supplied coordinates.
+     * Newlines start a new line, tabs advance by four spaces and unsupported code points are
+     * skipped. The current transform and clip apply to every glyph.
+     *
+     * @param font font created by this render manager
+     * @param text text to draw
+     * @param x horizontal origin in logical UI units
+     * @param y vertical origin in logical UI units
+     * @param color straight-alpha text color
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the font was not created by this render manager
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void text(Font font, String text, float x, float y, Color color) {
+        Objects.requireNonNull(color, "color");
+        text(font, text, x, y, Paint.solid(color));
+    }
+
+    /**
+     * Draws a text block filled with a paint.
+     * The paint is evaluated in layout coordinates, before the current transform, and sampled at
+     * each glyph center, so gradients transition between glyphs. Newlines start a new line, tabs
+     * advance by four spaces and unsupported code points are skipped.
+     *
+     * @param font font created by this render manager
+     * @param text text to draw
+     * @param position top-left corner of the first line
+     * @param paint text paint
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the font was not created by this render manager
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void text(Font font, String text, Point position, Paint paint) {
+        Objects.requireNonNull(position, "position");
+        text(font, text, position.x(), position.y(), paint);
+    }
+
+    /**
+     * Draws a text block filled with a paint.
+     * The paint is evaluated in layout coordinates, before the current transform, and sampled at
+     * each glyph center, so gradients transition between glyphs. Newlines start a new line, tabs
+     * advance by four spaces and unsupported code points are skipped.
+     *
+     * @param font font created by this render manager
+     * @param text text to draw
+     * @param x horizontal origin in logical UI units
+     * @param y vertical origin in logical UI units
+     * @param paint text paint
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the font was not created by this render manager
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void text(Font font, String text, float x, float y, Paint paint) {
+        text(font, text, x, y, paint, HorizontalAlignment.LEFT, VerticalAlignment.TOP);
+    }
+
+    /**
+     * Draws a color-filled text block aligned against the supplied anchor point.
+     * Multiline text aligns every line horizontally; the block is aligned vertically as a whole.
+     * The current transform and clip apply to every glyph.
+     *
+     * @param font font created by this render manager
+     * @param text text to draw
+     * @param position text anchor
+     * @param color straight-alpha text color
+     * @param horizontal horizontal alignment relative to the anchor
+     * @param vertical vertical alignment relative to the anchor
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the font was not created by this render manager
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void text(Font font, String text, Point position, Color color,
+                     HorizontalAlignment horizontal, VerticalAlignment vertical) {
+        Objects.requireNonNull(position, "position");
+        text(font, text, position.x(), position.y(), Paint.solid(color), horizontal, vertical);
+    }
+
+    /**
+     * Draws a color-filled text block aligned against the supplied anchor coordinates.
+     * Multiline text aligns every line horizontally; the block is aligned vertically as a whole.
+     * The current transform and clip apply to every glyph.
+     *
+     * @param font font created by this render manager
+     * @param text text to draw
+     * @param x horizontal anchor in logical UI units
+     * @param y vertical anchor in logical UI units
+     * @param color straight-alpha text color
+     * @param horizontal horizontal alignment relative to the anchor
+     * @param vertical vertical alignment relative to the anchor
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the font was not created by this render manager
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void text(Font font, String text, float x, float y, Color color,
+                     HorizontalAlignment horizontal, VerticalAlignment vertical) {
+        Objects.requireNonNull(color, "color");
+        text(font, text, x, y, Paint.solid(color), horizontal, vertical);
+    }
+
+    /**
+     * Draws a paint-filled text block aligned against the supplied anchor point.
+     * Multiline text aligns every line horizontally; the block is aligned vertically as a whole.
+     * The paint is evaluated in layout coordinates, before the current transform.
+     *
+     * @param font font created by this render manager
+     * @param text text to draw
+     * @param position text anchor
+     * @param paint text paint
+     * @param horizontal horizontal alignment relative to the anchor
+     * @param vertical vertical alignment relative to the anchor
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the font was not created by this render manager
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void text(Font font, String text, Point position, Paint paint,
+                     HorizontalAlignment horizontal, VerticalAlignment vertical) {
+        Objects.requireNonNull(position, "position");
+        text(font, text, position.x(), position.y(), paint, horizontal, vertical);
+    }
+
+    /**
+     * Draws a paint-filled text block aligned against the supplied anchor coordinates.
+     * Multiline text aligns every line horizontally; the block is aligned vertically as a whole.
+     * The paint is evaluated in layout coordinates, before the current transform, and sampled at
+     * each glyph center, so gradients transition between glyphs.
+     *
+     * @param font font created by this render manager
+     * @param text text to draw
+     * @param x horizontal anchor in logical UI units
+     * @param y vertical anchor in logical UI units
+     * @param paint text paint
+     * @param horizontal horizontal alignment relative to the anchor
+     * @param vertical vertical alignment relative to the anchor
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if the font was not created by this render manager
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void text(Font font, String text, float x, float y, Paint paint,
+                     HorizontalAlignment horizontal, VerticalAlignment vertical) {
+        Objects.requireNonNull(font, "font");
+        Objects.requireNonNull(text, "text");
+        Objects.requireNonNull(paint, "paint");
+        Objects.requireNonNull(horizontal, "horizontal");
+        Objects.requireNonNull(vertical, "vertical");
+        DrawList target = list();
+        Texture atlas = fontAtlases.get(font);
+        if (atlas == null) {
+            throw new IllegalArgumentException("Font was not created by this render manager.");
+        }
+        Transform transform = currentTransform();
+        Color solid = paint instanceof Paint.Solid value ? value.color() : null;
+        for (TextGlyph glyph : font.layout(text, x, y, horizontal, vertical)) {
+            Rect bounds = snapToPixel(glyph.bounds());
+            Color tint = solid != null ? solid : paint.colorAt(center(bounds));
+            target.image(atlas, bounds, 0, glyph.uv(), tint, transform);
+        }
+    }
+
+    private static Rect snapToPixel(Rect bounds) {
+        float x = Math.round(bounds.x());
+        float y = Math.round(bounds.y());
+        if (x == bounds.x() && y == bounds.y()) {
+            return bounds;
+        }
+        return new Rect(x, y, bounds.width(), bounds.height());
+    }
+
+    private static Point center(Rect bounds) {
+        return new Point(bounds.x() + bounds.width() / 2, bounds.y() + bounds.height() / 2);
+    }
+
+    /**
+     * Measures a text block with the baked advances, kerning and line height of a font.
+     * This is the same measurement used by text alignment and does not require an active frame.
+     *
+     * @param font font created by this render manager
+     * @param text text to measure
+     * @return the non-negative width and height in logical UI units
+     * @throws NullPointerException if an argument is null
+     */
+    public Size measureText(Font font, String text) {
+        Objects.requireNonNull(font, "font");
+        Objects.requireNonNull(text, "text");
+        return font.measure(text);
     }
 
     /**

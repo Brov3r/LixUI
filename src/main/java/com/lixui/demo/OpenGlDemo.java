@@ -45,6 +45,7 @@ public final class OpenGlDemo {
                     Texture texture = backend.createTexture(image);
                     Texture maskTexture = backend.createTexture(DemoTextures.mask());
                     RenderManager renderer = new RenderManager(backend);
+                    DemoFonts fonts = DemoFonts.load(renderer);
                     int hostTexture = uploadHostTexture(image);
                     try {
                         Texture wrapped = backend.wrapTexture(hostTexture, image.width(), image.height());
@@ -71,7 +72,7 @@ public final class OpenGlDemo {
                                             framebufferWidth, framebufferHeight, viewportWidth, viewportHeight));
                                     renderer.begin();
                                     DemoRawScene.draw(renderer, texture, wrapped, maskTexture,
-                                            (float) GLFW.glfwGetTime());
+                                            fonts, (float) GLFW.glfwGetTime());
                                     renderer.end();
                                 }
                                 GLFW.glfwSwapBuffers(window.handle());
