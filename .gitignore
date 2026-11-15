@@ -70,6 +70,7 @@ local.properties
 secrets.properties
 
 # ===== Local =====
+.lwjgl/
 .opencode/
 .opencode-cache/
 opencode.json

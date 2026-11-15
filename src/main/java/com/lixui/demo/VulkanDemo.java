@@ -11,12 +11,15 @@ public final class VulkanDemo {
 
     /**
      * Runs the Vulkan demo until its window is closed.
+     * Accepts an optional {@code --placement=left|right} argument to occupy half of the monitor.
      *
-     * @param args command-line arguments, currently unused
+     * @param args command-line arguments
      * @throws IllegalStateException if window initialization or a Vulkan operation fails
+     * @throws IllegalArgumentException if the placement argument is unknown
      */
     public static void main(String[] args) {
-        try (DemoWindow window = new DemoWindow("LixUI Demo - Vulkan", GLFW.GLFW_NO_API);
+        DemoPlacement placement = DemoPlacement.fromArgs(args);
+        try (DemoWindow window = new DemoWindow("LixUI Demo - Vulkan", GLFW.GLFW_NO_API, placement);
                 VulkanRenderer renderer = new VulkanRenderer(window.handle())) {
             window.show();
             while (!window.shouldClose()) {

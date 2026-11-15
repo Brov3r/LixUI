@@ -21,16 +21,21 @@
 
 ## 🧪 Running the Demos
 
-Both demos open a centered 1280×720 window with an empty dark background.
+Both demos render the same sample dashboard.
 
 ```shell
 ./gradlew demoOpenGl
 ./gradlew demoVulkan
+./gradlew demoBoth
 ```
 
-- **OpenGL:** requires OpenGL 4.5 Core (Windows/Linux; macOS supports only OpenGL 4.1).
-- **Vulkan:** requires a Vulkan-capable driver and loader. The demo clears swapchain images and
-  presents them with FIFO synchronization, recreating the swapchain on resize.
+`demoBoth` opens two windows side by side, each occupying half of the primary monitor's work area
+while keeping the 1280×720 (16:9) aspect ratio. The windows are raised above other applications on
+start.
+
+- **OpenGL:** requires OpenGL 3.3 Core; the demo requests a 4.5 Core context.
+- **Vulkan:** requires a Vulkan-capable driver and loader. Swapchain images are recreated on resize
+  and presented with FIFO synchronization.
 
 ## ⚖️ License
 

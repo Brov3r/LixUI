@@ -39,6 +39,10 @@ configurations {
         canBeConsumed = false
         canBeResolved = true
     }
+    demoRuntime {
+        canBeConsumed = false
+        canBeResolved = true
+    }
     testRuntimeOnly {
         extendsFrom demoNatives
     }
@@ -57,6 +61,9 @@ dependencies {
     testImplementation libs.junit.jupiter
     testImplementation libs.assertj
     testRuntimeOnly libs.junit.platform.launcher
+    testRuntimeOnly libs.slf4j.simple
+
+    demoRuntime libs.slf4j.simple
 
     demoNatives platform(libs.lwjgl.bom)
     lwjglModules.each { String module ->
@@ -152,7 +159,7 @@ tasks.named('assemble') {
     tasks.register(taskName, JavaExec) {
         group = 'application'
         description = "Runs ${taskName == 'demoVulkan' ? 'the Vulkan' : 'the OpenGL'} demo."
-        classpath = sourceSets.main.runtimeClasspath + configurations.demoNatives
+        classpath = sourceSets.main.runtimeClasspath + configurations.demoNatives + configurations.demoRuntime
         mainClass = providers.gradleProperty('demoMainClass').orElse(entryPoint)
 
         // LWJGL loads native libraries and uses Unsafe for direct memory access on Java 25.
@@ -161,6 +168,50 @@ tasks.named('assemble') {
         // GLFW must own the main thread on macOS.
         if (osName.contains('mac')) {
             jvmArgs '-XstartOnFirstThread'
+        }
+    }
+}
+
+def demoJvmArgs = ['--enable-native-access=ALL-UNNAMED', '--sun-misc-unsafe-memory-access=allow']
+if (osName.contains('mac')) {
+    demoJvmArgs.add('-XstartOnFirstThread')
+}
+def demoRuntimeClasspath = sourceSets.main.runtimeClasspath + configurations.demoNatives +
+        configurations.demoRuntime
+def demoJavaExecutable = javaToolchains.launcherFor(java.toolchain).get().executablePath.asFile.absolutePath
+
+tasks.register('demoBoth') {
+    group = 'application'
+    description = 'Runs the OpenGL and Vulkan demos side by side on the primary monitor.'
+    dependsOn 'classes'
+
+    doLast {
+        def classpath = demoRuntimeClasspath.asPath
+        def demos = [
+                ['com.lixui.demo.OpenGlDemo', 'left'],
+                ['com.lixui.demo.VulkanDemo', 'right']
+        ]
+        def processes = demos.collect { demo ->
+            new ProcessBuilder([demoJavaExecutable] + demoJvmArgs +
+                    ['-cp', classpath, demo[0], '--placement=' + demo[1]])
+                    .inheritIO()
+                    .start()
+        }
+
+        def failures = []
+        processes.eachWithIndex { process, index ->
+            int exitCode = process.waitFor()
+            if (exitCode != 0) {
+                failures << "${demos[index][0]} exited with code ${exitCode}"
+                processes.each { peer ->
+                    if (peer.isAlive()) {
+                        peer.destroy()
+                    }
+                }
+            }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(failures.join(System.lineSeparator()))
         }
     }
 }
