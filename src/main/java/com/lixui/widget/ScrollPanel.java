@@ -1,5 +1,8 @@
 package com.lixui.widget;
 
+import com.lixui.animation.Animation;
+import com.lixui.animation.Animator;
+import com.lixui.animation.Easing;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
 import com.lixui.render.RenderManager;
@@ -17,16 +20,22 @@ public class ScrollPanel extends Panel {
     private static final float BAR_THICKNESS = 8;
     private static final float DEFAULT_BAR_MARGIN = 3;
     private static final float WHEEL_STEP = 48;
+    private static final float SMOOTH_SCROLL_SECONDS = 0.18f;
 
     private final ScrollBar verticalBar = new ScrollBar(ScrollBar.Orientation.VERTICAL);
     private final ScrollBar horizontalBar = new ScrollBar(ScrollBar.Orientation.HORIZONTAL);
     private Widget content;
     private float scrollX;
     private float scrollY;
+    private float targetScrollX;
+    private float targetScrollY;
     private float scrollBarMargin = DEFAULT_BAR_MARGIN;
     private boolean verticalScrollBarVisible = true;
     private boolean horizontalScrollBarVisible = true;
     private boolean scrollEnabled = true;
+    private Animator animationOwner;
+    private Animation horizontalAnimation;
+    private Animation verticalAnimation;
 
     /**
      * Creates an empty scroll panel with clipping enabled.
@@ -34,12 +43,20 @@ public class ScrollPanel extends Panel {
     public ScrollPanel() {
         setClipToBounds(true);
         verticalBar.setValueListener(value -> {
-            scrollY = value * maxScrollY();
-            applyContentPosition();
+            float target = value * maxScrollY();
+            if (verticalBar.isPressed()) {
+                setScroll(scrollX, target);
+            } else {
+                animateScrollTo(scrollX, target);
+            }
         });
         horizontalBar.setValueListener(value -> {
-            scrollX = value * maxScrollX();
-            applyContentPosition();
+            float target = value * maxScrollX();
+            if (horizontalBar.isPressed()) {
+                setScroll(target, scrollY);
+            } else {
+                animateScrollTo(target, scrollY);
+            }
         });
     }
 
@@ -72,9 +89,12 @@ public class ScrollPanel extends Panel {
         if (this.content != null) {
             remove(this.content);
         }
+        cancelScrollAnimations();
         this.content = content;
         scrollX = 0;
         scrollY = 0;
+        targetScrollX = 0;
+        targetScrollY = 0;
         add(content);
         add(verticalBar);
         add(horizontalBar);
@@ -84,6 +104,7 @@ public class ScrollPanel extends Panel {
      * Removes the content widget and hides the scrollbars.
      */
     public void clearContent() {
+        cancelScrollAnimations();
         remove(verticalBar);
         remove(horizontalBar);
         if (content != null) {
@@ -92,6 +113,8 @@ public class ScrollPanel extends Panel {
         }
         scrollX = 0;
         scrollY = 0;
+        targetScrollX = 0;
+        targetScrollY = 0;
     }
 
     /**
@@ -119,8 +142,11 @@ public class ScrollPanel extends Panel {
      * @param scrollY vertical offset
      */
     public void setScroll(float scrollX, float scrollY) {
+        cancelScrollAnimations();
         this.scrollX = clamp(scrollX, 0, maxScrollX());
         this.scrollY = clamp(scrollY, 0, maxScrollY());
+        targetScrollX = this.scrollX;
+        targetScrollY = this.scrollY;
         applyContentPosition();
         syncScrollbars();
     }
@@ -152,6 +178,11 @@ public class ScrollPanel extends Panel {
      */
     public void setScrollEnabled(boolean scrollEnabled) {
         this.scrollEnabled = scrollEnabled;
+        if (!scrollEnabled) {
+            cancelScrollAnimations();
+            targetScrollX = scrollX;
+            targetScrollY = scrollY;
+        }
     }
 
     /**
@@ -226,6 +257,8 @@ public class ScrollPanel extends Panel {
         content.layout(new Rect(0, 0, size.width(), size.height()));
         scrollX = clamp(scrollX, 0, maxScrollX());
         scrollY = clamp(scrollY, 0, maxScrollY());
+        targetScrollX = clamp(targetScrollX, 0, maxScrollX());
+        targetScrollY = clamp(targetScrollY, 0, maxScrollY());
         applyContentPosition();
         updateScrollbars();
     }
@@ -283,18 +316,85 @@ public class ScrollPanel extends Panel {
         boolean scrolled = false;
         if (deltaY != 0) {
             if (maxY > 0) {
-                scrollBy(0, -deltaY * WHEEL_STEP);
+                animateScrollBy(0, -deltaY * WHEEL_STEP);
                 scrolled = true;
             } else if (maxX > 0) {
-                scrollBy(-deltaY * WHEEL_STEP, 0);
+                animateScrollBy(-deltaY * WHEEL_STEP, 0);
                 scrolled = true;
             }
         }
         if (deltaX != 0 && maxX > 0) {
-            scrollBy(deltaX * WHEEL_STEP, 0);
+            animateScrollBy(deltaX * WHEEL_STEP, 0);
             scrolled = true;
         }
         return scrolled;
+    }
+
+    private void animateScrollBy(float deltaX, float deltaY) {
+        animateScrollTo(targetScrollX + deltaX, targetScrollY + deltaY);
+    }
+
+    private void animateScrollTo(float x, float y) {
+        float targetX = clamp(x, 0, maxScrollX());
+        float targetY = clamp(y, 0, maxScrollY());
+        targetScrollX = targetX;
+        targetScrollY = targetY;
+        Animator animator = context() == null ? null : context().animator();
+        if (animator == null) {
+            setScroll(targetX, targetY);
+            return;
+        }
+        animationOwner = animator;
+        if (scrollX == targetX) {
+            cancelHorizontalAnimation(animator);
+        } else {
+            cancelHorizontalAnimation(animator);
+            horizontalAnimation = animator.animate(scrollX, targetX, SMOOTH_SCROLL_SECONDS,
+                    Easing.EASE_OUT, value -> {
+                        scrollX = clamp(value, 0, maxScrollX());
+                        applyContentPosition();
+                        syncScrollbars();
+                    }).setOnComplete(() -> horizontalAnimation = null);
+        }
+        if (scrollY == targetY) {
+            cancelVerticalAnimation(animator);
+        } else {
+            cancelVerticalAnimation(animator);
+            verticalAnimation = animator.animate(scrollY, targetY, SMOOTH_SCROLL_SECONDS,
+                    Easing.EASE_OUT, value -> {
+                        scrollY = clamp(value, 0, maxScrollY());
+                        applyContentPosition();
+                        syncScrollbars();
+                    }).setOnComplete(() -> verticalAnimation = null);
+        }
+    }
+
+    private void cancelHorizontalAnimation(Animator animator) {
+        if (horizontalAnimation != null) {
+            animator.cancel(horizontalAnimation);
+            horizontalAnimation = null;
+        }
+    }
+
+    private void cancelVerticalAnimation(Animator animator) {
+        if (verticalAnimation != null) {
+            animator.cancel(verticalAnimation);
+            verticalAnimation = null;
+        }
+    }
+
+    private void cancelScrollAnimations() {
+        if (animationOwner != null) {
+            if (horizontalAnimation != null) {
+                animationOwner.cancel(horizontalAnimation);
+            }
+            if (verticalAnimation != null) {
+                animationOwner.cancel(verticalAnimation);
+            }
+        }
+        horizontalAnimation = null;
+        verticalAnimation = null;
+        animationOwner = null;
     }
 
     private void updateScrollbars() {
@@ -347,6 +447,14 @@ public class ScrollPanel extends Panel {
             return 0;
         }
         return Math.max(0, content.bounds().height() - localBounds().height());
+    }
+
+    /**
+     * Cancels smooth scrolling when the panel leaves the widget tree.
+     */
+    @Override
+    protected void onDetached() {
+        cancelScrollAnimations();
     }
 
     private static void setVisibleIfChanged(Widget widget, boolean visible) {

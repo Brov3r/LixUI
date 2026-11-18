@@ -118,16 +118,22 @@ class ScrollPanelTest {
         manager.render();
 
         manager.handle(new PointerScrolled(50, 50, 0, -1));
+        assertEquals(0, panel.scrollY());
+        manager.update(0.09f);
+        assertTrue(panel.scrollY() > 0 && panel.scrollY() < 48);
+        manager.update(0.2f);
+        assertEquals(48, panel.scrollY(), 0.0001f);
         assertEquals(0, panel.scrollX());
-        assertTrue(panel.scrollY() > 0);
 
         panel.setScroll(0, 0);
         manager.handle(new PointerScrolled(50, 50, 1, 0));
+        manager.update(0.2f);
         assertTrue(panel.scrollX() > 0);
 
-        float before = panel.scrollY();
+        panel.setScroll(0, 0);
         manager.handle(new PointerScrolled(190, 20, 0, -1));
-        assertTrue(panel.scrollY() > before);
+        manager.update(0.2f);
+        assertTrue(panel.scrollY() > 0);
     }
 
     @Test
@@ -174,6 +180,7 @@ class ScrollPanelTest {
         assertFalse(bar(panel, ScrollBar.Orientation.VERTICAL).isVisible());
         assertTrue(bar(panel, ScrollBar.Orientation.HORIZONTAL).isVisible());
         manager.handle(new PointerScrolled(50, 50, 0, -1));
+        manager.update(0.2f);
         assertTrue(panel.scrollY() > 0);
 
         panel.setVerticalScrollBarVisible(true);
