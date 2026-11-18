@@ -12,6 +12,7 @@ import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.lwjgl.PointerBuffer;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWVulkan;
 
@@ -27,6 +28,9 @@ class VulkanRendererTest {
         long window = 0;
         try {
             Assumptions.assumeTrue(GLFWVulkan.glfwVulkanSupported(), "Vulkan unavailable.");
+            PointerBuffer extensions = GLFWVulkan.glfwGetRequiredInstanceExtensions();
+            Assumptions.assumeTrue(extensions != null && extensions.remaining() > 0,
+                    "Vulkan surface extensions unavailable.");
             GLFW.glfwDefaultWindowHints();
             GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE, GLFW.GLFW_FALSE);
             GLFW.glfwWindowHint(GLFW.GLFW_CLIENT_API, GLFW.GLFW_NO_API);

@@ -57,16 +57,16 @@ public record Theme(Color background, Color surface, Color surfaceHover, Color s
      */
     public static Theme dark() {
         return new Theme(
-                Color.hex("#12141A"),
-                Color.hex("#1D2028"),
-                Color.hex("#23262E"),
-                Color.hex("#2C303A"),
-                Color.hex("#5B8CFF"),
-                Color.hex("#FFFFFF"),
-                Color.hex("#F2F4F8"),
-                Color.hex("#9AA3B2"),
-                Color.hex("#343A46"),
-                Color.hex("#A66CFF"));
+                Color.hex("#1A1A1A"),
+                Color.hex("#222222"),
+                Color.hex("#2A2A2A"),
+                Color.hex("#2E2E2E"),
+                Color.hex("#9BD1C1"),
+                Color.hex("#1A1A1A"),
+                Color.hex("#ECECEC"),
+                Color.hex("#B9B9B9"),
+                Color.hex("#3A3A3A"),
+                Color.hex("#BCE3D5"));
     }
 
     /**
@@ -76,16 +76,16 @@ public record Theme(Color background, Color surface, Color surfaceHover, Color s
      */
     public static Theme light() {
         return new Theme(
-                Color.hex("#F4F6FA"),
-                Color.hex("#FFFFFF"),
-                Color.hex("#EEF1F7"),
-                Color.hex("#E2E7F0"),
-                Color.hex("#3B6EF5"),
-                Color.hex("#FFFFFF"),
-                Color.hex("#171A21"),
-                Color.hex("#5D6675"),
-                Color.hex("#D0D6E0"),
-                Color.hex("#7B4DFF"));
+                Color.hex("#FAF7F0"),
+                Color.hex("#FCFCFC"),
+                Color.hex("#F5F5F0"),
+                Color.hex("#EDEDEB"),
+                Color.hex("#9BD1C1"),
+                Color.hex("#1A1A1A"),
+                Color.hex("#29292B"),
+                Color.hex("#5C6673"),
+                Color.hex("#DBDBDE"),
+                Color.hex("#4FC778"));
     }
 
     /**

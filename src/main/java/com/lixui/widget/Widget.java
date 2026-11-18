@@ -438,7 +438,7 @@ public abstract class Widget {
 
     /**
      * Resolves the inherited visual style for this subtree.
-     * The nearest local style wins, then the context control style.
+     * The nearest local style wins, then the widget's default style.
      *
      * @return the resolved style, or null when neither the widget tree nor the context defines one
      */
@@ -448,6 +448,16 @@ public abstract class Widget {
                 return widget.style;
             }
         }
+        return defaultStyle();
+    }
+
+    /**
+     * Returns the context style used when neither this widget nor its ancestors define a local style.
+     * Interactive controls use the control style by default; subclasses can select another preset.
+     *
+     * @return the default style, or null when the widget is not attached
+     */
+    protected WidgetStyle defaultStyle() {
         return context == null ? null : context.theme().controlStyle();
     }
 

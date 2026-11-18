@@ -739,17 +739,17 @@ final class VulkanRenderer implements AutoCloseable {
 
             VkClearValue.Buffer clearValues = VkClearValue.calloc(3, stack);
             clearValues.get(0).color()
-                    .float32(0, 0.08f)
-                    .float32(1, 0.09f)
-                    .float32(2, 0.11f)
+                    .float32(0, 0.102f)
+                    .float32(1, 0.102f)
+                    .float32(2, 0.102f)
                     .float32(3, 1.0f);
             clearValues.get(1).depthStencil()
                     .depth(1.0f)
                     .stencil(0);
             clearValues.get(2).color()
-                    .float32(0, 0.08f)
-                    .float32(1, 0.09f)
-                    .float32(2, 0.11f)
+                    .float32(0, 0.102f)
+                    .float32(1, 0.102f)
+                    .float32(2, 0.102f)
                     .float32(3, 1.0f);
             VkRenderPassBeginInfo renderPassBegin = VkRenderPassBeginInfo.calloc(stack)
                     .sType$Default()

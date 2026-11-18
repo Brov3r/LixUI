@@ -36,7 +36,7 @@ public final class OpenGlDemo {
                 GLFW.glfwMakeContextCurrent(window.handle());
                 GL.createCapabilities();
                 GLFW.glfwSwapInterval(1);
-                GL11.glClearColor(0.08f, 0.09f, 0.11f, 1.0f);
+                GL11.glClearColor(0.102f, 0.102f, 0.102f, 1.0f);
                 try (OpenGlBackend backend = new OpenGlBackend();
                         DemoWidgetScene scene = new DemoWidgetScene(input, backend, platform)) {
                     window.show();
