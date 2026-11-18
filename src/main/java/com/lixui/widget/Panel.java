@@ -75,19 +75,25 @@ public class Panel extends Widget {
             return;
         }
         WidgetState state = state();
+        WidgetState borderState = borderState(state);
         if (corners == null) {
             renderer.roundedRect(localBounds(), style.cornerRadius(), style.background(state));
             if (style.borderWidth() > 0) {
                 renderer.strokeRoundedRect(localBounds(), style.cornerRadius(), style.borderWidth(),
-                        Paint.solid(style.border(state)));
+                        Paint.solid(style.border(borderState)));
             }
             return;
         }
         List<Point> outline = outline(corners);
         renderer.fillPolygon(outline, Paint.solid(style.background(state)));
         if (style.borderWidth() > 0) {
-            renderer.strokePolygon(outline, style.borderWidth(), Paint.solid(style.border(state)));
+            renderer.strokePolygon(outline, style.borderWidth(), Paint.solid(style.border(borderState)));
         }
+    }
+
+    private WidgetState borderState(WidgetState state) {
+        return state == WidgetState.FOCUSED && !isFocusOutlineEnabled()
+                ? WidgetState.NORMAL : state;
     }
 
     private List<Point> outline(Corners radii) {
@@ -139,7 +145,12 @@ public class Panel extends Widget {
         }
     }
 
-    private WidgetState state() {
+    /**
+     * Resolves the interaction state used to pick surface colors.
+     *
+     * @return the most specific active state
+     */
+    protected WidgetState state() {
         if (!isEnabled()) {
             return WidgetState.DISABLED;
         }

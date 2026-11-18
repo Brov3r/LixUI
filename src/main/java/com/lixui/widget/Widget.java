@@ -43,6 +43,7 @@ public abstract class Widget {
     private boolean enabled = true;
     private boolean focusable;
     private boolean focusScope;
+    private boolean focusOutlineEnabled = true;
     private boolean hovered;
     private boolean pressed;
     private boolean focused;
@@ -366,6 +367,26 @@ public abstract class Widget {
     }
 
     /**
+     * Reports whether a focused widget should draw its focus border.
+     * Focused widgets without a focus outline still use their normal border color.
+     *
+     * @return true when the focus outline is enabled
+     */
+    public final boolean isFocusOutlineEnabled() {
+        return focusOutlineEnabled;
+    }
+
+    /**
+     * Sets whether a focused widget should draw its focus border.
+     *
+     * @param focusOutlineEnabled true to use the focus border color while focused
+     */
+    public final void setFocusOutlineEnabled(boolean focusOutlineEnabled) {
+        this.focusOutlineEnabled = focusOutlineEnabled;
+        notifyStateChanged();
+    }
+
+    /**
      * Reports whether the pointer is currently over this widget.
      *
      * @return true when the widget is hovered
@@ -583,9 +604,16 @@ public abstract class Widget {
     private void drawLocal(RenderManager renderer, FrameInfo frame, Rect clip,
                            float absoluteX, float absoluteY) {
         onDraw(renderer, frame);
-        for (Widget child : children) {
-            child.drawSubtree(renderer, frame, clip,
-                    absoluteX + child.bounds.x(), absoluteY + child.bounds.y());
+        boolean masked = pushChildMask(renderer);
+        try {
+            for (Widget child : children) {
+                child.drawSubtree(renderer, frame, clip,
+                        absoluteX + child.bounds.x(), absoluteY + child.bounds.y());
+            }
+        } finally {
+            if (masked) {
+                popChildMask(renderer);
+            }
         }
     }
 
@@ -652,6 +680,26 @@ public abstract class Widget {
      * @param frame timing information for the current frame
      */
     protected void onDraw(RenderManager renderer, FrameInfo frame) {
+    }
+
+    /**
+     * Pushes an optional stencil mask around this widget's children.
+     * Called after {@link #onDraw(RenderManager, FrameInfo)} and before child drawing. Returning
+     * true requires the matching {@link #popChildMask(RenderManager)} call.
+     *
+     * @param renderer drawing manager for the current frame
+     * @return true when a mask was pushed
+     */
+    protected boolean pushChildMask(RenderManager renderer) {
+        return false;
+    }
+
+    /**
+     * Pops the stencil mask pushed by {@link #pushChildMask(RenderManager)}.
+     *
+     * @param renderer drawing manager for the current frame
+     */
+    protected void popChildMask(RenderManager renderer) {
     }
 
     /**

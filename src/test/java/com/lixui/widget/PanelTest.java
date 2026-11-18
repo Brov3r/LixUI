@@ -75,6 +75,35 @@ class PanelTest {
     }
 
     @Test
+    void focusOutlineCanBeDisabled() {
+        RecordingBackend backend = new RecordingBackend();
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
+        manager.resize(VIEWPORT);
+        Panel panel = new Panel();
+        panel.setBounds(PANEL_BOUNDS);
+        WidgetStyle style = new WidgetStyle(
+                Color.rgb(10, 20, 30), Color.rgb(40, 50, 60), Color.rgb(70, 80, 90),
+                Color.rgb(100, 110, 120), Color.rgb(130, 140, 150), Color.rgb(160, 170, 180),
+                Color.rgb(190, 200, 210), Color.rgb(220, 230, 240), 10, 12, 2);
+        panel.setStyle(style);
+        manager.add(panel);
+        panel.setFocused(true);
+
+        manager.render();
+        assertEquals(style.focusBorder(), borderColor(backend));
+
+        panel.setFocusOutlineEnabled(false);
+        manager.render();
+        assertEquals(style.border(), borderColor(backend));
+    }
+
+    private static Color borderColor(RecordingBackend backend) {
+        MeshCommand border = assertInstanceOf(MeshCommand.class,
+                backend.lastDrawList.commands().get(1));
+        return border.vertices().get(0).color();
+    }
+
+    @Test
     void diagonalCornersTessellateACustomOutline() {
         RecordingBackend backend = new RecordingBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
