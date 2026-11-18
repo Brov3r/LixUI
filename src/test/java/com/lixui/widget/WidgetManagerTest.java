@@ -1,5 +1,6 @@
 package com.lixui.widget;
 
+import com.lixui.animation.Easing;
 import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
 import com.lixui.input.FocusChanged;
@@ -511,6 +512,19 @@ class WidgetManagerTest {
         assertEquals(2, manager.frame().frameIndex());
         assertSame(manager.frame(), root.lastUpdateFrame);
         assertSame(manager.frame(), root.lastDrawFrame);
+    }
+
+    @Test
+    void advancesAnimationsWithTheFrameClock() {
+        WidgetManager manager = manager(new RecordingBackend());
+        List<Float> values = new ArrayList<>();
+        manager.animator().animate(0, 1, 1, Easing.LINEAR, values::add);
+
+        manager.update(0.25f);
+        assertEquals(0.25f, values.get(values.size() - 1), 0.0001f);
+        manager.update(0.75f);
+        assertEquals(1, values.get(values.size() - 1), 0.0001f);
+        assertTrue(manager.animator().isEmpty());
     }
 
     @Test

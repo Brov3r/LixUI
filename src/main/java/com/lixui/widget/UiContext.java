@@ -1,5 +1,8 @@
 package com.lixui.widget;
 
+import com.lixui.animation.Animation;
+import com.lixui.animation.Animator;
+import com.lixui.animation.Easing;
 import com.lixui.geometry.Rect;
 import com.lixui.input.MouseButton;
 import com.lixui.platform.Cursor;
@@ -19,6 +22,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * Shared services and state available to attached widgets.
@@ -31,6 +35,7 @@ public final class UiContext implements AutoCloseable {
     private final RenderManager renderer;
     private final UiPlatform platform;
     private final WidgetManager manager;
+    private final Animator animator = new Animator();
     private final Set<Texture> textures = identitySet();
     private final Set<Font> fonts = identitySet();
     private Rect viewport = Rect.EMPTY;
@@ -112,6 +117,39 @@ public final class UiContext implements AutoCloseable {
      */
     public Cursor cursor() {
         return cursor;
+    }
+
+    /**
+     * Returns the animator updated with every widget-manager frame.
+     *
+     * @return the shared animator
+     * @throws IllegalStateException if the context is closed
+     */
+    public Animator animator() {
+        ensureOpen();
+        return animator;
+    }
+
+    /**
+     * Starts an animation on the shared animator.
+     *
+     * @param from start value
+     * @param to end value
+     * @param duration duration in seconds
+     * @param easing timing curve
+     * @param onUpdate callback receiving the interpolated value
+     * @return the started animation
+     * @throws NullPointerException if {@code easing} or {@code onUpdate} is null
+     * @throws IllegalStateException if the context is closed
+     */
+    public Animation animate(float from, float to, float duration, Easing easing,
+                             Consumer<Float> onUpdate) {
+        ensureOpen();
+        return animator.animate(from, to, duration, easing, onUpdate);
+    }
+
+    void updateAnimations(float deltaSeconds) {
+        animator.update(deltaSeconds);
     }
 
     /**
@@ -308,6 +346,7 @@ public final class UiContext implements AutoCloseable {
             return;
         }
         closed = true;
+        animator.clear();
         RuntimeException failure = null;
         for (Font font : List.copyOf(fonts)) {
             try {

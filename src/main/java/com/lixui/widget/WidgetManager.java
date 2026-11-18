@@ -1,5 +1,6 @@
 package com.lixui.widget;
 
+import com.lixui.animation.Animator;
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.input.CharTyped;
@@ -119,6 +120,17 @@ public final class WidgetManager implements AutoCloseable {
      */
     public UiContext context() {
         return context;
+    }
+
+    /**
+     * Returns the animator that advances with every {@link #update(float)} call.
+     *
+     * @return the shared animator
+     * @throws IllegalStateException if the manager is closed
+     */
+    public Animator animator() {
+        ensureOpen();
+        return context.animator();
     }
 
     /**
@@ -307,6 +319,7 @@ public final class WidgetManager implements AutoCloseable {
         while ((event = input.poll()) != null) {
             dispatch(event);
         }
+        context.updateAnimations(deltaSeconds);
         updatePresses();
         for (Widget widget : widgets) {
             widget.update(frame);
