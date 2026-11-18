@@ -46,6 +46,16 @@ public interface RenderBackend extends AutoCloseable {
     void draw(DrawList drawList);
 
     /**
+     * Returns the number of draw calls submitted by the most recent {@link #draw(DrawList)}.
+     * Backends that do not track draw calls return zero.
+     *
+     * @return the draw call count of the last frame
+     */
+    default int drawCallCount() {
+        return 0;
+    }
+
+    /**
      * Creates a texture from CPU image data and transfers it to the GPU.
      * The backend owns the returned texture until {@link #destroyTexture(Texture)} or {@link #close()}.
      *

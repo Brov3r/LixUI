@@ -17,6 +17,7 @@ import com.lixui.widget.Panel;
 import com.lixui.widget.ScrollPanel;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
+import com.lixui.widget.Window;
 
 /**
  * A minimal widget scene that demonstrates panels with uniform and diagonal corners and a button.
@@ -31,19 +32,32 @@ final class DemoWidgetScene implements AutoCloseable {
     private static final float BUTTON_GAP = 24;
     private static final float THEME_BUTTON_SIZE = 36;
     private static final int THEME_ICON_SIZE = 18;
+    private static final float STATS_GAP = 8;
+    private static final double FPS_UPDATE_SECONDS = 0.25;
+    private static final float WINDOW_WIDTH = 400;
+    private static final float WINDOW_HEIGHT = 300;
+    private static final float WINDOW_MARGIN = 16;
+    private static final float WINDOW_TOP = 72;
 
     private final WidgetManager manager;
+    private final RenderBackend backend;
     private final Widget background;
     private final ScrollPanel scrollPanel;
     private final Panel diagonalPanel;
     private final Button button;
     private final Button themeButton;
+    private final Window window;
+    private final DemoStatsPanel statsPanel;
     private final Texture lightThemeIcon;
     private final Texture darkThemeIcon;
     private int clicks;
+    private int fps;
+    private int fpsFrames;
+    private double fpsElapsed;
     private Viewport viewport;
 
     DemoWidgetScene(InputState input, RenderBackend backend, UiPlatform platform) {
+        this.backend = backend;
         manager = new WidgetManager(input, backend, platform);
         SystemFonts.findDefault().ifPresent(data ->
                 manager.setDefaultFont(manager.context().createFont(data, 16)));
@@ -52,6 +66,9 @@ final class DemoWidgetScene implements AutoCloseable {
                         THEME_ICON_SIZE, THEME_ICON_SIZE));
         darkThemeIcon = manager.context().createTexture(
                 ImageData.fromResource("assets/icons-128/dark-mode.png",
+                        THEME_ICON_SIZE, THEME_ICON_SIZE));
+        Texture windowIcon = manager.context().createTexture(
+                ImageData.fromResource("assets/icons-128/ui.png",
                         THEME_ICON_SIZE, THEME_ICON_SIZE));
         background = new Background();
         scrollPanel = new ScrollPanel();
@@ -66,8 +83,17 @@ final class DemoWidgetScene implements AutoCloseable {
         themeButton.setIconSize(THEME_ICON_SIZE);
         themeButton.setIcon(lightThemeIcon);
         themeButton.setOnAction(this::toggleTheme);
+        window = new Window();
+        window.setTitle("LixUI Window");
+        window.setHeaderIcon(windowIcon);
+        window.setHeaderIconSize(THEME_ICON_SIZE);
+        ScrollContent windowContent = new ScrollContent();
+        windowContent.setBounds(new Rect(0, 0, 520, 460));
+        window.setContent(windowContent);
+        statsPanel = new DemoStatsPanel();
         applyStyles();
-        manager.add(background).add(scrollPanel).add(diagonalPanel).add(button).add(themeButton);
+        manager.add(background).add(scrollPanel).add(diagonalPanel).add(button).add(themeButton)
+                .add(statsPanel).add(window);
     }
 
     /**
@@ -83,6 +109,7 @@ final class DemoWidgetScene implements AutoCloseable {
         manager.resize(viewport);
         background.setBounds(new Rect(0, 0, viewport.logicalWidth(), viewport.logicalHeight()));
         themeButton.setBounds(new Rect(16, 16, THEME_BUTTON_SIZE, THEME_BUTTON_SIZE));
+        statsPanel.setPosition(16 + THEME_BUTTON_SIZE + STATS_GAP, 16);
         float totalWidth = PANEL_WIDTH * 2 + GAP;
         float left = (viewport.logicalWidth() - totalWidth) / 2;
         float contentHeight = PANEL_HEIGHT + BUTTON_GAP + BUTTON_HEIGHT;
@@ -91,6 +118,8 @@ final class DemoWidgetScene implements AutoCloseable {
         diagonalPanel.setBounds(new Rect(left + PANEL_WIDTH + GAP, top, PANEL_WIDTH, PANEL_HEIGHT));
         button.setBounds(new Rect((viewport.logicalWidth() - BUTTON_WIDTH) / 2,
                 top + PANEL_HEIGHT + BUTTON_GAP, BUTTON_WIDTH, BUTTON_HEIGHT));
+        window.setBounds(new Rect(viewport.logicalWidth() - WINDOW_WIDTH - WINDOW_MARGIN,
+                WINDOW_TOP, WINDOW_WIDTH, WINDOW_HEIGHT));
     }
 
     private void toggleTheme() {
@@ -107,6 +136,8 @@ final class DemoWidgetScene implements AutoCloseable {
         button.setStyle(withRadius(theme.primaryStyle(), 12));
         themeButton.setStyle(withRadius(theme.controlStyle(), 8));
         themeButton.setIconTint(theme.text());
+        window.setStyle(withRadius(theme.panelStyle(), 12));
+        statsPanel.setStyle(withRadius(theme.panelStyle(), 8));
     }
 
     /**
@@ -115,14 +146,19 @@ final class DemoWidgetScene implements AutoCloseable {
      * @param deltaSeconds elapsed time in seconds
      */
     void update(float deltaSeconds) {
+        updateFrameRate(deltaSeconds);
         manager.update(deltaSeconds);
+        statsPanel.setFps(fps);
+        statsPanel.setVisibleWidgets(countVisibleWidgets());
     }
 
     /**
      * Lays out and renders the widget tree.
      */
     void render() {
+        statsPanel.resizeToContent(manager.renderer());
         manager.render();
+        statsPanel.setDrawCalls(backend.drawCallCount());
     }
 
     /**
@@ -131,6 +167,38 @@ final class DemoWidgetScene implements AutoCloseable {
     @Override
     public void close() {
         manager.close();
+    }
+
+    private void updateFrameRate(float deltaSeconds) {
+        if (deltaSeconds <= 0) {
+            return;
+        }
+        fpsElapsed += deltaSeconds;
+        fpsFrames++;
+        if (fpsElapsed >= FPS_UPDATE_SECONDS) {
+            fps = (int) Math.round(fpsFrames / fpsElapsed);
+            fpsElapsed = 0;
+            fpsFrames = 0;
+        }
+    }
+
+    private int countVisibleWidgets() {
+        int count = 0;
+        for (Widget widget : manager.widgets()) {
+            count += countVisibleWidgets(widget);
+        }
+        return count;
+    }
+
+    private static int countVisibleWidgets(Widget widget) {
+        if (!widget.isVisible()) {
+            return 0;
+        }
+        int count = 1;
+        for (Widget child : widget.children()) {
+            count += countVisibleWidgets(child);
+        }
+        return count;
     }
 
     private static WidgetStyle withRadius(WidgetStyle style, float radius) {

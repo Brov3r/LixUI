@@ -52,7 +52,7 @@ public final class BatchScenario {
     }
 
     /**
-     * Checks merging, submission order, vertex ranges and mask boundaries without exposing metrics.
+     * Checks merging, submission order, vertex ranges, mask boundaries and the reported draw call count.
      *
      * @param backend backend that just rendered the scenario
      * @throws ReflectiveOperationException if the internal batch representation cannot be inspected
@@ -64,6 +64,7 @@ public final class BatchScenario {
         int[] counts = {12, 6, 12, 6, 6, 6, 6, 6, 6, 6};
         int[] stencil = {0, 0, 0, 0, 0, 0, 1, 1, 0, 0};
         assertEquals(counts.length, batches.size());
+        assertEquals(batches.size(), backend.drawCallCount());
         int first = 0;
         for (int index = 0; index < counts.length; index++) {
             Object batch = batches.get(index);

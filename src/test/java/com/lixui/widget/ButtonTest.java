@@ -114,7 +114,7 @@ class ButtonTest {
 
         assertThrows(IllegalArgumentException.class, () -> button.setIconSize(0));
         assertThrows(IllegalArgumentException.class, () -> button.setIconSize(Float.NaN));
-        assertThrows(NullPointerException.class, () -> button.setIconTint(null));
+        button.setIconTint(null);
         assertThrows(NullPointerException.class, () -> new Button(null));
     }
 

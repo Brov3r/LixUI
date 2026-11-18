@@ -120,6 +120,15 @@ public final class UiContext implements AutoCloseable {
     }
 
     /**
+     * Returns the widget currently under the pointer.
+     *
+     * @return the hovered widget, or null when the pointer is outside or no manager is attached
+     */
+    public Widget hovered() {
+        return manager == null ? null : manager.hovered();
+    }
+
+    /**
      * Returns the animator updated with every widget-manager frame.
      *
      * @return the shared animator

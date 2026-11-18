@@ -18,7 +18,7 @@ import java.util.Objects;
  */
 public class ScrollPanel extends Panel {
     private static final float BAR_THICKNESS = 8;
-    private static final float DEFAULT_BAR_MARGIN = 3;
+    private static final float DEFAULT_BAR_MARGIN = 5;
     private static final float WHEEL_STEP = 48;
     private static final float SMOOTH_SCROLL_SECONDS = 0.18f;
 
@@ -30,8 +30,17 @@ public class ScrollPanel extends Panel {
     private float targetScrollX;
     private float targetScrollY;
     private float scrollBarMargin = DEFAULT_BAR_MARGIN;
+    private float contentInsetTop;
+    private float contentInsetRight;
+    private float contentInsetBottom;
+    private float contentInsetLeft;
+    private float scrollBarInsetTop;
+    private float scrollBarInsetRight;
+    private float scrollBarInsetBottom;
+    private float scrollBarInsetLeft;
     private boolean verticalScrollBarVisible = true;
     private boolean horizontalScrollBarVisible = true;
+    private boolean scrollBarsSuppressed;
     private boolean scrollEnabled = true;
     private Animator animationOwner;
     private Animation horizontalAnimation;
@@ -159,6 +168,95 @@ public class ScrollPanel extends Panel {
      */
     public void scrollBy(float deltaX, float deltaY) {
         setScroll(scrollX + deltaX, scrollY + deltaY);
+    }
+
+    /**
+     * Sets the inset of the scrollable content area from this panel's edges.
+     * The inset keeps fixed chrome outside the scrolled content and is used for scrollbar placement.
+     *
+     * @param top top inset in logical UI units
+     * @param right right inset in logical UI units
+     * @param bottom bottom inset in logical UI units
+     * @param left left inset in logical UI units
+     * @throws IllegalArgumentException if an inset is negative or non-finite
+     */
+    public void setContentInsets(float top, float right, float bottom, float left) {
+        if (!Float.isFinite(top) || !Float.isFinite(right)
+                || !Float.isFinite(bottom) || !Float.isFinite(left)
+                || top < 0 || right < 0 || bottom < 0 || left < 0) {
+            throw new IllegalArgumentException("Content insets must be finite and non-negative.");
+        }
+        contentInsetTop = top;
+        contentInsetRight = right;
+        contentInsetBottom = bottom;
+        contentInsetLeft = left;
+    }
+
+    /**
+     * Returns the top content inset.
+     *
+     * @return the top inset in logical UI units
+     */
+    public float contentInsetTop() {
+        return contentInsetTop;
+    }
+
+    /**
+     * Returns the right content inset.
+     *
+     * @return the right inset in logical UI units
+     */
+    public float contentInsetRight() {
+        return contentInsetRight;
+    }
+
+    /**
+     * Returns the bottom content inset.
+     *
+     * @return the bottom inset in logical UI units
+     */
+    public float contentInsetBottom() {
+        return contentInsetBottom;
+    }
+
+    /**
+     * Returns the left content inset.
+     *
+     * @return the left inset in logical UI units
+     */
+    public float contentInsetLeft() {
+        return contentInsetLeft;
+    }
+
+    /**
+     * Sets additional insets applied only to the scrollbar tracks.
+     * This keeps scrollbars clear of resize handles or other fixed corner controls.
+     *
+     * @param top top scrollbar inset
+     * @param right right scrollbar inset
+     * @param bottom bottom scrollbar inset
+     * @param left left scrollbar inset
+     * @throws IllegalArgumentException if an inset is negative or non-finite
+     */
+    public void setScrollBarInsets(float top, float right, float bottom, float left) {
+        if (!Float.isFinite(top) || !Float.isFinite(right)
+                || !Float.isFinite(bottom) || !Float.isFinite(left)
+                || top < 0 || right < 0 || bottom < 0 || left < 0) {
+            throw new IllegalArgumentException("Scrollbar insets must be finite and non-negative.");
+        }
+        scrollBarInsetTop = top;
+        scrollBarInsetRight = right;
+        scrollBarInsetBottom = bottom;
+        scrollBarInsetLeft = left;
+    }
+
+    /**
+     * Hides the scrollbars without changing their configured visibility.
+     *
+     * @param suppressed true to suppress both scrollbars
+     */
+    protected void setScrollBarsSuppressed(boolean suppressed) {
+        scrollBarsSuppressed = suppressed;
     }
 
     /**
@@ -398,27 +496,33 @@ public class ScrollPanel extends Panel {
     }
 
     private void updateScrollbars() {
-        float width = localBounds().width();
-        float height = localBounds().height();
+        float width = contentAreaWidth();
+        float height = contentAreaHeight();
         float contentWidth = content.bounds().width();
         float contentHeight = content.bounds().height();
         float maxX = maxScrollX();
         float maxY = maxScrollY();
-        boolean horizontal = scrollEnabled && horizontalScrollBarVisible && maxX > 0;
-        boolean vertical = scrollEnabled && verticalScrollBarVisible && maxY > 0;
+        boolean horizontal = !scrollBarsSuppressed
+                && scrollEnabled && horizontalScrollBarVisible && maxX > 0;
+        boolean vertical = !scrollBarsSuppressed
+                && scrollEnabled && verticalScrollBarVisible && maxY > 0;
         setVisibleIfChanged(horizontalBar, horizontal);
         setVisibleIfChanged(verticalBar, vertical);
         horizontalBar.setValue(maxX > 0 ? scrollX / maxX : 0);
         verticalBar.setValue(maxY > 0 ? scrollY / maxY : 0);
         horizontalBar.setVisibleFraction(contentWidth > 0 ? width / contentWidth : 1);
         verticalBar.setVisibleFraction(contentHeight > 0 ? height / contentHeight : 1);
-        float verticalHeight = Math.max(0,
-                height - scrollBarMargin * 2 - (horizontal ? BAR_THICKNESS : 0));
-        float horizontalWidth = Math.max(0,
-                width - scrollBarMargin * 2 - (vertical ? BAR_THICKNESS : 0));
-        verticalBar.layout(new Rect(width - scrollBarMargin - BAR_THICKNESS, scrollBarMargin,
+        float verticalHeight = Math.max(0, height - scrollBarInsetTop - scrollBarInsetBottom
+                - scrollBarMargin * 2 - (horizontal ? BAR_THICKNESS : 0));
+        float horizontalWidth = Math.max(0, width - scrollBarInsetLeft - scrollBarInsetRight
+                - scrollBarMargin * 2 - (vertical ? BAR_THICKNESS : 0));
+        verticalBar.layout(new Rect(
+                contentInsetLeft + width - scrollBarMargin - BAR_THICKNESS,
+                contentInsetTop + scrollBarInsetTop + scrollBarMargin,
                 BAR_THICKNESS, verticalHeight));
-        horizontalBar.layout(new Rect(scrollBarMargin, height - scrollBarMargin - BAR_THICKNESS,
+        horizontalBar.layout(new Rect(
+                contentInsetLeft + scrollBarInsetLeft + scrollBarMargin,
+                contentInsetTop + height - scrollBarMargin - BAR_THICKNESS,
                 horizontalWidth, BAR_THICKNESS));
     }
 
@@ -431,7 +535,7 @@ public class ScrollPanel extends Panel {
 
     private void applyContentPosition() {
         if (content != null) {
-            content.setPosition(-scrollX, -scrollY);
+            content.setPosition(contentInsetLeft - scrollX, contentInsetTop - scrollY);
         }
     }
 
@@ -439,14 +543,22 @@ public class ScrollPanel extends Panel {
         if (content == null) {
             return 0;
         }
-        return Math.max(0, content.bounds().width() - localBounds().width());
+        return Math.max(0, content.bounds().width() - contentAreaWidth());
     }
 
     private float maxScrollY() {
         if (content == null) {
             return 0;
         }
-        return Math.max(0, content.bounds().height() - localBounds().height());
+        return Math.max(0, content.bounds().height() - contentAreaHeight());
+    }
+
+    private float contentAreaWidth() {
+        return Math.max(0, localBounds().width() - contentInsetLeft - contentInsetRight);
+    }
+
+    private float contentAreaHeight() {
+        return Math.max(0, localBounds().height() - contentInsetTop - contentInsetBottom);
     }
 
     /**

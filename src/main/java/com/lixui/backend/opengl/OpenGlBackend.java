@@ -65,6 +65,7 @@ public final class OpenGlBackend implements RenderBackend {
     private int paintLocation;
     private Viewport viewport;
     private int floatCount;
+    private int drawCallCount;
 
     /**
      * Creates the backend for the current OpenGL context.
@@ -195,6 +196,7 @@ public final class OpenGlBackend implements RenderBackend {
             throw new IllegalStateException("resize must be called before draw.");
         }
 
+        drawCallCount = 0;
         collect(drawList);
         if (batches.isEmpty()) {
             return;
@@ -242,6 +244,7 @@ public final class OpenGlBackend implements RenderBackend {
             }
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, batch.texture().id());
             GL11.glDrawArrays(GL11.GL_TRIANGLES, batch.firstVertex(), batch.vertexCount());
+            drawCallCount++;
         }
 
         GL11.glColorMask(true, true, true, true);
@@ -260,6 +263,16 @@ public final class OpenGlBackend implements RenderBackend {
         GL20.glUseProgram(0);
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
         GL30.glBindVertexArray(0);
+    }
+
+    /**
+     * Returns the number of draw calls issued by the most recent {@link #draw(DrawList)}.
+     *
+     * @return the draw call count of the last frame
+     */
+    @Override
+    public int drawCallCount() {
+        return drawCallCount;
     }
 
     /**

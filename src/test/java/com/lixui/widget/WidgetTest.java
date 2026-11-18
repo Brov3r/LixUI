@@ -67,6 +67,25 @@ class WidgetTest {
     }
 
     @Test
+    void exposesSizeLimitsForResizableWidgets() {
+        Probe probe = new Probe("probe", new ArrayList<>());
+
+        assertEquals(0, probe.minimumWidth());
+        assertEquals(Float.POSITIVE_INFINITY, probe.maximumWidth());
+
+        probe.setMinimumSize(20, 30);
+        probe.setMaximumSize(200, 300);
+
+        assertEquals(20, probe.minimumWidth());
+        assertEquals(30, probe.minimumHeight());
+        assertEquals(200, probe.maximumWidth());
+        assertEquals(300, probe.maximumHeight());
+        assertThrows(IllegalArgumentException.class, () -> probe.setMinimumSize(201, 30));
+        assertThrows(IllegalArgumentException.class, () -> probe.setMaximumSize(19, 300));
+        assertThrows(IllegalArgumentException.class, () -> probe.setMinimumSize(-1, 30));
+    }
+
+    @Test
     void defaultLayoutKeepsChildrenFreelyPositioned() {
         Probe root = new Probe("root", new ArrayList<>());
         Probe child = new Probe("child", new ArrayList<>());

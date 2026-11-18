@@ -109,6 +109,8 @@ public final class GlfwPlatform implements UiPlatform, AutoCloseable {
             case MOVE -> GLFW.GLFW_RESIZE_ALL_CURSOR;
             case RESIZE_HORIZONTAL -> GLFW.GLFW_RESIZE_EW_CURSOR;
             case RESIZE_VERTICAL -> GLFW.GLFW_RESIZE_NS_CURSOR;
+            case RESIZE_DIAGONAL -> GLFW.GLFW_RESIZE_NWSE_CURSOR;
+            case RESIZE_DIAGONAL_INVERSE -> GLFW.GLFW_RESIZE_NESW_CURSOR;
             case NOT_ALLOWED -> GLFW.GLFW_NOT_ALLOWED_CURSOR;
         };
     }

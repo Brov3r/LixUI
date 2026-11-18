@@ -13,6 +13,7 @@ import com.lixui.text.Font;
 import com.lixui.text.HorizontalAlignment;
 import com.lixui.text.TextStyle;
 import com.lixui.text.VerticalAlignment;
+import com.lixui.theme.WidgetState;
 import com.lixui.theme.WidgetStyle;
 
 import java.util.Objects;
@@ -39,7 +40,10 @@ public class Button extends Panel {
     private Runnable soundPlayer;
     private Texture icon;
     private float iconSize = DEFAULT_ICON_SIZE;
-    private Color iconTint = Color.WHITE;
+    private Color iconTint;
+    private Color iconHoverTint;
+    private Color iconPressedTint;
+    private Color iconDisabledTint;
     private boolean spacePressed;
 
     /**
@@ -157,22 +161,41 @@ public class Button extends Panel {
     }
 
     /**
-     * Returns the icon tint.
+     * Returns the explicit icon tint.
      *
-     * @return the straight-alpha icon tint
+     * @return the icon tint, or null when the state text color is used
      */
     public final Color iconTint() {
         return iconTint;
     }
 
     /**
-     * Assigns the icon tint.
+     * Assigns an explicit icon tint.
+     * When no tint is assigned, the icon uses the state-aware style text color.
      *
-     * @param iconTint straight-alpha icon tint
-     * @throws NullPointerException if {@code iconTint} is null
+     * @param iconTint straight-alpha icon tint, or null to use the style text color
      */
     public final void setIconTint(Color iconTint) {
-        this.iconTint = Objects.requireNonNull(iconTint, "iconTint");
+        this.iconTint = iconTint;
+        this.iconHoverTint = null;
+        this.iconPressedTint = null;
+        this.iconDisabledTint = null;
+    }
+
+    /**
+     * Assigns state-aware icon tints.
+     * Null state tints fall back to the normal tint, then to the style text color.
+     *
+     * @param normal idle tint, or null to use the style text color
+     * @param hovered hover tint, or null to fall back to the normal tint
+     * @param pressed pressed tint, or null to fall back to the normal tint
+     * @param disabled disabled tint, or null to use the style text color
+     */
+    public final void setIconTint(Color normal, Color hovered, Color pressed, Color disabled) {
+        iconTint = normal;
+        iconHoverTint = hovered;
+        iconPressedTint = pressed;
+        iconDisabledTint = disabled;
     }
 
     /**
@@ -269,12 +292,29 @@ public class Button extends Panel {
         Size textSize = hasText ? font.measure(text) : new Size(0, 0);
         float contentWidth = iconSize + (hasText ? ICON_GAP + textSize.width() : 0);
         float contentX = centerX - contentWidth / 2;
+        Color tint = iconColor(state(), style);
         renderer.image(icon, new Rect(contentX, centerY - iconSize / 2, iconSize, iconSize),
-                0, FULL_UV, iconTint);
+                0, FULL_UV, tint);
         if (hasText) {
             renderer.text(font, text, contentX + iconSize + ICON_GAP,
                     centerY, style.text(state()), LEADING);
         }
+    }
+
+    private Color iconColor(WidgetState state, WidgetStyle style) {
+        Color tint = switch (state) {
+            case HOVERED -> iconHoverTint;
+            case PRESSED -> iconPressedTint;
+            case DISABLED -> iconDisabledTint;
+            default -> iconTint;
+        };
+        if (tint != null) {
+            return tint;
+        }
+        if (state != WidgetState.DISABLED && iconTint != null) {
+            return iconTint;
+        }
+        return style.text(state);
     }
 
     /**

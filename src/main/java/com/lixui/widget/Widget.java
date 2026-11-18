@@ -38,6 +38,10 @@ public abstract class Widget {
     private WidgetStyle style;
     private boolean detaching;
     private Rect bounds = Rect.EMPTY;
+    private float minimumWidth;
+    private float minimumHeight;
+    private float maximumWidth = Float.POSITIVE_INFINITY;
+    private float maximumHeight = Float.POSITIVE_INFINITY;
     private boolean clipToBounds;
     private boolean visible = true;
     private boolean enabled = true;
@@ -137,6 +141,82 @@ public abstract class Widget {
      */
     public final void setSize(float width, float height) {
         setBounds(new Rect(bounds.x(), bounds.y(), width, height));
+    }
+
+    /**
+     * Returns the minimum width used by widgets that resize themselves.
+     *
+     * @return the minimum width in logical UI units
+     */
+    public final float minimumWidth() {
+        return minimumWidth;
+    }
+
+    /**
+     * Returns the minimum height used by widgets that resize themselves.
+     *
+     * @return the minimum height in logical UI units
+     */
+    public final float minimumHeight() {
+        return minimumHeight;
+    }
+
+    /**
+     * Sets the minimum size used by widgets that resize themselves.
+     * Bounds assigned explicitly through {@link #setBounds(Rect)} are not clamped.
+     *
+     * @param width non-negative minimum width
+     * @param height non-negative minimum height
+     * @throws IllegalArgumentException if a dimension is negative or non-finite, or exceeds the
+     *                                  current maximum
+     */
+    public final void setMinimumSize(float width, float height) {
+        if (!Float.isFinite(width) || !Float.isFinite(height) || width < 0 || height < 0) {
+            throw new IllegalArgumentException("Minimum size must be finite and non-negative.");
+        }
+        if (width > maximumWidth || height > maximumHeight) {
+            throw new IllegalArgumentException("Minimum size cannot exceed the maximum size.");
+        }
+        minimumWidth = width;
+        minimumHeight = height;
+    }
+
+    /**
+     * Returns the maximum width used by widgets that resize themselves.
+     *
+     * @return the maximum width, or positive infinity when unlimited
+     */
+    public final float maximumWidth() {
+        return maximumWidth;
+    }
+
+    /**
+     * Returns the maximum height used by widgets that resize themselves.
+     *
+     * @return the maximum height, or positive infinity when unlimited
+     */
+    public final float maximumHeight() {
+        return maximumHeight;
+    }
+
+    /**
+     * Sets the maximum size used by widgets that resize themselves.
+     * Bounds assigned explicitly through {@link #setBounds(Rect)} are not clamped.
+     *
+     * @param width positive maximum width or positive infinity
+     * @param height positive maximum height or positive infinity
+     * @throws IllegalArgumentException if a dimension is not positive, is NaN, or is below the
+     *                                  current minimum
+     */
+    public final void setMaximumSize(float width, float height) {
+        if (!isPositiveDimension(width) || !isPositiveDimension(height)) {
+            throw new IllegalArgumentException("Maximum size must be positive.");
+        }
+        if (width < minimumWidth || height < minimumHeight) {
+            throw new IllegalArgumentException("Maximum size cannot be below the minimum size.");
+        }
+        maximumWidth = width;
+        maximumHeight = height;
     }
 
     /**
@@ -984,6 +1064,10 @@ public abstract class Widget {
             throw new IllegalStateException("Widget is not attached to a widget manager.");
         }
         return context;
+    }
+
+    private static boolean isPositiveDimension(float value) {
+        return value > 0 && (Float.isFinite(value) || value == Float.POSITIVE_INFINITY);
     }
 
     final void setParent(Widget parent) {

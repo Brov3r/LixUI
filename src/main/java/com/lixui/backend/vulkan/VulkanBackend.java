@@ -120,6 +120,7 @@ public final class VulkanBackend implements RenderBackend {
     private int vertexCapacity;
     private VkCommandBuffer commandBuffer;
     private Viewport viewport;
+    private int drawCallCount;
 
     /**
      * Creates the backend, its graphics pipelines and the default texture sampler.
@@ -403,6 +404,7 @@ public final class VulkanBackend implements RenderBackend {
             throw new IllegalStateException("resize must be called before draw.");
         }
 
+        drawCallCount = 0;
         List<DrawCommand> commands = drawList.commands();
         if (commands.isEmpty()) {
             return;
@@ -474,8 +476,19 @@ public final class VulkanBackend implements RenderBackend {
                         pipelineLayout, 0, descriptorSet, null);
                 VK10.vkCmdSetScissor(commandBuffer, 0, scissor);
                 VK10.vkCmdDraw(commandBuffer, batch.vertexCount(), 1, batch.firstVertex(), 0);
+                drawCallCount++;
             }
         }
+    }
+
+    /**
+     * Returns the number of draw calls recorded by the most recent {@link #draw(DrawList)}.
+     *
+     * @return the draw call count of the last frame
+     */
+    @Override
+    public int drawCallCount() {
+        return drawCallCount;
     }
 
     /**
