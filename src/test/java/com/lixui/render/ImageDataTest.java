@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ImageDataTest {
     @Test
@@ -33,5 +34,32 @@ class ImageDataTest {
     @Test
     void rejectsNullPixels() {
         assertThrows(NullPointerException.class, () -> new ImageData(1, 1, null));
+    }
+
+    @Test
+    void loadsAndScalesClasspathImages() {
+        ImageData icon = ImageData.fromResource("assets/icons-128/light-mode.png", 16, 16);
+
+        assertEquals(16, icon.width());
+        assertEquals(16, icon.height());
+        assertEquals(16 * 16 * 4, icon.pixels().length);
+        boolean hasCoverage = false;
+        for (int index = 3; index < icon.pixels().length; index += 4) {
+            if (icon.pixels()[index] != 0) {
+                hasCoverage = true;
+                break;
+            }
+        }
+        assertTrue(hasCoverage);
+    }
+
+    @Test
+    void rejectsMissingResourcesAndInvalidScales() {
+        assertThrows(NullPointerException.class, () -> ImageData.fromResource(null));
+        assertThrows(IllegalArgumentException.class, () -> ImageData.fromResource("missing.png"));
+        assertThrows(IllegalArgumentException.class,
+                () -> ImageData.fromResource("assets/icons-128/light-mode.png", 0, 16));
+        assertThrows(IllegalArgumentException.class,
+                () -> ImageData.fromResource("assets/icons-128/light-mode.png", 16, -1));
     }
 }
