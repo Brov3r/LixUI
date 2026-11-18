@@ -105,6 +105,23 @@ class WidgetTest {
     }
 
     @Test
+    void defaultLayoutReachesNestedContainersWithoutChangingTheirBounds() {
+        Widget root = new Widget() { };
+        Widget branch = new Widget() { };
+        LayoutProbe child = new LayoutProbe();
+        branch.setBounds(new Rect(10, 20, 100, 80));
+        child.setBounds(new Rect(5, 6, 40, 30));
+        root.add(branch);
+        branch.add(child);
+
+        root.layout(new Rect(0, 0, 200, 200));
+
+        assertEquals(1, child.layoutCount);
+        assertEquals(new Rect(10, 20, 100, 80), branch.bounds());
+        assertEquals(new Rect(5, 6, 40, 30), child.bounds());
+    }
+
+    @Test
     void fontsInheritFromAncestorsAndCanBeCleared() {
         Optional<FontData> data = SystemFonts.findDefault();
         Assumptions.assumeTrue(data.isPresent(), "No readable system font is installed.");

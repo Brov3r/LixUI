@@ -3,6 +3,7 @@ package com.lixui.render;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
+import com.lixui.graphics.Paint;
 import com.lixui.text.TextGlyph;
 
 import java.util.ArrayDeque;
@@ -49,6 +50,13 @@ public final class DrawList {
         masks.clear();
         this.viewport = viewport;
         clips.push(viewport);
+    }
+
+    void shape(Rect bounds, float radius, boolean ellipse, Paint paint, Transform transform) {
+        ShapeCommand command = new ShapeCommand(bounds, radius, ellipse, paint, clips.peek(), transform);
+        if (!bounds.isEmpty() && !clips.peek().isEmpty()) {
+            commands.add(command);
+        }
     }
 
     /**

@@ -19,7 +19,7 @@ import java.util.Optional;
  * @param boldItalic bold-italic face
  */
 record DemoFonts(Font regular, Font bold, Font italic, Font boldItalic) {
-    private static final List<String> FAMILIES = List.of(
+    static final List<String> FAMILIES = List.of(
             "Segoe UI", "Arial", "Helvetica Neue", "Helvetica",
             "DejaVu Sans", "Liberation Sans", "Noto Sans", "Tahoma", "Verdana");
 

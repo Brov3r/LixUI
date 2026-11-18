@@ -6,7 +6,8 @@ layout (location = 3) in float aRadius;
 layout (location = 4) in vec4 aColor;
 layout (location = 5) in vec2 aUv;
 layout (push_constant) uniform PushConstants {
-    vec2 viewport;
+    vec4 viewport;
+    vec4 paint[7];
 } pc;
 layout (location = 0) out vec2 vLocal;
 layout (location = 1) out vec2 vHalfSize;

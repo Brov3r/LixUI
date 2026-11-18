@@ -769,7 +769,8 @@ public final class RenderManager {
 
     /**
      * Fills a rectangle.
-     * Solid paints use the analytic SDF path; gradients are tessellated.
+     * Supporting backends evaluate gradients with up to four stops and transformed shapes on the GPU.
+     * Other backends and paints use the tessellated path, except for translated solid rectangles.
      *
      * @param bounds rectangle to fill
      * @param paint fill paint
@@ -780,8 +781,11 @@ public final class RenderManager {
         Objects.requireNonNull(bounds, "bounds");
         Objects.requireNonNull(paint, "paint");
         DrawList drawList = list();
-        if (paint instanceof Paint.Solid solid && currentTransform().isIdentity()) {
-            drawList.rect(bounds, solid.color());
+        Transform transform = currentTransform();
+        if (paint instanceof Paint.Solid solid && isTranslation(transform)) {
+            drawList.rect(translatedBounds(bounds, transform), solid.color());
+        } else if (backend.supportsAnalyticShapes() && ShapeCommand.supportsPaint(paint)) {
+            drawList.shape(bounds, 0, false, paint, transform);
         } else {
             drawMesh(ShapeTessellator.fillRect(bounds, paint));
         }
@@ -789,7 +793,8 @@ public final class RenderManager {
 
     /**
      * Fills a rounded rectangle.
-     * Solid paints use the analytic SDF path; gradients are tessellated.
+     * Supporting backends evaluate gradients with up to four stops and transformed shapes on the GPU.
+     * Other backends and paints use the tessellated path, except for translated solid rectangles.
      *
      * @param bounds rectangle to fill
      * @param radius corner radius in logical UI units
@@ -803,8 +808,11 @@ public final class RenderManager {
         Objects.requireNonNull(paint, "paint");
         ShapeTessellator.validateRadius(radius);
         DrawList drawList = list();
-        if (paint instanceof Paint.Solid solid && currentTransform().isIdentity()) {
-            drawList.roundedRect(bounds, radius, solid.color());
+        Transform transform = currentTransform();
+        if (paint instanceof Paint.Solid solid && isTranslation(transform)) {
+            drawList.roundedRect(translatedBounds(bounds, transform), radius, solid.color());
+        } else if (backend.supportsAnalyticShapes() && ShapeCommand.supportsPaint(paint)) {
+            drawList.shape(bounds, radius, false, paint, transform);
         } else {
             drawMesh(ShapeTessellator.fillRoundedRect(bounds, radius, paint));
         }
@@ -839,7 +847,13 @@ public final class RenderManager {
         Objects.requireNonNull(center, "center");
         Objects.requireNonNull(paint, "paint");
         ShapeTessellator.validateEllipse(center, radiusX, radiusY);
-        drawMesh(ShapeTessellator.fillEllipse(center, radiusX, radiusY, paint));
+        DrawList target = list();
+        if (backend.supportsAnalyticShapes() && ShapeCommand.supportsPaint(paint)) {
+            target.shape(new Rect(center.x() - radiusX, center.y() - radiusY, radiusX * 2, radiusY * 2),
+                    0, true, paint, currentTransform());
+        } else {
+            drawMesh(ShapeTessellator.fillEllipse(center, radiusX, radiusY, paint));
+        }
     }
 
     /**
@@ -1186,6 +1200,19 @@ public final class RenderManager {
      */
     public void destroyTexture(Texture texture) {
         backend.destroyTexture(Objects.requireNonNull(texture, "texture"));
+    }
+
+    private static boolean isTranslation(Transform transform) {
+        return transform.m00() == 1 && transform.m01() == 0
+                && transform.m10() == 0 && transform.m11() == 1;
+    }
+
+    private static Rect translatedBounds(Rect bounds, Transform transform) {
+        if (transform.m02() == 0 && transform.m12() == 0) {
+            return bounds;
+        }
+        return new Rect(bounds.x() + transform.m02(), bounds.y() + transform.m12(),
+                bounds.width(), bounds.height());
     }
 
     private void drawMesh(List<MeshVertex> vertices) {

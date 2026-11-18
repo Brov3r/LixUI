@@ -3,6 +3,7 @@ package com.lixui.widget;
 import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
 import com.lixui.input.FocusChanged;
+import com.lixui.input.CharTyped;
 import com.lixui.input.InputEvent;
 import com.lixui.input.InputState;
 import com.lixui.input.Key;
@@ -576,6 +577,182 @@ class WidgetManagerTest {
     }
 
     @Test
+    void attachedWidgetCannotBeSharedWithAnotherManagerOrParent() {
+        Probe root = new Probe("root", new ArrayList<>());
+        Probe parent = new Probe("parent", new ArrayList<>());
+        WidgetManager first = manager(new RecordingBackend(), root);
+        WidgetManager second = manager(new RecordingBackend(), parent);
+        Widget detachedParent = new Widget() { };
+
+        assertThrows(IllegalArgumentException.class, () -> second.add(root));
+        assertThrows(IllegalArgumentException.class, () -> parent.add(root));
+        assertThrows(IllegalArgumentException.class, () -> detachedParent.add(root));
+
+        assertEquals(List.of(root), first.widgets());
+        assertEquals(List.of(parent), second.widgets());
+        assertSame(first.context(), root.context());
+        assertNull(root.parent());
+        assertTrue(parent.children().isEmpty());
+        assertTrue(detachedParent.children().isEmpty());
+
+        first.remove(root);
+        parent.add(root);
+        assertSame(second.context(), root.context());
+        assertSame(parent, root.parent());
+    }
+
+    @Test
+    void failedChildAttachmentRollsBackTreeAndFocus() {
+        Widget root = new Widget() { };
+        WidgetManager manager = manager(new RecordingBackend(), root);
+        IllegalStateException failure = new IllegalStateException("Attachment failed.");
+        Widget child = new Widget() {
+            /**
+             * Acquires focus before simulating an initialization failure.
+             *
+             * @throws IllegalStateException always
+             */
+            @Override
+            protected void onAttached() {
+                requestFocus();
+                throw failure;
+            }
+        };
+        child.setFocusable(true);
+
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> root.add(child)));
+
+        assertTrue(root.children().isEmpty());
+        assertNull(child.parent());
+        assertNull(child.context());
+        assertNull(manager.focused());
+        assertFalse(child.isFocused());
+    }
+
+    @Test
+    void failedRootAttachmentPreservesWidgetsAddedByTheCallback() {
+        WidgetManager manager = manager(new RecordingBackend());
+        Widget sibling = new Widget() { };
+        IllegalStateException failure = new IllegalStateException("Attachment failed.");
+        Widget root = new Widget() {
+            /**
+             * Registers another root before simulating an initialization failure.
+             *
+             * @throws IllegalStateException always
+             */
+            @Override
+            protected void onAttached() {
+                manager.add(sibling);
+                throw failure;
+            }
+        };
+
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> manager.add(root)));
+
+        assertEquals(List.of(sibling), manager.widgets());
+        assertSame(manager.context(), sibling.context());
+        assertNull(root.context());
+    }
+
+    @Test
+    void removingAChildImmediatelyClearsItsInteraction() {
+        Probe root = new Probe("root", new ArrayList<>());
+        Probe child = new Probe("child", new ArrayList<>());
+        root.setBounds(ROOT_BOUNDS);
+        child.setBounds(CHILD_BOUNDS);
+        child.setFocusable(true);
+        root.add(child);
+        WidgetManager manager = manager(new RecordingBackend(), root);
+        manager.handle(new PointerPressed(60, 60, MouseButton.LEFT, Modifiers.NONE));
+
+        root.remove(child);
+
+        assertNull(manager.hovered());
+        assertNull(manager.focused());
+        assertFalse(child.isHovered());
+        assertFalse(child.isFocused());
+        assertFalse(child.isPressed());
+        assertNull(child.context());
+        assertNull(child.parent());
+    }
+
+    @Test
+    void removingAllChildrenImmediatelyClearsDescendantInteraction() {
+        Widget root = new Widget() { };
+        Widget branch = new Widget() { };
+        Probe child = new Probe("child", new ArrayList<>());
+        child.setFocusable(true);
+        root.add(branch);
+        branch.add(child);
+        WidgetManager manager = manager(new RecordingBackend(), root);
+        manager.focus(child);
+        manager.capturePointer(child, MouseButton.LEFT);
+
+        root.removeAll();
+
+        assertNull(manager.focused());
+        assertFalse(child.isFocused());
+        assertFalse(child.isPressed());
+        assertNull(child.context());
+        assertNull(branch.parent());
+        assertTrue(root.children().isEmpty());
+    }
+
+    @Test
+    void failedChildDetachmentStillUnlinksItAndClearsInteraction() {
+        Widget root = new Widget() { };
+        IllegalStateException failure = new IllegalStateException("Detachment failed.");
+        Widget child = new Widget() {
+            /**
+             * Simulates a failing cleanup callback.
+             *
+             * @throws IllegalStateException always
+             */
+            @Override
+            protected void onDetached() {
+                throw failure;
+            }
+        };
+        child.setFocusable(true);
+        root.add(child);
+        WidgetManager manager = manager(new RecordingBackend(), root);
+        manager.focus(child);
+        manager.capturePointer(child, MouseButton.LEFT);
+
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> root.remove(child)));
+
+        assertTrue(root.children().isEmpty());
+        assertNull(child.parent());
+        assertNull(child.context());
+        assertNull(manager.focused());
+        assertFalse(child.isPressed());
+    }
+
+    @Test
+    void focusTraversalAndCaptureReleaseUseWidgetIdentity() {
+        Widget first = new EqualProbe();
+        Widget second = new EqualProbe();
+        Widget third = new EqualProbe();
+        first.setFocusable(true);
+        second.setFocusable(true);
+        third.setFocusable(true);
+        WidgetManager manager = manager(new RecordingBackend(), first, second, third);
+        manager.focus(second);
+
+        manager.focusNext(true);
+        assertSame(third, manager.focused());
+        manager.focusNext(false);
+        assertSame(second, manager.focused());
+
+        manager.capturePointer(first, MouseButton.LEFT);
+        manager.capturePointer(second, MouseButton.RIGHT);
+        manager.releasePointerCapture(MouseButton.LEFT);
+
+        assertFalse(first.isPressed());
+        assertTrue(second.isPressed());
+    }
+
+    @Test
     void delegatesAntialiasingSettings() {
         RecordingBackend backend = new RecordingBackend();
         WidgetManager manager = manager(backend, new Probe("root", new ArrayList<>()));
@@ -607,6 +784,321 @@ class WidgetManagerTest {
             manager.add(widget);
         }
         return manager;
+    }
+
+    @Test
+    void recapturingTheSameButtonPreservesClickDetection() {
+        List<String> log = new ArrayList<>();
+        GestureProbe widget = new GestureProbe(log);
+        widget.setBounds(ROOT_BOUNDS);
+        WidgetManager manager = manager(new RecordingBackend(), widget);
+        manager.handle(new PointerPressed(10, 10, MouseButton.LEFT, Modifiers.NONE));
+        manager.capturePointer(widget, MouseButton.LEFT);
+        manager.handle(new PointerReleased(10, 10, MouseButton.LEFT, Modifiers.NONE));
+
+        assertTrue(log.contains("click:LEFT:1"));
+        assertFalse(widget.isPressed());
+    }
+
+    @Test
+    void distantReleaseWithoutMoveDoesNotGenerateAClick() {
+        List<String> log = new ArrayList<>();
+        GestureProbe widget = new GestureProbe(log);
+        widget.setBounds(ROOT_BOUNDS);
+        WidgetManager manager = manager(new RecordingBackend(), widget);
+        manager.handle(new PointerPressed(10, 10, MouseButton.LEFT, Modifiers.NONE));
+        manager.handle(new PointerReleased(100, 100, MouseButton.LEFT, Modifiers.NONE));
+
+        assertFalse(log.contains("click:LEFT:1"));
+        assertFalse(widget.isPressed());
+    }
+
+    @Test
+    void draggingBetweenClicksDoesNotProduceADoubleClick() {
+        List<String> log = new ArrayList<>();
+        GestureProbe widget = new GestureProbe(log);
+        widget.setBounds(ROOT_BOUNDS);
+        WidgetManager manager = manager(new RecordingBackend(), widget);
+        click(manager, 10, 10);
+        log.clear();
+
+        manager.handle(new PointerPressed(10, 10, MouseButton.LEFT, Modifiers.NONE));
+        manager.handle(new PointerMoved(30, 10));
+        manager.handle(new PointerReleased(30, 10, MouseButton.LEFT, Modifiers.NONE));
+        log.clear();
+        click(manager, 10, 10);
+
+        assertTrue(log.contains("click:LEFT:1"));
+        assertFalse(log.contains("double:LEFT"));
+    }
+
+    @Test
+    void releasingBeyondTheClickSlopBreaksTheClickSequence() {
+        List<String> log = new ArrayList<>();
+        GestureProbe widget = new GestureProbe(log);
+        widget.setBounds(ROOT_BOUNDS);
+        WidgetManager manager = manager(new RecordingBackend(), widget);
+        click(manager, 10, 10);
+        log.clear();
+
+        manager.handle(new PointerPressed(10, 10, MouseButton.LEFT, Modifiers.NONE));
+        manager.handle(new PointerReleased(100, 100, MouseButton.LEFT, Modifiers.NONE));
+        log.clear();
+        click(manager, 10, 10);
+
+        assertTrue(log.contains("click:LEFT:1"));
+        assertFalse(log.contains("double:LEFT"));
+    }
+
+    @Test
+    void clickingEmptySpaceBreaksTheClickSequence() {
+        List<String> log = new ArrayList<>();
+        GestureProbe widget = new GestureProbe(log);
+        widget.setBounds(ROOT_BOUNDS);
+        WidgetManager manager = manager(new RecordingBackend(), widget);
+        click(manager, 10, 10);
+        log.clear();
+
+        click(manager, 200, 200);
+        click(manager, 10, 10);
+
+        assertTrue(log.contains("click:LEFT:1"));
+        assertFalse(log.contains("double:LEFT"));
+    }
+
+    @Test
+    void releasingCaptureBreaksTheClickSequence() {
+        List<String> log = new ArrayList<>();
+        GestureProbe widget = new GestureProbe(log);
+        widget.setBounds(ROOT_BOUNDS);
+        WidgetManager manager = manager(new RecordingBackend(), widget);
+        click(manager, 10, 10);
+        manager.handle(new PointerPressed(10, 10, MouseButton.LEFT, Modifiers.NONE));
+        manager.releasePointerCapture(MouseButton.LEFT);
+        log.clear();
+
+        click(manager, 10, 10);
+
+        assertTrue(log.contains("click:LEFT:1"));
+        assertFalse(log.contains("double:LEFT"));
+    }
+
+    private static void click(WidgetManager manager, float x, float y) {
+        manager.handle(new PointerPressed(x, y, MouseButton.LEFT, Modifiers.NONE));
+        manager.handle(new PointerReleased(x, y, MouseButton.LEFT, Modifiers.NONE));
+    }
+
+    @Test
+    void widgetsCannotReleaseAnotherWidgetsCapture() {
+        Widget first = new Widget() { };
+        Widget second = new Widget() { };
+        WidgetManager manager = manager(new RecordingBackend(), first, second);
+        manager.capturePointer(second, MouseButton.LEFT);
+
+        first.releasePointerCapture(MouseButton.LEFT);
+        assertTrue(second.isPressed());
+        second.releasePointerCapture(MouseButton.LEFT);
+        assertFalse(second.isPressed());
+    }
+
+    @Test
+    void focusRedirectedByABlurCallbackHasOnlyOneOwner() {
+        WidgetManager manager = manager(new RecordingBackend());
+        Widget requested = new Widget() { };
+        Widget redirected = new Widget() { };
+        Widget first = new Widget() {
+            /**
+             * Redirects focus when this widget loses it.
+             *
+             * @param focused whether this widget gained focus
+             */
+            @Override
+            protected void onFocusChanged(boolean focused) {
+                if (!focused) {
+                    manager.focus(redirected);
+                }
+            }
+        };
+        first.setFocusable(true);
+        requested.setFocusable(true);
+        redirected.setFocusable(true);
+        manager.add(first).add(requested).add(redirected);
+        manager.focus(first);
+
+        manager.focus(requested);
+
+        assertSame(redirected, manager.focused());
+        assertTrue(redirected.isFocused());
+        assertFalse(first.isFocused());
+        assertFalse(requested.isFocused());
+    }
+
+    @Test
+    void removalDuringPointerEnterDoesNotCaptureTheDetachedWidget() {
+        WidgetManager manager = manager(new RecordingBackend());
+        Widget widget = new Widget() {
+            /**
+             * Removes this widget while hover is being assigned.
+             */
+            @Override
+            protected void onPointerEnter() {
+                manager.remove(this);
+            }
+        };
+        widget.setBounds(ROOT_BOUNDS);
+        manager.add(widget);
+
+        manager.handle(new PointerPressed(10, 10, MouseButton.LEFT, Modifiers.NONE));
+
+        assertNull(manager.hovered());
+        assertNull(manager.focused());
+        assertFalse(widget.isHovered());
+        assertFalse(widget.isPressed());
+    }
+
+    @Test
+    void releaseCallbackFailureStillClearsPressedState() {
+        IllegalStateException failure = new IllegalStateException("Release failed.");
+        Widget widget = new Widget() {
+            /**
+             * Simulates an input callback failure.
+             *
+             * @param x local pointer x
+             * @param y local pointer y
+             * @param button released button
+             * @param modifiers keyboard modifiers
+             * @return never returns normally
+             * @throws IllegalStateException always
+             */
+            @Override
+            protected boolean onPointerRelease(float x, float y, MouseButton button, Modifiers modifiers) {
+                throw failure;
+            }
+        };
+        widget.setBounds(ROOT_BOUNDS);
+        WidgetManager manager = manager(new RecordingBackend(), widget);
+        manager.handle(new PointerPressed(10, 10, MouseButton.LEFT, Modifiers.NONE));
+
+        assertSame(failure, assertThrows(IllegalStateException.class,
+                () -> manager.handle(new PointerReleased(10, 10, MouseButton.LEFT, Modifiers.NONE))));
+        assertFalse(widget.isPressed());
+    }
+
+    @Test
+    void cancellingCaptureDuringDragStartStopsFurtherDragEvents() {
+        int[] drags = {0};
+        Widget widget = new Widget() {
+            /**
+             * Cancels the drag as soon as it starts.
+             *
+             * @param x local pointer x
+             * @param y local pointer y
+             * @param button dragged button
+             * @param modifiers keyboard modifiers
+             * @return true to consume the start event
+             */
+            @Override
+            protected boolean onDragStart(float x, float y, MouseButton button, Modifiers modifiers) {
+                releasePointerCapture(button);
+                return true;
+            }
+
+            /**
+             * Counts drag events that should have been cancelled.
+             *
+             * @param x local pointer x
+             * @param y local pointer y
+             * @param button dragged button
+             * @param modifiers keyboard modifiers
+             * @return true to consume the event
+             */
+            @Override
+            protected boolean onDrag(float x, float y, MouseButton button, Modifiers modifiers) {
+                drags[0]++;
+                return true;
+            }
+        };
+        widget.setBounds(ROOT_BOUNDS);
+        WidgetManager manager = manager(new RecordingBackend(), widget);
+        manager.handle(new PointerPressed(10, 10, MouseButton.LEFT, Modifiers.NONE));
+        manager.handle(new PointerMoved(30, 10));
+        manager.handle(new PointerMoved(40, 10));
+
+        assertEquals(0, drags[0]);
+        assertFalse(widget.isPressed());
+    }
+
+    @Test
+    void unfocusedWindowDoesNotDispatchKeyboardOrTextEvents() {
+        Probe widget = new Probe("keyboard", new ArrayList<>());
+        widget.setFocusable(true);
+        WidgetManager manager = manager(new RecordingBackend(), widget);
+        manager.focus(widget);
+        widget.events.clear();
+        manager.handle(new FocusChanged(false));
+        manager.handle(new KeyPressed(Key.A, Modifiers.NONE, true));
+        manager.handle(new CharTyped(0x1F600));
+
+        assertTrue(widget.events.isEmpty());
+        assertSame(widget, manager.focused());
+
+        manager.handle(new FocusChanged(true));
+        manager.handle(new CharTyped(0x1F600));
+        assertEquals(List.of("char:128512"), widget.events);
+    }
+
+    @Test
+    void keyboardBubblingStopsWhenItsSubtreeIsRemoved() {
+        WidgetManager manager = manager(new RecordingBackend());
+        Probe root = new Probe("root", new ArrayList<>());
+        Widget child = new Widget() {
+            /**
+             * Removes the receiving subtree during keyboard dispatch.
+             *
+             * @param key pressed key
+             * @param modifiers keyboard modifiers
+             * @param repeat whether this is key repeat
+             * @return false to exercise bubbling after removal
+             */
+            @Override
+            protected boolean onKeyPressed(Key key, Modifiers modifiers, boolean repeat) {
+                manager.remove(root);
+                return false;
+            }
+        };
+        child.setFocusable(true);
+        root.add(child);
+        manager.add(root);
+        manager.focus(child);
+
+        manager.handle(new KeyPressed(Key.A, Modifiers.NONE, false));
+
+        assertTrue(root.events.isEmpty());
+        assertNull(manager.focused());
+        assertNull(child.context());
+    }
+
+    private static final class EqualProbe extends Widget {
+        /**
+         * Treats all instances of this probe as equal to exercise identity-based ownership.
+         *
+         * @param other object to compare
+         * @return true for another equal probe
+         */
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof EqualProbe;
+        }
+
+        /**
+         * Returns the shared hash code required by equality.
+         *
+         * @return the same hash code for every instance
+         */
+        @Override
+        public int hashCode() {
+            return 1;
+        }
     }
 
     private static final class Probe extends Widget {

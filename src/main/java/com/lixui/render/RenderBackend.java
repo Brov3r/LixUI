@@ -6,6 +6,16 @@ package com.lixui.render;
  */
 public interface RenderBackend extends AutoCloseable {
     /**
+     * Reports whether this backend evaluates analytic shapes and gradients on the GPU.
+     * The default preserves tessellated commands for existing backend implementations.
+     *
+     * @return true when {@link ShapeCommand} is supported
+     */
+    default boolean supportsAnalyticShapes() {
+        return false;
+    }
+
+    /**
      * Sets a pixel-for-pixel viewport where logical and framebuffer dimensions are equal.
      *
      * @param framebufferWidth target width in pixels

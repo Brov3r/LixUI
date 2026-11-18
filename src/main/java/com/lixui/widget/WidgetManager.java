@@ -45,6 +45,7 @@ import java.util.Set;
  * widget is visually on top. Added widgets receive a shared {@link UiContext} and are detached
  * when removed or when the manager is closed. Instances are single-threaded and are intended to be
  * updated once per frame.
+ * Window focus loss preserves widget focus but suppresses keyboard and text events until focus returns.
  */
 public final class WidgetManager implements AutoCloseable {
     private static final float DRAG_THRESHOLD = 4;
@@ -56,6 +57,7 @@ public final class WidgetManager implements AutoCloseable {
     private final RenderManager renderer;
     private final UiContext context;
     private final List<Widget> widgets = new ArrayList<>();
+    private final List<Widget> widgetView = Collections.unmodifiableList(widgets);
     private final EnumMap<MouseButton, Widget> captures = new EnumMap<>(MouseButton.class);
     private final EnumMap<MouseButton, PressState> presses = new EnumMap<>(MouseButton.class);
     private Widget hovered;
@@ -70,6 +72,9 @@ public final class WidgetManager implements AutoCloseable {
     private double eventTime;
     private double lastClickTime = Double.NEGATIVE_INFINITY;
     private boolean pointerInside;
+    private boolean windowFocused = true;
+    private long focusRevision;
+    private long hoverRevision;
     private boolean closed;
 
     /**
@@ -178,17 +183,17 @@ public final class WidgetManager implements AutoCloseable {
      * @return an unmodifiable view of the top-level widgets
      */
     public List<Widget> widgets() {
-        return Collections.unmodifiableList(widgets);
+        return widgetView;
     }
 
     /**
      * Adds a top-level widget.
-     * The widget must not already have a parent.
+     * The widget must not already have a parent or belong to a manager.
      *
      * @param widget widget to add
      * @return this manager
      * @throws NullPointerException if {@code widget} is null
-     * @throws IllegalArgumentException if the widget has a parent or is already registered
+     * @throws IllegalArgumentException if the widget has a parent or is already attached to a manager
      * @throws IllegalStateException if the manager is closed
      */
     public WidgetManager add(Widget widget) {
@@ -197,14 +202,15 @@ public final class WidgetManager implements AutoCloseable {
         if (widget.parent() != null) {
             throw new IllegalArgumentException("Only widgets without a parent can be added.");
         }
-        if (containsIdentity(widgets, widget)) {
+        if (widget.context() != null || containsIdentity(widgets, widget)) {
             throw new IllegalArgumentException("Widget is already registered.");
         }
         widgets.add(widget);
         try {
             widget.attach(context);
         } catch (RuntimeException | Error exception) {
-            widgets.remove(widgets.size() - 1);
+            widgets.removeIf(candidate -> candidate == widget);
+            pruneInteraction();
             throw exception;
         }
         return this;
@@ -223,8 +229,11 @@ public final class WidgetManager implements AutoCloseable {
         for (int index = 0; index < widgets.size(); index++) {
             if (widgets.get(index) == widget) {
                 widgets.remove(index);
-                widget.detach();
-                pruneInteraction();
+                try {
+                    widget.detach();
+                } finally {
+                    pruneInteraction();
+                }
                 return true;
             }
         }
@@ -352,9 +361,7 @@ public final class WidgetManager implements AutoCloseable {
         clearCaptures();
         clearHover();
         focus(null);
-        lastClickTarget = null;
-        lastClickButton = null;
-        lastClickTime = Double.NEGATIVE_INFINITY;
+        resetClickSequence();
         pointerInside = false;
         for (Widget widget : List.copyOf(widgets)) {
             widget.detach();
@@ -401,10 +408,17 @@ public final class WidgetManager implements AutoCloseable {
             }
         }
         Widget previous = focused;
+        long revision = ++focusRevision;
         focused = null;
         if (previous != null) {
             previous.setFocused(false);
             previous.onFocusChanged(false);
+        }
+        if (revision != focusRevision) {
+            return;
+        }
+        if (widget != null && (!isAttached(widget) || !isInteractive(widget) || !widget.isFocusable())) {
+            return;
         }
         focused = widget;
         if (widget != null) {
@@ -434,7 +448,7 @@ public final class WidgetManager implements AutoCloseable {
             focus(null);
             return;
         }
-        int current = order.indexOf(focused);
+        int current = indexOfIdentity(order, focused);
         int next;
         if (current < 0) {
             next = forward ? 0 : order.size() - 1;
@@ -448,6 +462,7 @@ public final class WidgetManager implements AutoCloseable {
     /**
      * Captures pointer button events for a widget until the button is released or the capture is
      * released explicitly.
+     * Recapturing the same button for the same widget preserves its active gesture.
      *
      * @param widget widget that receives captured pointer events
      * @param button captured button
@@ -463,7 +478,9 @@ public final class WidgetManager implements AutoCloseable {
             throw new IllegalArgumentException("Widget is not an interactive registered widget.");
         }
         Widget previous = captures.put(button, widget);
-        presses.remove(button);
+        if (previous != widget) {
+            presses.remove(button);
+        }
         if (previous != null && previous != widget) {
             clearPressedIfUncaptured(previous);
         }
@@ -482,8 +499,17 @@ public final class WidgetManager implements AutoCloseable {
         ensureOpen();
         Widget target = captures.remove(button);
         presses.remove(button);
+        resetClickSequence();
         if (target != null) {
             clearPressedIfUncaptured(target);
+        }
+    }
+
+    void releasePointerCapture(Widget owner, MouseButton button) {
+        Objects.requireNonNull(button, "button");
+        ensureOpen();
+        if (captures.get(button) == owner) {
+            releasePointerCapture(button);
         }
     }
 
@@ -500,6 +526,10 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     private void dispatch(InputEvent event) {
+        if (!windowFocused && (event instanceof KeyPressed || event instanceof KeyReleased
+                || event instanceof CharTyped)) {
+            return;
+        }
         switch (event) {
             case PointerMoved moved -> pointerMoved(moved.x(), moved.y());
             case PointerEntered entered -> pointerEntered(entered.x(), entered.y());
@@ -551,7 +581,7 @@ public final class WidgetManager implements AutoCloseable {
             bubblePointerMove(target, x, y, delivered);
         }
         for (Widget widget : List.copyOf(captures.values())) {
-            if (!delivered.contains(widget)) {
+            if (!delivered.contains(widget) && isAttached(widget) && isInteractive(widget)) {
                 bubblePointerMove(widget, x, y, delivered);
             }
         }
@@ -564,10 +594,14 @@ public final class WidgetManager implements AutoCloseable {
         pointerY = pressed.y();
         Widget target = updateHover();
         if (target == null) {
+            resetClickSequence();
             focus(null);
             return;
         }
         focus(focusTarget(target));
+        if (!isAttached(target) || !isInteractive(target)) {
+            return;
+        }
         Widget previous = captures.put(pressed.button(), target);
         if (previous != null && previous != target) {
             presses.remove(pressed.button());
@@ -587,17 +621,28 @@ public final class WidgetManager implements AutoCloseable {
         Widget target = captures.remove(released.button());
         PressState state = presses.remove(released.button());
         if (target == null) {
+            resetClickSequence();
             return;
         }
-        bubblePointerRelease(target, released);
-        if (state != null) {
-            if (state.dragging) {
-                bubbleDragEnd(target, pointerX, pointerY, released.button(), state.modifiers);
-            } else if (!state.longPressed && hovered == target) {
-                completeClick(target, released.button(), released.modifiers());
+        boolean clicked = false;
+        try {
+            bubblePointerRelease(target, released);
+            if (state != null && isAttached(target) && isInteractive(target)) {
+                if (state.dragging) {
+                    bubbleDragEnd(target, pointerX, pointerY, released.button(), state.modifiers);
+                } else if (!state.longPressed && hovered == target
+                        && distance(state.x, state.y, pointerX, pointerY) <= CLICK_SLOP
+                        && eventTime - state.time < LONG_PRESS_SECONDS) {
+                    completeClick(target, released.button(), released.modifiers());
+                    clicked = true;
+                }
+            }
+        } finally {
+            clearPressedIfUncaptured(target);
+            if (!clicked) {
+                resetClickSequence();
             }
         }
-        clearPressedIfUncaptured(target);
     }
 
     private void pointerScrolled(PointerScrolled scrolled) {
@@ -618,9 +663,10 @@ public final class WidgetManager implements AutoCloseable {
             }
             if (!state.dragging && distance(state.x, state.y, x, y) >= DRAG_THRESHOLD) {
                 state.dragging = true;
+                resetClickSequence();
                 bubbleDragStart(state.target, x, y, button, state.modifiers);
             }
-            if (state.dragging) {
+            if (state.dragging && presses.get(button) == state && captures.get(button) == state.target) {
                 bubbleDrag(state.target, x, y, button, state.modifiers);
             }
         }
@@ -635,6 +681,7 @@ public final class WidgetManager implements AutoCloseable {
             }
             if (eventTime - state.time >= LONG_PRESS_SECONDS) {
                 state.longPressed = true;
+                resetClickSequence();
                 bubbleLongPress(state.target, state.x, state.y, button, state.modifiers);
             }
         }
@@ -652,15 +699,16 @@ public final class WidgetManager implements AutoCloseable {
             lastClickTime = Double.NEGATIVE_INFINITY;
             return;
         }
-        bubbleClick(target, pointerX, pointerY, button, modifiers);
         lastClickTarget = target;
         lastClickButton = button;
         lastClickTime = eventTime;
         lastClickX = pointerX;
         lastClickY = pointerY;
+        bubbleClick(target, pointerX, pointerY, button, modifiers);
     }
 
     private void focusChanged(boolean focusedWindow) {
+        windowFocused = focusedWindow;
         if (!focusedWindow) {
             pointerInside = false;
             clearHover();
@@ -674,18 +722,23 @@ public final class WidgetManager implements AutoCloseable {
             return hovered;
         }
         Widget previous = hovered;
+        long revision = ++hoverRevision;
         hovered = null;
         if (previous != null) {
             previous.setHovered(false);
             previous.onPointerExit();
         }
+        if (revision != hoverRevision) {
+            return hovered;
+        }
+        hit = pointerInside ? hitTest(pointerX, pointerY) : null;
         hovered = hit;
         if (hit != null) {
             hit.setHovered(true);
             hit.onPointerEnter();
         }
         refreshCursor();
-        return hit;
+        return hovered;
     }
 
     private static Point localPoint(Widget widget, float x, float y) {
@@ -736,9 +789,10 @@ public final class WidgetManager implements AutoCloseable {
         return (float) Math.hypot(secondX - firstX, secondY - firstY);
     }
 
-    private static boolean bubblePointerMove(Widget target, float x, float y,
+    private boolean bubblePointerMove(Widget target, float x, float y,
                                              Set<Widget> delivered) {
-        for (Widget widget = target; widget != null; widget = widget.parent()) {
+        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
+                widget = widget.parent()) {
             if (!delivered.add(widget)) {
                 continue;
             }
@@ -750,8 +804,9 @@ public final class WidgetManager implements AutoCloseable {
         return false;
     }
 
-    private static boolean bubblePointerPress(Widget target, PointerPressed pressed) {
-        for (Widget widget = target; widget != null; widget = widget.parent()) {
+    private boolean bubblePointerPress(Widget target, PointerPressed pressed) {
+        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
+                widget = widget.parent()) {
             Point local = localPoint(widget, pressed.x(), pressed.y());
             if (widget.onPointerPress(local.x(), local.y(), pressed.button(), pressed.modifiers())) {
                 return true;
@@ -760,8 +815,9 @@ public final class WidgetManager implements AutoCloseable {
         return false;
     }
 
-    private static boolean bubblePointerRelease(Widget target, PointerReleased released) {
-        for (Widget widget = target; widget != null; widget = widget.parent()) {
+    private boolean bubblePointerRelease(Widget target, PointerReleased released) {
+        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
+                widget = widget.parent()) {
             Point local = localPoint(widget, released.x(), released.y());
             if (widget.onPointerRelease(local.x(), local.y(), released.button(),
                     released.modifiers())) {
@@ -771,8 +827,9 @@ public final class WidgetManager implements AutoCloseable {
         return false;
     }
 
-    private static boolean bubblePointerScroll(Widget target, PointerScrolled scrolled) {
-        for (Widget widget = target; widget != null; widget = widget.parent()) {
+    private boolean bubblePointerScroll(Widget target, PointerScrolled scrolled) {
+        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
+                widget = widget.parent()) {
             Point local = localPoint(widget, scrolled.x(), scrolled.y());
             if (widget.onPointerScroll(local.x(), local.y(), scrolled.deltaX(), scrolled.deltaY())) {
                 return true;
@@ -781,9 +838,10 @@ public final class WidgetManager implements AutoCloseable {
         return false;
     }
 
-    private static boolean bubbleClick(Widget target, float x, float y, MouseButton button,
+    private boolean bubbleClick(Widget target, float x, float y, MouseButton button,
                                        Modifiers modifiers) {
-        for (Widget widget = target; widget != null; widget = widget.parent()) {
+        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
+                widget = widget.parent()) {
             Point local = localPoint(widget, x, y);
             if (widget.onClick(local.x(), local.y(), button, modifiers)) {
                 return true;
@@ -792,9 +850,10 @@ public final class WidgetManager implements AutoCloseable {
         return false;
     }
 
-    private static boolean bubbleDoubleClick(Widget target, float x, float y, MouseButton button,
+    private boolean bubbleDoubleClick(Widget target, float x, float y, MouseButton button,
                                              Modifiers modifiers) {
-        for (Widget widget = target; widget != null; widget = widget.parent()) {
+        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
+                widget = widget.parent()) {
             Point local = localPoint(widget, x, y);
             if (widget.onDoubleClick(local.x(), local.y(), button, modifiers)) {
                 return true;
@@ -803,9 +862,10 @@ public final class WidgetManager implements AutoCloseable {
         return false;
     }
 
-    private static boolean bubbleDragStart(Widget target, float x, float y, MouseButton button,
+    private boolean bubbleDragStart(Widget target, float x, float y, MouseButton button,
                                            Modifiers modifiers) {
-        for (Widget widget = target; widget != null; widget = widget.parent()) {
+        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
+                widget = widget.parent()) {
             Point local = localPoint(widget, x, y);
             if (widget.onDragStart(local.x(), local.y(), button, modifiers)) {
                 return true;
@@ -814,9 +874,10 @@ public final class WidgetManager implements AutoCloseable {
         return false;
     }
 
-    private static boolean bubbleDrag(Widget target, float x, float y, MouseButton button,
+    private boolean bubbleDrag(Widget target, float x, float y, MouseButton button,
                                       Modifiers modifiers) {
-        for (Widget widget = target; widget != null; widget = widget.parent()) {
+        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
+                widget = widget.parent()) {
             Point local = localPoint(widget, x, y);
             if (widget.onDrag(local.x(), local.y(), button, modifiers)) {
                 return true;
@@ -825,9 +886,10 @@ public final class WidgetManager implements AutoCloseable {
         return false;
     }
 
-    private static boolean bubbleDragEnd(Widget target, float x, float y, MouseButton button,
+    private boolean bubbleDragEnd(Widget target, float x, float y, MouseButton button,
                                          Modifiers modifiers) {
-        for (Widget widget = target; widget != null; widget = widget.parent()) {
+        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
+                widget = widget.parent()) {
             Point local = localPoint(widget, x, y);
             if (widget.onDragEnd(local.x(), local.y(), button, modifiers)) {
                 return true;
@@ -836,9 +898,10 @@ public final class WidgetManager implements AutoCloseable {
         return false;
     }
 
-    private static boolean bubbleLongPress(Widget target, float x, float y, MouseButton button,
+    private boolean bubbleLongPress(Widget target, float x, float y, MouseButton button,
                                            Modifiers modifiers) {
-        for (Widget widget = target; widget != null; widget = widget.parent()) {
+        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
+                widget = widget.parent()) {
             Point local = localPoint(widget, x, y);
             if (widget.onLongPress(local.x(), local.y(), button, modifiers)) {
                 return true;
@@ -848,7 +911,9 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     private boolean bubbleKeyPressed(KeyPressed pressed) {
-        for (Widget widget = focused; widget != null; widget = widget.parent()) {
+        Widget target = focused;
+        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
+                widget = widget.parent()) {
             if (widget.onKeyPressed(pressed.key(), pressed.modifiers(), pressed.repeat())) {
                 return true;
             }
@@ -857,7 +922,9 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     private boolean bubbleKeyReleased(KeyReleased released) {
-        for (Widget widget = focused; widget != null; widget = widget.parent()) {
+        Widget target = focused;
+        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
+                widget = widget.parent()) {
             if (widget.onKeyReleased(released.key(), released.modifiers())) {
                 return true;
             }
@@ -866,7 +933,9 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     private boolean bubbleCharTyped(int codepoint) {
-        for (Widget widget = focused; widget != null; widget = widget.parent()) {
+        Widget target = focused;
+        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
+                widget = widget.parent()) {
             if (widget.onCharTyped(codepoint)) {
                 return true;
             }
@@ -886,6 +955,9 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     void pruneInteraction() {
+        if (lastClickTarget != null && (!isAttached(lastClickTarget) || !isInteractive(lastClickTarget))) {
+            resetClickSequence();
+        }
         if (hovered != null && (!isAttached(hovered) || !isInteractive(hovered))) {
             clearHover();
         }
@@ -918,6 +990,7 @@ public final class WidgetManager implements AutoCloseable {
             return;
         }
         Widget previous = hovered;
+        hoverRevision++;
         hovered = null;
         previous.setHovered(false);
         previous.onPointerExit();
@@ -926,9 +999,7 @@ public final class WidgetManager implements AutoCloseable {
 
     private void clearCaptures() {
         presses.clear();
-        lastClickTarget = null;
-        lastClickButton = null;
-        lastClickTime = Double.NEGATIVE_INFINITY;
+        resetClickSequence();
         if (captures.isEmpty()) {
             return;
         }
@@ -938,6 +1009,12 @@ public final class WidgetManager implements AutoCloseable {
         for (Widget widget : pressedWidgets) {
             widget.setPressed(false);
         }
+    }
+
+    private void resetClickSequence() {
+        lastClickTarget = null;
+        lastClickButton = null;
+        lastClickTime = Double.NEGATIVE_INFINITY;
     }
 
     private void refreshCursor() {
@@ -956,9 +1033,12 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     private void clearPressedIfUncaptured(Widget widget) {
-        if (!captures.containsValue(widget)) {
-            widget.setPressed(false);
+        for (Widget captured : captures.values()) {
+            if (captured == widget) {
+                return;
+            }
         }
+        widget.setPressed(false);
     }
 
     private boolean isAttached(Widget widget) {
@@ -970,12 +1050,16 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     private static boolean containsIdentity(List<Widget> list, Widget widget) {
-        for (Widget candidate : list) {
-            if (candidate == widget) {
-                return true;
+        return indexOfIdentity(list, widget) >= 0;
+    }
+
+    private static int indexOfIdentity(List<Widget> list, Widget widget) {
+        for (int index = 0; index < list.size(); index++) {
+            if (list.get(index) == widget) {
+                return index;
             }
         }
-        return false;
+        return -1;
     }
 
     private static final class PressState {

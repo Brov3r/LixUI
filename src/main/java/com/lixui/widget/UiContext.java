@@ -197,6 +197,11 @@ public final class UiContext implements AutoCloseable {
         manager().releasePointerCapture(Objects.requireNonNull(button, "button"));
     }
 
+    void releasePointerCapture(Widget owner, MouseButton button) {
+        ensureOpen();
+        manager().releasePointerCapture(owner, button);
+    }
+
     /**
      * Rasterizes and uploads a font with the default character set and tracks its atlas.
      *

@@ -212,13 +212,72 @@ class RenderManagerTest {
         Rect bounds = new Rect(0, 0, 100, 50);
 
         manager.begin();
-        manager.withTransform(Transform.translation(10, 20),
-                () -> manager.fillRect(bounds, Paint.solid(RED)));
+        manager.withTransform(Transform.translation(10, 20), () -> {
+            manager.fillRect(bounds, Paint.solid(RED));
+            manager.mesh(List.of(new MeshVertex(0, 0, RED), new MeshVertex(100, 0, RED),
+                    new MeshVertex(0, 50, RED)));
+        });
         manager.end();
 
         DrawCommand command = backend.lastDrawList.commands().get(0);
+        assertTrue(command instanceof RoundedRectCommand);
+        assertEquals(new Rect(10, 20, 100, 50), command.bounds());
+        command = backend.lastDrawList.commands().get(1);
         assertTrue(command instanceof MeshCommand);
         assertEquals(new Rect(10, 20, 100, 50), command.bounds());
+    }
+
+    @Test
+    void translatedRoundedRectPreservesClipColorAndClampedRadius() {
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+        Rect clip = new Rect(0, 0, 80, 60);
+        Color translucent = new Color(1, 0, 0, 0.5f);
+
+        manager.begin();
+        manager.pushClip(clip);
+        manager.pushTransform(Transform.translation(30, 40));
+        manager.pushTransform(Transform.translation(-10, -15));
+        manager.fillRoundedRect(new Rect(2, 3, 100, 50), 100, Paint.solid(translucent));
+        manager.popTransform();
+        manager.popTransform();
+        manager.popClip();
+        manager.end();
+
+        RoundedRectCommand command = (RoundedRectCommand) backend.lastDrawList.commands().getFirst();
+        assertEquals(new Rect(22, 28, 100, 50), command.bounds());
+        assertEquals(25, command.radius());
+        assertEquals(translucent, command.color());
+        assertEquals(clip, command.clip());
+    }
+
+    @Test
+    void scalingRotationAndGradientsKeepTheMeshPath() {
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+        Rect bounds = new Rect(0, 0, 100, 50);
+        Paint gradient = Paint.linear(new Point(0, 0), new Point(100, 0),
+                new GradientStop(0, RED), new GradientStop(1, Color.WHITE));
+
+        manager.begin();
+        manager.withTransform(Transform.scaling(2, 3),
+                () -> manager.fillRoundedRect(bounds, 10, Paint.solid(RED)));
+        manager.withTransform(Transform.rotation(0.5f),
+                () -> manager.fillRect(bounds, Paint.solid(RED)));
+        manager.withTransform(Transform.translation(10, 20),
+                () -> manager.fillRect(bounds, gradient));
+        manager.end();
+
+        List<DrawCommand> commands = backend.lastDrawList.commands();
+        assertEquals(3, commands.size());
+        assertTrue(commands.stream().allMatch(MeshCommand.class::isInstance));
+        assertEquals(new Rect(0, 0, 200, 150), commands.get(0).bounds());
+        assertEquals(new Rect(10, 20, 100, 50), commands.get(2).bounds());
+        MeshCommand translated = (MeshCommand) commands.get(2);
+        assertTrue(translated.vertices().stream().anyMatch(vertex -> vertex.color().equals(RED)));
+        assertTrue(translated.vertices().stream().anyMatch(vertex -> vertex.color().equals(Color.WHITE)));
     }
 
     @Test
@@ -613,13 +672,73 @@ class RenderManagerTest {
     private record TestTexture(int width, int height) implements Texture {
     }
 
+    @Test
+    void analyticBackendReceivesShapesWithoutTessellatingGradientsOrEllipses() {
+        RecordingBackend backend = new RecordingBackend();
+        backend.analytic = true;
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+        Paint gradient = Paint.radial(new Point(50, 50), 40,
+                new GradientStop(0, RED), new GradientStop(1, Color.WHITE));
+        Transform transform = Transform.rotation(0.25f).scale(2, 1);
+
+        manager.begin();
+        manager.pushTransform(transform);
+        manager.fillRoundedRect(new Rect(0, 0, 100, 50), 12, gradient);
+        manager.fillEllipse(new Point(50, 50), 40, 20, Paint.solid(RED));
+        manager.popTransform();
+        manager.end();
+
+        List<DrawCommand> commands = backend.lastDrawList.commands();
+        assertEquals(2, commands.size());
+        ShapeCommand rectangle = (ShapeCommand) commands.get(0);
+        ShapeCommand ellipse = (ShapeCommand) commands.get(1);
+        assertSame(gradient, rectangle.paint());
+        assertEquals(12, rectangle.radius());
+        assertEquals(transform, rectangle.transform());
+        assertEquals(LOGICAL, rectangle.clip());
+        assertTrue(ellipse.ellipse());
+        assertEquals(new Rect(10, 30, 80, 40), ellipse.bounds());
+    }
+
+    @Test
+    void oversizedGradientsFallBackWithoutDroppingStops() {
+        RecordingBackend backend = new RecordingBackend();
+        backend.analytic = true;
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+        Paint gradient = Paint.linear(new Point(0, 0), new Point(100, 0),
+                new GradientStop(0, RED), new GradientStop(0.25f, Color.WHITE),
+                new GradientStop(0.5f, RED), new GradientStop(0.75f, Color.WHITE),
+                new GradientStop(1, RED));
+
+        manager.begin();
+        manager.fillRect(new Rect(0, 0, 100, 50), gradient);
+        manager.end();
+
+        assertTrue(backend.lastDrawList.commands().getFirst() instanceof MeshCommand);
+        assertThrows(IllegalArgumentException.class,
+                () -> new ShapeCommand(LOGICAL, 0, false, gradient, LOGICAL, Transform.IDENTITY));
+    }
+
     private static final class RecordingBackend implements RenderBackend {
+        private boolean analytic;
         private Viewport viewport;
         private DrawList lastDrawList;
         private int drawCalls;
         private ImageData createdImage;
         private Texture createdTexture;
         private Texture destroyedTexture;
+
+        /**
+         * Returns the capability selected by the test.
+         *
+         * @return whether analytic commands should be emitted
+         */
+        @Override
+        public boolean supportsAnalyticShapes() {
+            return analytic;
+        }
 
         @Override
         public void resize(Viewport viewport) {

@@ -1,9 +1,11 @@
 package com.lixui.backend.vulkan;
 
+import com.lixui.backend.ShaderPaint;
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
+import com.lixui.graphics.Paint;
 import com.lixui.render.DrawCommand;
 import com.lixui.render.DrawList;
 import com.lixui.render.ImageCommand;
@@ -15,6 +17,7 @@ import com.lixui.render.MaskTextureEndCommand;
 import com.lixui.render.MeshCommand;
 import com.lixui.render.MeshVertex;
 import com.lixui.render.RenderBackend;
+import com.lixui.render.ShapeCommand;
 import com.lixui.render.TextCommand;
 import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
@@ -94,6 +97,7 @@ public final class VulkanBackend implements RenderBackend {
     private static final int VERTEX_STRIDE = FLOATS_PER_VERTEX * Float.BYTES;
     private static final int INITIAL_VERTEX_BYTES = 4096;
     private static final int MAX_TEXTURES = 1024;
+    private static final int PUSH_CONSTANT_FLOATS = 4 + ShaderPaint.FLOAT_COUNT;
 
     private final VkPhysicalDevice physicalDevice;
     private final VkDevice device;
@@ -159,6 +163,16 @@ public final class VulkanBackend implements RenderBackend {
             close();
             throw exception;
         }
+    }
+
+    /**
+     * Enables fragment-shader evaluation of shapes and gradients.
+     *
+     * @return true because analytic shapes are supported
+     */
+    @Override
+    public boolean supportsAnalyticShapes() {
+        return true;
     }
 
     /**
@@ -419,8 +433,7 @@ public final class VulkanBackend implements RenderBackend {
                     .maxDepth(1);
             VK10.vkCmdSetViewport(commandBuffer, 0, commandViewport);
 
-            VK10.vkCmdPushConstants(commandBuffer, pipelineLayout, VK10.VK_SHADER_STAGE_VERTEX_BIT, 0,
-                    stack.floats(viewport.logicalWidth(), viewport.logicalHeight()));
+            FloatBuffer constants = stack.mallocFloat(PUSH_CONSTANT_FLOATS);
 
             LongBuffer buffers = stack.longs(vertexBuffer);
             LongBuffer offsets = stack.longs(0);
@@ -428,9 +441,21 @@ public final class VulkanBackend implements RenderBackend {
 
             VkRect2D.Buffer scissor = VkRect2D.calloc(1, stack);
             LongBuffer descriptorSet = stack.mallocLong(1);
+            Paint previousPaint = null;
+            boolean paintSet = false;
             for (Batch batch : batches) {
                 if (!applyScissor(scissor.get(0), batch.clip())) {
                     continue;
+                }
+                if (!paintSet || !Objects.equals(previousPaint, batch.paint())) {
+                    constants.clear();
+                    constants.put(viewport.logicalWidth()).put(viewport.logicalHeight()).put(0).put(0);
+                    ShaderPaint.write(batch.paint(), constants);
+                    constants.flip();
+                    VK10.vkCmdPushConstants(commandBuffer, pipelineLayout,
+                            VK10.VK_SHADER_STAGE_VERTEX_BIT | VK10.VK_SHADER_STAGE_FRAGMENT_BIT, 0, constants);
+                    previousPaint = batch.paint();
+                    paintSet = true;
                 }
                 long batchPipeline = switch (batch.action()) {
                     case DRAW -> pipeline;
@@ -527,9 +552,9 @@ public final class VulkanBackend implements RenderBackend {
     private long createPipelineLayout() {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkPushConstantRange.Buffer range = VkPushConstantRange.calloc(1, stack)
-                    .stageFlags(VK10.VK_SHADER_STAGE_VERTEX_BIT)
+                    .stageFlags(VK10.VK_SHADER_STAGE_VERTEX_BIT | VK10.VK_SHADER_STAGE_FRAGMENT_BIT)
                     .offset(0)
-                    .size(2 * Float.BYTES);
+                    .size(PUSH_CONSTANT_FLOATS * Float.BYTES);
             VkPipelineLayoutCreateInfo info = VkPipelineLayoutCreateInfo.calloc(stack)
                     .sType$Default()
                     .pSetLayouts(stack.longs(descriptorSetLayout))
@@ -970,6 +995,7 @@ public final class VulkanBackend implements RenderBackend {
         batches.clear();
         Rect currentClip = null;
         VulkanTexture currentTexture = null;
+        Paint currentPaint = null;
         int currentStencilRef = 0;
         MaskAction currentAction = MaskAction.DRAW;
         int stencilDepth = 0;
@@ -980,15 +1006,18 @@ public final class VulkanBackend implements RenderBackend {
             MaskAction action = maskAction(command);
             int stencilRef = stencilDepth;
             VulkanTexture texture = asVulkanTexture(textureOf(command));
+            Paint paint = ShaderPaint.gradient(command);
             int commandVertices = vertexCount(command);
             if (!command.clip().equals(currentClip) || texture != currentTexture
-                    || stencilRef != currentStencilRef || action != currentAction) {
+                    || stencilRef != currentStencilRef || action != currentAction
+                    || !Objects.equals(paint, currentPaint)) {
                 if (batchVertexCount > 0) {
                     batches.add(new Batch(batchStartVertex, batchVertexCount,
-                            currentClip, currentTexture, currentStencilRef, currentAction));
+                            currentClip, currentTexture, currentStencilRef, currentAction, currentPaint));
                 }
                 currentClip = command.clip();
                 currentTexture = texture;
+                currentPaint = paint;
                 currentStencilRef = stencilRef;
                 currentAction = action;
                 batchStartVertex = vertexIndex;
@@ -1019,7 +1048,7 @@ public final class VulkanBackend implements RenderBackend {
         }
         if (batchVertexCount > 0) {
             batches.add(new Batch(batchStartVertex, batchVertexCount,
-                    currentClip, currentTexture, currentStencilRef, currentAction));
+                    currentClip, currentTexture, currentStencilRef, currentAction, currentPaint));
         }
     }
 
@@ -1052,24 +1081,43 @@ public final class VulkanBackend implements RenderBackend {
     private void appendQuad(DrawCommand command) {
         if (command instanceof ImageCommand image) {
             appendQuad(image.bounds(), image.radius(), image.color(), image.uv(), image.transform());
+        } else if (command instanceof ShapeCommand shape) {
+            appendQuad(shape.bounds(), shape.ellipse() ? -1 : shape.radius(), shape.color(),
+                    shape.bounds(), shape.transform(), true);
         } else {
-            appendQuad(command.bounds(), command.radius(), command.color(), FULL_UV, Transform.IDENTITY);
+            appendQuad(command.bounds(), command.radius(), command.color(), FULL_UV, Transform.IDENTITY, true);
         }
     }
 
     private void appendQuad(Rect bounds, float radius, Color color, Rect uv, Transform transform) {
+        appendQuad(bounds, radius, color, uv, transform, false);
+    }
+
+    private void appendQuad(Rect bounds, float radius, Color color, Rect uv, Transform transform, boolean feather) {
         float halfWidth = bounds.width() / 2;
         float halfHeight = bounds.height() / 2;
+        float padX = 0;
+        float padY = 0;
+        float determinant = Math.abs(transform.m00() * transform.m11() - transform.m01() * transform.m10());
+        if (feather && determinant > 0) {
+            // Reserve a physical pixel outside the contour so the shader can cover both sides of an edge.
+            padX = (Math.abs(transform.m11()) / viewport.scaleX()
+                    + Math.abs(transform.m01()) / viewport.scaleY()) / determinant;
+            padY = (Math.abs(transform.m10()) / viewport.scaleX()
+                    + Math.abs(transform.m00()) / viewport.scaleY()) / determinant;
+        }
+        float localWidth = halfWidth + padX;
+        float localHeight = halfHeight + padY;
         float red = color.r();
         float green = color.g();
         float blue = color.b();
         float alpha = color.a();
-        float x0 = bounds.x();
-        float y0 = bounds.y();
-        float x1 = bounds.right();
+        float x0 = bounds.x() - padX;
+        float y0 = bounds.y() - padY;
+        float x1 = bounds.right() + padX;
         float y1 = y0;
         float x2 = x1;
-        float y2 = bounds.bottom();
+        float y2 = bounds.bottom() + padY;
         float x3 = x0;
         float y3 = y2;
         if (!transform.isIdentity()) {
@@ -1087,17 +1135,19 @@ public final class VulkanBackend implements RenderBackend {
             y3 = bottomLeft.y();
         }
 
-        float u0 = uv.x();
-        float v0 = uv.y();
-        float u1 = uv.right();
-        float v1 = uv.bottom();
+        float padU = bounds.width() > 0 ? padX * uv.width() / bounds.width() : 0;
+        float padV = bounds.height() > 0 ? padY * uv.height() / bounds.height() : 0;
+        float u0 = uv.x() - padU;
+        float v0 = uv.y() - padV;
+        float u1 = uv.right() + padU;
+        float v1 = uv.bottom() + padV;
 
-        putVertex(x0, y0, -halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v0);
-        putVertex(x1, y1, halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v0);
-        putVertex(x2, y2, halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v1);
-        putVertex(x0, y0, -halfWidth, -halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v0);
-        putVertex(x2, y2, halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v1);
-        putVertex(x3, y3, -halfWidth, halfHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v1);
+        putVertex(x0, y0, -localWidth, -localHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v0);
+        putVertex(x1, y1, localWidth, -localHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v0);
+        putVertex(x2, y2, localWidth, localHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v1);
+        putVertex(x0, y0, -localWidth, -localHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v0);
+        putVertex(x2, y2, localWidth, localHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u1, v1);
+        putVertex(x3, y3, -localWidth, localHeight, halfWidth, halfHeight, radius, red, green, blue, alpha, u0, v1);
     }
 
     private void appendTexturedQuad(Rect bounds, Rect uv, Transform transform) {
@@ -1257,7 +1307,7 @@ public final class VulkanBackend implements RenderBackend {
     }
 
     private record Batch(int firstVertex, int vertexCount, Rect clip, VulkanTexture texture,
-                         int stencilRef, MaskAction action) {
+                         int stencilRef, MaskAction action, Paint paint) {
     }
 
     private enum MaskAction {

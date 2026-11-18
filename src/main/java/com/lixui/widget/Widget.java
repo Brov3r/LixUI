@@ -31,6 +31,7 @@ import java.util.Objects;
  */
 public abstract class Widget {
     private final List<Widget> children = new ArrayList<>();
+    private final List<Widget> childView = Collections.unmodifiableList(children);
     private Widget parent;
     private UiContext context;
     private Font font;
@@ -210,7 +211,7 @@ public abstract class Widget {
      * @return an unmodifiable view of the children
      */
     public final List<Widget> children() {
-        return Collections.unmodifiableList(children);
+        return childView;
     }
 
     /**
@@ -219,7 +220,8 @@ public abstract class Widget {
      * @param child widget to append
      * @return this widget
      * @throws NullPointerException if {@code child} is null
-     * @throws IllegalArgumentException if the child already has a parent, is this widget, or is an ancestor
+     * @throws IllegalArgumentException if the child already has a parent or manager, is this widget,
+     *                                  or is an ancestor
      */
     public final Widget add(Widget child) {
         Objects.requireNonNull(child, "child");
@@ -229,6 +231,9 @@ public abstract class Widget {
         if (child.parent != null) {
             throw new IllegalArgumentException("Widget already has a parent.");
         }
+        if (child.context != null) {
+            throw new IllegalArgumentException("Widget is already attached to a manager.");
+        }
         for (Widget ancestor = this; ancestor != null; ancestor = ancestor.parent) {
             if (ancestor == child) {
                 throw new IllegalArgumentException("A widget cannot contain its ancestor.");
@@ -236,8 +241,15 @@ public abstract class Widget {
         }
         children.add(child);
         child.setParent(this);
-        if (context != null && !detaching) {
-            child.attach(context);
+        try {
+            if (context != null && !detaching) {
+                child.attach(context);
+            }
+        } catch (RuntimeException | Error exception) {
+            children.removeIf(candidate -> candidate == child);
+            child.setParent(null);
+            notifyStateChanged();
+            throw exception;
         }
         return this;
     }
@@ -254,8 +266,12 @@ public abstract class Widget {
         for (int index = 0; index < children.size(); index++) {
             if (children.get(index) == child) {
                 children.remove(index);
-                child.detach();
-                child.setParent(null);
+                try {
+                    child.detach();
+                } finally {
+                    child.setParent(null);
+                    notifyStateChanged();
+                }
                 return true;
             }
         }
@@ -267,10 +283,8 @@ public abstract class Widget {
      */
     public final void removeAll() {
         for (Widget child : List.copyOf(children)) {
-            child.detach();
-            child.setParent(null);
+            remove(child);
         }
-        children.clear();
     }
 
     /**
@@ -602,10 +616,14 @@ public abstract class Widget {
 
     /**
      * Arranges this widget after its bounds have been assigned.
-     * The default keeps child bounds unchanged, so children stay freely positioned relative to this
-     * widget. Container widgets override this method to measure and reposition their children.
+     * The default lays out children with their current bounds, so they stay freely positioned
+     * relative to this widget. Container widgets override this method to measure and lay out their
+     * children with new bounds.
      */
     protected void onLayout() {
+        for (Widget child : children) {
+            child.layout(child.bounds());
+        }
     }
 
     /**
@@ -848,7 +866,7 @@ public abstract class Widget {
      * @throws IllegalStateException if the widget is not attached to a manager
      */
     protected final void releasePointerCapture(MouseButton button) {
-        requireContext().releasePointerCapture(button);
+        requireContext().releasePointerCapture(this, button);
     }
 
     final void attach(UiContext newContext) {

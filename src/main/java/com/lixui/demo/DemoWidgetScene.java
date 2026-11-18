@@ -13,7 +13,6 @@ import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
 import com.lixui.text.Font;
-import com.lixui.text.FontData;
 import com.lixui.text.FontStyle;
 import com.lixui.text.HorizontalAlignment;
 import com.lixui.text.SystemFonts;
@@ -91,8 +90,15 @@ final class DemoWidgetScene implements AutoCloseable {
     }
 
     private static Font loadFont(UiContext context, FontStyle style) {
-        Optional<FontData> data = SystemFonts.findDefault();
-        return data.map(value -> context.createFont(value, 22, style)).orElse(null);
+        for (String family : DemoFonts.FAMILIES) {
+            Optional<Font> font = context.createFont(family, 22, style);
+            if (font.isPresent()) {
+                return font.get();
+            }
+        }
+        return SystemFonts.findDefault()
+                .map(data -> context.createFont(data, 22, style))
+                .orElse(null);
     }
 
     private static final class Dashboard extends Widget {
@@ -255,7 +261,7 @@ final class DemoWidgetScene implements AutoCloseable {
         }
 
         /**
-         * Counts a double click as two additional clicks.
+         * Counts the second press of a double click.
          *
          * @param x horizontal pointer position relative to the widget
          * @param y vertical pointer position relative to the widget
@@ -265,7 +271,7 @@ final class DemoWidgetScene implements AutoCloseable {
          */
         @Override
         protected boolean onDoubleClick(float x, float y, MouseButton button, Modifiers modifiers) {
-            clicks += 2;
+            clicks++;
             return true;
         }
     }

@@ -1,9 +1,11 @@
 package com.lixui.backend.opengl;
 
+import com.lixui.backend.ShaderPaint;
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
+import com.lixui.graphics.Paint;
 import com.lixui.render.DrawCommand;
 import com.lixui.render.DrawList;
 import com.lixui.render.ImageCommand;
@@ -15,6 +17,7 @@ import com.lixui.render.MaskTextureEndCommand;
 import com.lixui.render.MeshCommand;
 import com.lixui.render.MeshVertex;
 import com.lixui.render.RenderBackend;
+import com.lixui.render.ShapeCommand;
 import com.lixui.render.TextCommand;
 import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
@@ -25,6 +28,7 @@ import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.system.MemoryStack;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -58,6 +62,7 @@ public final class OpenGlBackend implements RenderBackend {
     private int vertexBuffer;
     private int viewportLocation;
     private int textureLocation;
+    private int paintLocation;
     private Viewport viewport;
     private int floatCount;
 
@@ -72,6 +77,7 @@ public final class OpenGlBackend implements RenderBackend {
             program = createProgram();
             viewportLocation = GL20.glGetUniformLocation(program, "uViewport");
             textureLocation = GL20.glGetUniformLocation(program, "uTexture");
+            paintLocation = GL20.glGetUniformLocation(program, "uPaint");
             createVertexArray();
             whiteTexture = (GlTexture) createTexture(new ImageData(1, 1, new byte[] {
                     (byte) 255, (byte) 255, (byte) 255, (byte) 255
@@ -80,6 +86,16 @@ public final class OpenGlBackend implements RenderBackend {
             close();
             throw exception;
         }
+    }
+
+    /**
+     * Enables fragment-shader evaluation of shapes and gradients.
+     *
+     * @return true because analytic shapes are supported
+     */
+    @Override
+    public boolean supportsAnalyticShapes() {
+        return true;
     }
 
     /**
@@ -212,11 +228,18 @@ public final class OpenGlBackend implements RenderBackend {
         GL20.glUniform2f(viewportLocation, viewport.logicalWidth(), viewport.logicalHeight());
         GL20.glUniform1i(textureLocation, 0);
         GL11.glEnable(GL11.GL_SCISSOR_TEST);
+        Paint previousPaint = null;
+        boolean paintSet = false;
         for (Batch batch : batches) {
             if (!applyClip(batch.clip())) {
                 continue;
             }
             applyStencil(batch);
+            if (!paintSet || !Objects.equals(previousPaint, batch.paint())) {
+                applyPaint(batch.paint());
+                previousPaint = batch.paint();
+                paintSet = true;
+            }
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, batch.texture().id());
             GL11.glDrawArrays(GL11.GL_TRIANGLES, batch.firstVertex(), batch.vertexCount());
         }
@@ -304,6 +327,7 @@ public final class OpenGlBackend implements RenderBackend {
 
         Rect currentClip = null;
         GlTexture currentTexture = null;
+        Paint currentPaint = null;
         int currentStencilRef = 0;
         MaskAction currentAction = MaskAction.DRAW;
         int stencilDepth = 0;
@@ -313,14 +337,17 @@ public final class OpenGlBackend implements RenderBackend {
             MaskAction action = maskAction(command);
             int stencilRef = stencilDepth;
             GlTexture texture = asGlTexture(textureOf(command));
+            Paint paint = ShaderPaint.gradient(command);
             if (!command.clip().equals(currentClip) || texture != currentTexture
-                    || stencilRef != currentStencilRef || action != currentAction) {
+                    || stencilRef != currentStencilRef || action != currentAction
+                    || !Objects.equals(paint, currentPaint)) {
                 if (batchVertexCount > 0) {
                     batches.add(new Batch(batchStartVertex, batchVertexCount,
-                            currentClip, currentTexture, currentStencilRef, currentAction));
+                            currentClip, currentTexture, currentStencilRef, currentAction, currentPaint));
                 }
                 currentClip = command.clip();
                 currentTexture = texture;
+                currentPaint = paint;
                 currentStencilRef = stencilRef;
                 currentAction = action;
                 batchStartVertex = floatCount / FLOATS_PER_VERTEX;
@@ -352,7 +379,7 @@ public final class OpenGlBackend implements RenderBackend {
         }
         if (batchVertexCount > 0) {
             batches.add(new Batch(batchStartVertex, batchVertexCount,
-                    currentClip, currentTexture, currentStencilRef, currentAction));
+                    currentClip, currentTexture, currentStencilRef, currentAction, currentPaint));
         }
     }
 
@@ -405,20 +432,39 @@ public final class OpenGlBackend implements RenderBackend {
     private void appendQuad(DrawCommand command) {
         if (command instanceof ImageCommand image) {
             appendQuad(image.bounds(), image.radius(), image.color(), image.uv(), image.transform());
+        } else if (command instanceof ShapeCommand shape) {
+            appendQuad(shape.bounds(), shape.ellipse() ? -1 : shape.radius(), shape.color(),
+                    shape.bounds(), shape.transform(), true);
         } else {
-            appendQuad(command.bounds(), command.radius(), command.color(), FULL_UV, Transform.IDENTITY);
+            appendQuad(command.bounds(), command.radius(), command.color(), FULL_UV, Transform.IDENTITY, true);
         }
     }
 
     private void appendQuad(Rect bounds, float radius, Color color, Rect uv, Transform transform) {
+        appendQuad(bounds, radius, color, uv, transform, false);
+    }
+
+    private void appendQuad(Rect bounds, float radius, Color color, Rect uv, Transform transform, boolean feather) {
         float halfWidth = bounds.width() / 2;
         float halfHeight = bounds.height() / 2;
-        float x0 = bounds.x();
-        float y0 = bounds.y();
-        float x1 = bounds.right();
+        float padX = 0;
+        float padY = 0;
+        float determinant = Math.abs(transform.m00() * transform.m11() - transform.m01() * transform.m10());
+        if (feather && determinant > 0) {
+            // Reserve a physical pixel outside the contour so the shader can cover both sides of an edge.
+            padX = (Math.abs(transform.m11()) / viewport.scaleX()
+                    + Math.abs(transform.m01()) / viewport.scaleY()) / determinant;
+            padY = (Math.abs(transform.m10()) / viewport.scaleX()
+                    + Math.abs(transform.m00()) / viewport.scaleY()) / determinant;
+        }
+        float localWidth = halfWidth + padX;
+        float localHeight = halfHeight + padY;
+        float x0 = bounds.x() - padX;
+        float y0 = bounds.y() - padY;
+        float x1 = bounds.right() + padX;
         float y1 = y0;
         float x2 = x1;
-        float y2 = bounds.bottom();
+        float y2 = bounds.bottom() + padY;
         float x3 = x0;
         float y3 = y2;
         if (!transform.isIdentity()) {
@@ -436,21 +482,32 @@ public final class OpenGlBackend implements RenderBackend {
             y3 = bottomLeft.y();
         }
 
-        float u0 = uv.x();
-        float v0 = uv.y();
-        float u1 = uv.right();
-        float v1 = uv.bottom();
+        float padU = bounds.width() > 0 ? padX * uv.width() / bounds.width() : 0;
+        float padV = bounds.height() > 0 ? padY * uv.height() / bounds.height() : 0;
+        float u0 = uv.x() - padU;
+        float v0 = uv.y() - padV;
+        float u1 = uv.right() + padU;
+        float v1 = uv.bottom() + padV;
 
-        putVertex(x0, y0, -halfWidth, -halfHeight, halfWidth, halfHeight, radius, color, u0, v0);
-        putVertex(x1, y1, halfWidth, -halfHeight, halfWidth, halfHeight, radius, color, u1, v0);
-        putVertex(x2, y2, halfWidth, halfHeight, halfWidth, halfHeight, radius, color, u1, v1);
-        putVertex(x0, y0, -halfWidth, -halfHeight, halfWidth, halfHeight, radius, color, u0, v0);
-        putVertex(x2, y2, halfWidth, halfHeight, halfWidth, halfHeight, radius, color, u1, v1);
-        putVertex(x3, y3, -halfWidth, halfHeight, halfWidth, halfHeight, radius, color, u0, v1);
+        putVertex(x0, y0, -localWidth, -localHeight, halfWidth, halfHeight, radius, color, u0, v0);
+        putVertex(x1, y1, localWidth, -localHeight, halfWidth, halfHeight, radius, color, u1, v0);
+        putVertex(x2, y2, localWidth, localHeight, halfWidth, halfHeight, radius, color, u1, v1);
+        putVertex(x0, y0, -localWidth, -localHeight, halfWidth, halfHeight, radius, color, u0, v0);
+        putVertex(x2, y2, localWidth, localHeight, halfWidth, halfHeight, radius, color, u1, v1);
+        putVertex(x3, y3, -localWidth, localHeight, halfWidth, halfHeight, radius, color, u0, v1);
     }
 
     private void appendTexturedQuad(Rect bounds, Rect uv, Transform transform) {
         appendQuad(bounds, 0, Color.WHITE, uv, transform);
+    }
+
+    private void applyPaint(Paint paint) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            FloatBuffer parameters = stack.mallocFloat(ShaderPaint.FLOAT_COUNT);
+            ShaderPaint.write(paint, parameters);
+            parameters.flip();
+            GL20.glUniform4fv(paintLocation, parameters);
+        }
     }
 
     private void appendMesh(MeshCommand command) {
@@ -602,7 +659,7 @@ public final class OpenGlBackend implements RenderBackend {
     }
 
     private record Batch(int firstVertex, int vertexCount, Rect clip, GlTexture texture,
-                         int stencilRef, MaskAction action) {
+                         int stencilRef, MaskAction action, Paint paint) {
     }
 
     private enum MaskAction {
