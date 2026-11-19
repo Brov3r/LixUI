@@ -339,7 +339,7 @@ public class Label extends Widget {
             case BOTTOM -> height;
         };
         TextStyle style = layoutStyle(width);
-        Color color = textColor != null ? textColor : widgetStyle.text(state());
+        Color color = resolveTextColor(widgetStyle);
         if (shadow != null) {
             renderer.text(font, text, anchorX + shadow.offsetX(), anchorY + shadow.offsetY(),
                     shadow.color(), style);
@@ -349,6 +349,17 @@ public class Label extends Widget {
                     anchorX, anchorY, color);
         }
         renderer.text(font, text, anchorX, anchorY, color, style);
+    }
+
+    /**
+     * Resolves the color used to paint the text.
+     * The default returns the explicit text color or the state-aware style text color.
+     *
+     * @param widgetStyle resolved widget style
+     * @return the color used for the text and its decoration
+     */
+    protected Color resolveTextColor(WidgetStyle widgetStyle) {
+        return textColor != null ? textColor : widgetStyle.text(state());
     }
 
     private void drawDecoration(RenderManager renderer, TextLayout layout, Font font,

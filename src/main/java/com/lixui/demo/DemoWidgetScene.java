@@ -23,6 +23,7 @@ import com.lixui.theme.WidgetStyle;
 import com.lixui.widget.control.Button;
 import com.lixui.widget.control.CheckBox;
 import com.lixui.widget.control.Dropdown;
+import com.lixui.widget.control.Hyperlink;
 import com.lixui.widget.FrameInfo;
 import com.lixui.widget.control.Input;
 import com.lixui.widget.control.InputArea;
@@ -86,6 +87,7 @@ final class DemoWidgetScene implements AutoCloseable {
     private final Label bodyLabel;
     private final Label elidedLabel;
     private final Label decoratedLabel;
+    private final Hyperlink hyperlink;
     private final Label justifiedLabel;
     private final RichLabel richLabel;
     private final DemoStatsPanel statsPanel;
@@ -117,6 +119,7 @@ final class DemoWidgetScene implements AutoCloseable {
                 + "instead of growing past its width, even when the sentence is much longer "
                 + "than the space available for it.");
         decoratedLabel = new Label("Underline, strikethrough and a drop shadow");
+        hyperlink = new Hyperlink("Open the LixUI repository", "https://github.com/Brov3r/LixUI");
         justifiedLabel = new Label("Justified text spreads words so both edges stay flush, "
                 + "while the last line of the paragraph remains left-aligned, exactly like a "
                 + "word processor. Longer paragraphs make the effect obvious: the spacing "
@@ -557,7 +560,8 @@ final class DemoWidgetScene implements AutoCloseable {
         VBox page = new VBox();
         page.setPadding(CONTENT_PADDING);
         page.setGap(8);
-        page.add(sliderCaption("Filled bars"))
+        page.add(hyperlink)
+                .add(sliderCaption("Filled bars"))
                 .add(filledRow)
                 .add(sliderCaption("Outline bar"))
                 .add(outlineRow)
@@ -1048,6 +1052,7 @@ final class DemoWidgetScene implements AutoCloseable {
         elidedLabel.setOverflow(TextOverflow.ELLIPSIS);
         elidedLabel.setTextColor(theme.textMuted());
         decoratedLabel.setFontFamily(fontFamily);
+        hyperlink.setFontFamily(fontFamily);
         decoratedLabel.setDecoration(TextDecoration.UNDERLINE_AND_STRIKETHROUGH);
         decoratedLabel.setShadow(textShadow(theme));
         decoratedLabel.setTextColor(theme.text());

@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * A GLFW implementation of clipboard access and cursor changes.
+ * A GLFW implementation of clipboard access, cursor changes and URI opening.
  * Standard cursors are created lazily and released by {@link #close()}.
  * The adapter must be closed before its window is destroyed.
  */

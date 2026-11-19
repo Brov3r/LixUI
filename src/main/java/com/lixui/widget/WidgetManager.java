@@ -99,7 +99,7 @@ public final class WidgetManager implements AutoCloseable {
      *
      * @param input queue drained by {@link #update(float)}
      * @param backend backend that receives completed draw lists
-     * @param platform host adapter used for clipboard access and cursor changes
+     * @param platform host adapter used for clipboard access, cursor changes and URI opening
      * @throws NullPointerException if any argument is null
      */
     public WidgetManager(InputState input, RenderBackend backend, UiPlatform platform) {

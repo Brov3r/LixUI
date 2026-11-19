@@ -36,7 +36,7 @@ import java.util.function.Consumer;
 /**
  * Shared services and state available to attached widgets.
  * A context is owned by a {@link WidgetManager}; it exposes the logical viewport, display scale,
- * theme, default font, clipboard, cursor and resource factories.
+ * theme, default font, clipboard, cursor, URI opening and resource factories.
  * Textures and fonts created through the context are tracked and released by {@link #close()}.
  * Resources created directly through {@link RenderManager} are owned by the caller instead.
  */
@@ -242,6 +242,19 @@ public final class UiContext implements AutoCloseable {
         }
         platform.setCursor(cursor);
         this.cursor = cursor;
+    }
+
+    /**
+     * Opens a URI in the platform's default handler, usually a web browser.
+     *
+     * @param uri absolute URI to open
+     * @throws NullPointerException if {@code uri} is null
+     * @throws IllegalStateException if the context is closed
+     * @throws RuntimeException if the platform cannot open the URI
+     */
+    public void openUri(String uri) {
+        ensureOpen();
+        platform.openUri(Objects.requireNonNull(uri, "uri"));
     }
 
     /**
