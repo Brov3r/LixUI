@@ -18,12 +18,14 @@ import com.lixui.text.SystemFonts;
 import com.lixui.text.TextDecoration;
 import com.lixui.text.TextOverflow;
 import com.lixui.text.TextShadow;
+import com.lixui.text.VerticalAlignment;
 import com.lixui.theme.Theme;
 import com.lixui.theme.WidgetStyle;
 import com.lixui.widget.Button;
 import com.lixui.widget.FrameInfo;
 import com.lixui.widget.Label;
 import com.lixui.widget.RichLabel;
+import com.lixui.widget.TabPanel;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.Window;
@@ -54,7 +56,8 @@ final class DemoWidgetScene implements AutoCloseable {
     private final Widget background;
     private final Button themeButton;
     private final Window window;
-    private final VBox windowContent;
+    private final TabPanel outerTabs;
+    private final TabPanel innerTabs;
     private final Label titleLabel;
     private final Label bodyLabel;
     private final Label elidedLabel;
@@ -64,6 +67,7 @@ final class DemoWidgetScene implements AutoCloseable {
     private final DemoStatsPanel statsPanel;
     private final Texture lightThemeIcon;
     private final Texture darkThemeIcon;
+    private final Texture windowIcon;
     private final FontFamily fontFamily;
     private int fps;
     private int fpsFrames;
@@ -80,7 +84,7 @@ final class DemoWidgetScene implements AutoCloseable {
         darkThemeIcon = manager.context().createTexture(
                 ImageData.fromResource("assets/icons-128/dark-mode.png",
                         THEME_ICON_SIZE, THEME_ICON_SIZE));
-        Texture windowIcon = manager.context().createTexture(
+        windowIcon = manager.context().createTexture(
                 ImageData.fromResource("assets/icons-128/ui.png",
                         THEME_ICON_SIZE, THEME_ICON_SIZE));
         background = new Background();
@@ -103,21 +107,24 @@ final class DemoWidgetScene implements AutoCloseable {
                 + "the final line keeps its natural width.");
         justifiedLabel.setAlignment(HorizontalAlignment.JUSTIFY);
         richLabel = new RichLabel();
-        windowContent = new VBox();
-        windowContent.setPadding(CONTENT_PADDING);
-        windowContent.setGap(CONTENT_GAP);
-        windowContent.setBounds(new Rect(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT));
+        VBox labelsPage = new VBox();
+        labelsPage.setPadding(CONTENT_PADDING);
+        labelsPage.setGap(CONTENT_GAP);
         for (Widget label : List.of(titleLabel, bodyLabel, elidedLabel, decoratedLabel,
                 justifiedLabel, richLabel)) {
             label.setAutoSize(false);
         }
-        windowContent.add(titleLabel).add(bodyLabel).add(elidedLabel)
+        labelsPage.add(titleLabel).add(bodyLabel).add(elidedLabel)
                 .add(decoratedLabel).add(justifiedLabel).add(richLabel);
+        innerTabs = createInnerTabs();
+        outerTabs = new TabPanel();
+        outerTabs.addTab("Labels", labelsPage);
+        outerTabs.addTab("Tabs", innerTabs);
         window = new Window();
-        window.setTitle("Label & RichLabel");
+        window.setTitle("Label, RichLabel & TabPanel");
         window.setHeaderIcon(windowIcon);
         window.setHeaderIconSize(THEME_ICON_SIZE);
-        window.setContent(windowContent);
+        window.setContent(outerTabs);
         statsPanel = new DemoStatsPanel();
         applyStyles();
         manager.add(background).add(themeButton).add(statsPanel).add(window);
@@ -140,6 +147,30 @@ final class DemoWidgetScene implements AutoCloseable {
         float windowX = Math.max(0, (viewport.logicalWidth() - WINDOW_WIDTH) / 2);
         float windowY = Math.max(0, (viewport.logicalHeight() - WINDOW_HEIGHT) / 2);
         window.setBounds(new Rect(windowX, windowY, WINDOW_WIDTH, WINDOW_HEIGHT));
+    }
+
+    private TabPanel createInnerTabs() {
+        TabPanel tabs = new TabPanel();
+        tabs.setTabsClosable(true);
+        for (int index = 1; index <= 12; index++) {
+            Label page = new Label("Content of tab " + index);
+            page.setAlignment(HorizontalAlignment.CENTER);
+            page.setVerticalAlignment(VerticalAlignment.CENTER);
+            page.setAutoSize(false);
+            page.setFontFamily(fontFamily);
+            tabs.addTab("Tab " + index, page);
+        }
+        List<TabPanel.Tab> tabList = tabs.tabs();
+        tabList.get(0).setIcon(lightThemeIcon);
+        tabList.get(1).setIcon(darkThemeIcon);
+        tabList.get(2).setTitle("Locked");
+        tabList.get(2).setLocked(true);
+        tabList.get(3).setTitle("A very long tab title that is truncated");
+        tabList.get(4).setTitle("");
+        tabList.get(4).setIcon(windowIcon);
+        tabs.setTabClosable(tabList.get(0), false);
+        tabs.setTabMovable(tabList.get(11), false);
+        return tabs;
     }
 
     private FontFamily createFontFamily() {
@@ -168,6 +199,8 @@ final class DemoWidgetScene implements AutoCloseable {
         themeButton.setIconTint(theme.text());
         window.setStyle(withRadius(theme.panelStyle(), 12));
         statsPanel.setStyle(withRadius(theme.panelStyle(), 8));
+        outerTabs.setStyle(transparentPanelStyle(theme));
+        innerTabs.setStyle(withRadius(theme.panelStyle(), 8));
         titleLabel.setFontFamily(fontFamily);
         titleLabel.setFontStyle(FontStyle.BOLD);
         titleLabel.setDecoration(TextDecoration.UNDERLINE);
@@ -185,6 +218,12 @@ final class DemoWidgetScene implements AutoCloseable {
         justifiedLabel.setFontFamily(fontFamily);
         richLabel.setFontFamily(fontFamily);
         rebuildRichLabel(theme);
+    }
+
+    private static WidgetStyle transparentPanelStyle(Theme theme) {
+        return new WidgetStyle(Color.TRANSPARENT, Color.TRANSPARENT, Color.TRANSPARENT,
+                Color.TRANSPARENT, theme.text(), theme.textMuted(), theme.border(),
+                theme.focusRing(), 0, 0, 0);
     }
 
     private static boolean isLight(Theme theme) {
@@ -240,7 +279,7 @@ final class DemoWidgetScene implements AutoCloseable {
     void render() {
         float contentWidth = Math.max(0, window.bounds().width());
         float contentHeight = Math.max(0, window.bounds().height() - window.headerHeight());
-        windowContent.setBounds(new Rect(0, 0, contentWidth, contentHeight));
+        outerTabs.setSize(contentWidth, contentHeight);
         statsPanel.resizeToContent(manager.renderer());
         manager.render();
         statsPanel.setDrawCalls(backend.drawCallCount());
