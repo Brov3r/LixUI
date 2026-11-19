@@ -2,8 +2,14 @@ package com.lixui.text;
 
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -12,6 +18,37 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SystemFontsTest {
+    @Test
+    void familyLookupPrefersRegularEvenWhenBoldIsScannedFirst(@TempDir Path directory) throws IOException {
+        for (String family : List.of("Arial", "DejaVu Sans", "Liberation Sans")) {
+            Optional<FontData> regular = SystemFonts.find(family);
+            Optional<FontData> bold = SystemFonts.find(family, FontStyle.BOLD);
+            if (regular.isEmpty() || bold.isEmpty()) {
+                continue;
+            }
+            Path first = Files.createDirectory(directory.resolve("first"));
+            Path second = Files.createDirectory(directory.resolve("second"));
+            Path boldFile = first.resolve("face.ttf");
+            Path regularFile = second.resolve("face.ttf");
+            assertTrue(SystemFonts.find("  " + family + "  ", FontStyle.BOLD).isPresent());
+            Files.write(boldFile, bytes(bold.get()));
+            Files.write(regularFile, bytes(regular.get()));
+            SystemFonts.Index index = SystemFonts.scan(List.of(first, second));
+            String key = family.toLowerCase(Locale.ROOT);
+            assertEquals(regularFile, index.paths().get(key));
+            assertEquals(boldFile, index.paths().get(key + " bold"));
+            return;
+        }
+        Assumptions.abort("No installed regular/bold test pair.");
+    }
+
+    private static byte[] bytes(FontData data) {
+        ByteBuffer buffer = data.buffer().duplicate();
+        byte[] bytes = new byte[buffer.remaining()];
+        buffer.get(bytes);
+        return bytes;
+    }
+
     @Test
     void resolvesInstalledBoldAndItalicFacesWhenAvailable() {
         String family = null;

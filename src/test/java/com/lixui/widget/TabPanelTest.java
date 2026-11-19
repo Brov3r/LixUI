@@ -348,6 +348,46 @@ class TabPanelTest {
         assertThrows(NullPointerException.class, () -> tab.setIconSide(null));
     }
 
+    @Test
+    void prefersAdjacentPageOverADistantUnlockedTab() {
+        TabPanel panel = panel();
+        TabPanel.Tab adjacent = panel.addTab("Left", null);
+        TabPanel.Tab active = panel.addTab("Active", null);
+        panel.addTab("Locked", null).setLocked(true);
+        panel.addTab("Distant", null);
+        panel.select(active);
+        panel.removeTab(active);
+        assertSame(adjacent, panel.selected());
+    }
+
+    @Test
+    void queuedScrollInputRespectsTheLatestTargetAndViewport() {
+        try (WidgetManager manager = manager(new TestBackend())) {
+            TabPanel panel = panel();
+            panel.setBounds(new Rect(0, 0, 200, 100));
+            for (int index = 0; index < 10; index++) {
+                panel.addTab("Tab", null);
+            }
+            manager.add(panel);
+            manager.render();
+            manager.handle(new PointerScrolled(50, 15, 0, -1));
+            manager.handle(new PointerScrolled(50, 15, 0, -1));
+            manager.update(0.2f);
+            assertEquals(96, panel.scrollOffset(), 0.001f);
+
+            panel.scrollTo(0);
+            panel.scrollTo(panel.scrollOffset());
+            manager.update(0.2f);
+            assertEquals(96, panel.scrollOffset(), 0.001f);
+
+            panel.scrollTo(200);
+            panel.setBounds(new Rect(0, 0, 800, 100));
+            manager.render();
+            manager.update(0.2f);
+            assertEquals(0, panel.scrollOffset(), 0.001f);
+        }
+    }
+
     private static TabPanel panel() {
         TabPanel panel = new TabPanel();
         panel.setBounds(new Rect(0, 0, 400, 300));

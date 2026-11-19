@@ -60,7 +60,6 @@ public class TabPanel extends Panel {
     private static final float DRAG_EDGE = 18;
     private static final float DRAG_SCROLL_SPEED = 320;
     private static final float TAB_ANIMATION_RATE = 14;
-    private static final Rect FULL_UV = new Rect(0, 0, 1, 1);
 
     private final List<Tab> tabs = new ArrayList<>();
     private final TabStrip strip = new TabStrip();
@@ -147,14 +146,17 @@ public class TabPanel extends Panel {
         if (tab.content() != null) {
             remove(tab.content());
         }
+        strip.relayout();
         if (selected == tab) {
-            selected = firstSelectableFrom(Math.min(index, tabs.size() - 1));
+            selected = nearestSelectable(index);
             updateContentVisibility();
+            if (selected != null) {
+                strip.ensureVisible(selected);
+            }
             if (onChange != null) {
                 onChange.accept(selected);
             }
         }
-        strip.relayout();
         return true;
     }
 
@@ -446,8 +448,8 @@ public class TabPanel extends Panel {
      */
     public void setTabMaxWidth(float tabMaxWidth) {
         validateTabWidth(tabMaxWidth);
-        if (tabMaxWidth < tabMinWidth) {
-            throw new IllegalArgumentException("Maximum tab width cannot be below the minimum.");
+        if (tabMaxWidth == 0 || tabMaxWidth < tabMinWidth) {
+            throw new IllegalArgumentException("Maximum tab width must be positive and at least the minimum.");
         }
         this.tabMaxWidth = tabMaxWidth;
     }
@@ -641,7 +643,7 @@ public class TabPanel extends Panel {
             contentWidth = size.width();
             contentHeight = size.height();
         }
-        return new Size(Math.max(stripWidth, contentWidth) + contentPadding * 2,
+        return new Size(Math.max(stripWidth, contentWidth + contentPadding * 2),
                 tabHeight + contentHeight + contentPadding * 2);
     }
 
@@ -721,19 +723,14 @@ public class TabPanel extends Panel {
         }
     }
 
-    private Tab firstSelectableFrom(int index) {
-        if (tabs.isEmpty()) {
-            return null;
-        }
-        int start = Math.max(0, index);
-        for (int current = start; current < tabs.size(); current++) {
-            if (!tabs.get(current).isLocked()) {
-                return tabs.get(current);
+    private Tab nearestSelectable(int removedIndex) {
+        for (int right = removedIndex, left = removedIndex - 1;
+                right < tabs.size() || left >= 0; right++, left--) {
+            if (right < tabs.size() && !tabs.get(right).isLocked()) {
+                return tabs.get(right);
             }
-        }
-        for (int current = Math.min(start, tabs.size()) - 1; current >= 0; current--) {
-            if (!tabs.get(current).isLocked()) {
-                return tabs.get(current);
+            if (left >= 0 && !tabs.get(left).isLocked()) {
+                return tabs.get(left);
             }
         }
         return null;
@@ -789,15 +786,15 @@ public class TabPanel extends Panel {
         if (context == null) {
             return;
         }
-        int size = Math.max(1, Math.min(128, (int) Math.ceil(14 * context.density())));
+        int size = Math.max(1, Math.min(128, (int) Math.ceil(ARROW_ICON * context.density())));
         if (arrowLeft != null && arrowPixelSize == size) {
             return;
         }
         Texture left = null;
         Texture right = null;
         try {
-            left = context.acquireIcon("assets/icons-128/arrow-left-04.png", size);
-            right = context.acquireIcon("assets/icons-128/arrow-right-04.png", size);
+            left = context.acquireIcon("arrow-left-04.png", size);
+            right = context.acquireIcon("arrow-right-04.png", size);
         } catch (RuntimeException | Error exception) {
             releaseIcon(left);
             releaseIcon(right);
@@ -1138,8 +1135,7 @@ public class TabPanel extends Panel {
             float textX = tab.iconSide() == IconSide.LEFT ? startX + iconWidth + gap : startX;
             if (iconWidth > 0) {
                 float iconY = TAB_INSET + (cellHeight - iconSize) / 2;
-                renderer.image(tab.icon(), new Rect(iconX, iconY, iconSize, iconSize),
-                        FULL_UV, iconStyle, 0, textColor);
+                renderer.icon(tab.icon(), new Rect(iconX, iconY, iconSize, iconSize), iconStyle, textColor);
             }
             if (textWidth > 0) {
                 renderer.text(font, tab.title(), textX, cellHeight / 2 + TAB_INSET, textColor,
@@ -1171,8 +1167,8 @@ public class TabPanel extends Panel {
                     ARROW_RADIUS * 2, ARROW_RADIUS * 2), ARROW_RADIUS, background);
             Color color = enabled ? theme.text() : theme.textMuted().withAlpha(0.55f);
             if (icon != null) {
-                renderer.image(icon, new Rect(centerX - ARROW_ICON / 2, centerY - ARROW_ICON / 2,
-                        ARROW_ICON, ARROW_ICON), 0, FULL_UV, color);
+                renderer.icon(icon, new Rect(centerX - ARROW_ICON / 2, centerY - ARROW_ICON / 2,
+                        ARROW_ICON, ARROW_ICON), ImageStyle.FILL, color);
                 return;
             }
             float tipX = centerX + (direction < 0 ? -3 : 3);
@@ -1198,6 +1194,9 @@ public class TabPanel extends Panel {
             viewportWidth = Math.max(1, overflow ? width - ARROW_WIDTH * 2 : width);
             maxScroll = Math.max(0, total - viewportWidth);
             scrollX = clamp(scrollX, 0, maxScroll);
+            if (scrollAnimation != null && scrollAnimation.to() > maxScroll) {
+                scrollTo(maxScroll);
+            }
         }
 
         private Rect tabBounds(int index) {
@@ -1330,15 +1329,20 @@ public class TabPanel extends Panel {
             }
             float start = tabStarts[index];
             float end = start + tabWidths[index];
-            if (start < scrollX) {
+            float target = scrollTarget();
+            if (start < target) {
                 scrollTo(start);
-            } else if (end > scrollX + viewportWidth) {
+            } else if (end > target + viewportWidth) {
                 scrollTo(end - viewportWidth);
             }
         }
 
         private void scrollBy(float delta) {
-            scrollTo(scrollX + delta);
+            scrollTo(scrollTarget() + delta);
+        }
+
+        private float scrollTarget() {
+            return scrollAnimation == null ? scrollX : scrollAnimation.to();
         }
 
         private void scrollImmediately(float delta) {
@@ -1348,6 +1352,7 @@ public class TabPanel extends Panel {
 
         private void scrollTo(float target) {
             float clamped = clamp(target, 0, maxScroll);
+            cancelScrollAnimation();
             if (Math.abs(clamped - scrollX) < 0.5f) {
                 scrollX = clamped;
                 return;
@@ -1357,7 +1362,6 @@ public class TabPanel extends Panel {
                 scrollX = clamped;
                 return;
             }
-            cancelScrollAnimation();
             animationOwner = animator;
             scrollAnimation = animator.animate(scrollX, clamped, SCROLL_SECONDS, Easing.EASE_OUT,
                     value -> scrollX = value).setOnComplete(() -> scrollAnimation = null);

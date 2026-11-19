@@ -1,8 +1,11 @@
 package com.lixui.backend.vulkan;
 
+import com.lixui.backend.MipmapScenario;
 import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
 import com.lixui.render.RenderManager;
+import com.lixui.render.Texture;
+import com.lixui.render.TextureFilter;
 import com.lixui.render.Viewport;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -52,6 +55,30 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class VulkanLayerTest {
     private static final int SIZE = 64;
     private static final int PIXELS = SIZE * SIZE;
+
+    @Test
+    void samplesGeneratedMipLevelsDuringMinification() {
+        try (Host host = new Host();
+                VulkanLayer layer = new VulkanLayer(host.physical, host.device, host.queue, host.family,
+                        host.loadPass, VK10.VK_SAMPLE_COUNT_1_BIT)) {
+            RenderManager renderer = new RenderManager(layer);
+            renderer.resize(new Viewport(SIZE, SIZE, SIZE, SIZE));
+            Texture nearest = MipmapScenario.stripes(renderer, TextureFilter.NEAREST);
+            Texture linear = MipmapScenario.stripes(renderer, TextureFilter.LINEAR);
+            host.begin();
+            layer.beginFrame(host.command);
+            renderer.begin();
+            MipmapScenario.draw(renderer, nearest, linear);
+            renderer.end();
+            layer.endFrame();
+            host.beginPass(host.clearPass);
+            layer.composite(host.command);
+            VK10.vkCmdEndRenderPass(host.command);
+            host.readBack();
+            host.assertPixel(4, 4, 191, 191, 191);
+            host.assertPixel(2, 14, 128, 128, 128);
+        }
+    }
 
     @Test
     void isolatesUiAttachmentsAndCompositesOverExistingSceneColor() {

@@ -632,6 +632,7 @@ public final class Font {
         float top = alignedTop(0, specs.size() * resolvedLineHeight, style.vertical());
         List<TextGlyph> quads = new ArrayList<>();
         List<TextLine> lines = new ArrayList<>(specs.size());
+        float[] spacing = new float[specs.size()];
         boolean justify = style.horizontal() == HorizontalAlignment.JUSTIFY;
         float maxWidth = 0;
         for (int index = 0; index < specs.size(); index++) {
@@ -639,9 +640,9 @@ public final class Font {
             String lineText = spec.text();
             float width = walk(lineText, 0, 0, null).width();
             int spaces = spaceCount(lineText);
-            boolean lastOfParagraph = spec.end() >= text.length() || text.charAt(spec.end()) == '\n';
-            float extraSpace = justify && !lastOfParagraph && spaces > 0 && style.maxWidth() > width
+            float extraSpace = justify && !spec.paragraphEnd() && spaces > 0 && style.maxWidth() > width
                     ? (style.maxWidth() - width) / spaces : 0;
+            spacing[index] = extraSpace;
             float lineX = justify ? 0 : alignedX(0, width, style.horizontal());
             float lineY = top + index * resolvedLineHeight;
             walk(lineText, lineX, lineY, quads, extraSpace);
@@ -650,10 +651,10 @@ public final class Font {
             maxWidth = Math.max(maxWidth, visibleWidth);
         }
         return new TextLayout(this, text, style, new Size(maxWidth, specs.size() * resolvedLineHeight),
-                resolvedLineHeight, quads, lines);
+                resolvedLineHeight, quads, lines, spacing);
     }
 
-    static int spaceCount(String text) {
+    private static int spaceCount(String text) {
         int count = 0;
         for (int index = 0; index < text.length(); index++) {
             char character = text.charAt(index);
@@ -690,33 +691,37 @@ public final class Font {
     private void wrapParagraph(String paragraph, int paragraphStart, TextStyle style,
                                List<LineSpec> lines) {
         if (paragraph.isEmpty()) {
-            lines.add(new LineSpec(paragraphStart, paragraphStart, ""));
+            lines.add(new LineSpec(paragraphStart, paragraphStart, "", true));
             return;
         }
         float maxWidth = style.maxWidth();
         if (maxWidth <= 0) {
-            lines.add(new LineSpec(paragraphStart, paragraphStart + paragraph.length(), paragraph));
+            lines.add(new LineSpec(paragraphStart, paragraphStart + paragraph.length(), paragraph, true));
             return;
         }
         int lineStart = 0;
         while (lineStart < paragraph.length()) {
             int lineEnd = findLineEnd(paragraph, lineStart, maxWidth);
             String lineText = paragraph.substring(lineStart, lineEnd);
-            lines.add(new LineSpec(paragraphStart + lineStart, paragraphStart + lineEnd, lineText));
+            int start = paragraphStart + lineStart;
             lineStart = lineEnd;
-            while (lineStart < paragraph.length() && paragraph.charAt(lineStart) == ' ') {
+            while (lineStart < paragraph.length()
+                    && (paragraph.charAt(lineStart) == ' ' || paragraph.charAt(lineStart) == '\t')) {
                 lineStart++;
             }
+            lines.add(new LineSpec(start, paragraphStart + lineEnd, lineText, lineStart == paragraph.length()));
         }
     }
 
     private int findLineEnd(String paragraph, int start, float maxWidth) {
         int end = start;
         int lastBreak = -1;
+        LinePen pen = new LinePen();
         while (end < paragraph.length()) {
             int codepoint = paragraph.codePointAt(end);
             int next = end + Character.charCount(codepoint);
-            boolean overflow = walk(paragraph.substring(start, next), 0, 0, null).width() > maxWidth;
+            pen.advance(codepoint, 0);
+            boolean overflow = pen.x > maxWidth;
             if (overflow) {
                 if (end == start) {
                     end = next;
@@ -748,10 +753,10 @@ public final class Font {
                 keep = previous;
             }
             if (walk(ellipsis, 0, 0, null).width() > maxWidth) {
-                return new LineSpec(line.start(), line.start(), "");
+                return new LineSpec(line.start(), line.start(), "", true);
             }
         }
-        return new LineSpec(line.start(), line.start() + keep, text.substring(0, keep) + ellipsis);
+        return new LineSpec(line.start(), line.start() + keep, text.substring(0, keep) + ellipsis, true);
     }
 
     private Size walk(String text, float x, float y, List<TextGlyph> quads) {
@@ -759,61 +764,59 @@ public final class Font {
     }
 
     private Size walk(String text, float x, float y, List<TextGlyph> quads, float extraSpace) {
-        float penX = x;
+        LinePen pen = new LinePen();
         float baseline = y + ascent;
-        float lineWidth = 0;
         float maxWidth = 0;
         int lines = 1;
-        int previous = -1;
         for (int index = 0; index < text.length(); ) {
             int codepoint = text.codePointAt(index);
             index += Character.charCount(codepoint);
             if (codepoint == '\n') {
-                maxWidth = Math.max(maxWidth, lineWidth);
-                penX = x;
-                lineWidth = 0;
+                maxWidth = Math.max(maxWidth, pen.x);
+                pen = new LinePen();
                 baseline += lineHeight;
-                previous = -1;
                 lines++;
                 continue;
             }
-            if (codepoint == '\r') {
-                continue;
-            }
-            if (codepoint == '\t') {
-                Glyph space = glyphs.get((int) ' ');
-                if (space != null) {
-                    penX += (space.advance() + letterSpacing) * 4 + extraSpace;
-                    lineWidth = penX - x;
-                }
-                previous = -1;
-                continue;
-            }
-            Glyph glyph = glyphs.get(codepoint);
-            if (glyph == null) {
-                previous = -1;
-                continue;
-            }
-            if (previous >= 0) {
-                penX += letterSpacing;
-                Float pair = kerning.get(pairKey(previous, codepoint));
-                if (pair != null) {
-                    penX += pair;
-                }
-            }
-            if (quads != null && glyph.width() > 0 && glyph.height() > 0) {
-                quads.add(new TextGlyph(new Rect(penX + glyph.offsetX(), baseline + glyph.offsetY(),
+            Glyph glyph = pen.advance(codepoint, extraSpace);
+            if (quads != null && glyph != null && glyph.width() > 0 && glyph.height() > 0) {
+                quads.add(new TextGlyph(new Rect(x + pen.origin + glyph.offsetX(), baseline + glyph.offsetY(),
                         glyph.width(), glyph.height()), glyph.uv()));
             }
-            penX += glyph.advance();
-            if (codepoint == ' ') {
-                penX += extraSpace;
-            }
-            lineWidth = penX - x;
-            previous = codepoint;
         }
-        maxWidth = Math.max(maxWidth, lineWidth);
+        maxWidth = Math.max(maxWidth, pen.x);
         return new Size(maxWidth, lines * lineHeight);
+    }
+
+    final class LinePen {
+        private float x;
+        private float origin;
+        private int previous = -1;
+
+        float position() {
+            return x;
+        }
+
+        Glyph advance(int codepoint, float extraSpace) {
+            if (codepoint == '\r') {
+                return null;
+            }
+            Glyph glyph = glyphs.get(codepoint == '\t' ? ' ' : codepoint);
+            if (glyph == null || codepoint == '\t') {
+                if (glyph != null) {
+                    x += (glyph.advance() + letterSpacing) * 4 + extraSpace;
+                }
+                previous = -1;
+                return null;
+            }
+            if (previous >= 0) {
+                x += letterSpacing + kerning(previous, codepoint);
+            }
+            origin = x;
+            x += glyph.advance() + (codepoint == ' ' ? extraSpace : 0);
+            previous = codepoint;
+            return glyph;
+        }
     }
 
     private static void validateOrigin(float x, float y) {
@@ -890,7 +893,14 @@ public final class Font {
         if (height > MAX_ATLAS_SIZE) {
             throw new IllegalArgumentException("Font atlas height exceeds " + MAX_ATLAS_SIZE + " pixels.");
         }
-        return new Packing(width, height, new byte[width * height * 4], placed);
+        byte[] pixels = new byte[width * height * 4];
+        // Linear filtering must interpolate coverage, not darken the tint at glyph borders.
+        for (int offset = 0; offset < pixels.length; offset += 4) {
+            pixels[offset] = (byte) 0xFF;
+            pixels[offset + 1] = (byte) 0xFF;
+            pixels[offset + 2] = (byte) 0xFF;
+        }
+        return new Packing(width, height, pixels, placed);
     }
 
     private static void rasterize(STBTTFontinfo info, StyledDraft draft, float scale,
@@ -961,9 +971,6 @@ public final class Font {
             for (int column = 0; column < sourceWidth; column++) {
                 int alpha = source[row * sourceWidth + column] & 0xFF;
                 int offset = ((y + row) * atlasWidth + x + column) * 4;
-                pixels[offset] = (byte) 0xFF;
-                pixels[offset + 1] = (byte) 0xFF;
-                pixels[offset + 2] = (byte) 0xFF;
                 pixels[offset + 3] = (byte) alpha;
             }
         }
@@ -1023,7 +1030,7 @@ public final class Font {
     private record TextLayoutKey(String text, TextStyle style) {
     }
 
-    private record LineSpec(int start, int end, String text) {
+    private record LineSpec(int start, int end, String text, boolean paragraphEnd) {
     }
 
     private record Packing(int width, int height, byte[] pixels, List<PlacedGlyph> placed) {

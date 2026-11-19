@@ -4,7 +4,6 @@ import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
 import com.lixui.platform.UiPlatform;
-import com.lixui.render.ImageData;
 import com.lixui.render.RenderBackend;
 import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
@@ -35,8 +34,10 @@ import com.lixui.widget.WidgetManager;
 import com.lixui.widget.Window;
 import com.lixui.widget.layout.VBox;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 /**
  * A widget scene that demonstrates labels, rich text, themed controls and a scrollable window.
@@ -69,9 +70,9 @@ final class DemoWidgetScene implements AutoCloseable {
     private final Label justifiedLabel;
     private final RichLabel richLabel;
     private final DemoStatsPanel statsPanel;
-    private final Texture lightThemeIcon;
-    private final Texture darkThemeIcon;
-    private final Texture windowIcon;
+    private final List<IconSlot> iconSlots = new ArrayList<>();
+    private Texture lightThemeIcon;
+    private Texture darkThemeIcon;
     private final FontFamily fontFamily;
     private int fps;
     private int fpsFrames;
@@ -82,19 +83,11 @@ final class DemoWidgetScene implements AutoCloseable {
         this.backend = backend;
         manager = new WidgetManager(input, backend, platform);
         fontFamily = createFontFamily();
-        lightThemeIcon = manager.context().createTexture(
-                ImageData.fromResource("assets/icons-128/light-mode.png",
-                        THEME_ICON_SIZE, THEME_ICON_SIZE));
-        darkThemeIcon = manager.context().createTexture(
-                ImageData.fromResource("assets/icons-128/dark-mode.png",
-                        THEME_ICON_SIZE, THEME_ICON_SIZE));
-        windowIcon = manager.context().createTexture(
-                ImageData.fromResource("assets/icons-128/ui.png",
-                        THEME_ICON_SIZE, THEME_ICON_SIZE));
         background = new Background();
         themeButton = new Button();
         themeButton.setIconSize(THEME_ICON_SIZE);
-        themeButton.setIcon(lightThemeIcon);
+        bindIcon("light-mode.png", THEME_ICON_SIZE, icon -> lightThemeIcon = icon);
+        bindIcon("dark-mode.png", THEME_ICON_SIZE, icon -> darkThemeIcon = icon);
         themeButton.setOnAction(this::toggleTheme);
         titleLabel = new Label("Labels and rich text");
         bodyLabel = new Label("A wrapped label reflows at the window width and aligns its text "
@@ -121,19 +114,13 @@ final class DemoWidgetScene implements AutoCloseable {
         labelsPage.add(titleLabel).add(bodyLabel).add(elidedLabel)
                 .add(decoratedLabel).add(justifiedLabel).add(richLabel);
         innerTabs = createInnerTabs();
-        Texture labelsIcon = manager.context().createTexture(
-                ImageData.fromResource("assets/icons-128/text.png",
-                        THEME_ICON_SIZE, THEME_ICON_SIZE));
-        Texture controlsIcon = manager.context().createTexture(
-                ImageData.fromResource("assets/icons-128/adjustment.png",
-                        THEME_ICON_SIZE, THEME_ICON_SIZE));
         outerTabs = new TabPanel();
-        outerTabs.addTab("Labels", labelsIcon, labelsPage);
-        outerTabs.addTab("Tabs", windowIcon, innerTabs);
-        outerTabs.addTab("Controls", controlsIcon, createControlsPage());
+        bindIcon("text.png", outerTabs.iconSize(), outerTabs.addTab("Labels", labelsPage)::setIcon);
+        bindIcon("ui.png", outerTabs.iconSize(), outerTabs.addTab("Tabs", innerTabs)::setIcon);
+        bindIcon("adjustment.png", outerTabs.iconSize(), outerTabs.addTab("Controls", createControlsPage())::setIcon);
         window = new Window();
         window.setTitle("LixUI - Demo Window");
-        window.setHeaderIcon(windowIcon);
+        bindIcon("ui.png", THEME_ICON_SIZE, window::setHeaderIcon);
         window.setHeaderIconSize(THEME_ICON_SIZE);
         window.setContent(outerTabs);
         statsPanel = new DemoStatsPanel();
@@ -152,6 +139,10 @@ final class DemoWidgetScene implements AutoCloseable {
         }
         this.viewport = viewport;
         manager.resize(viewport);
+        for (IconSlot slot : iconSlots) {
+            slot.resize(manager.context().density());
+        }
+        themeButton.setIcon(manager.context().theme().equals(Theme.light()) ? darkThemeIcon : lightThemeIcon);
         background.setBounds(new Rect(0, 0, viewport.logicalWidth(), viewport.logicalHeight()));
         themeButton.setBounds(new Rect(16, 16, THEME_BUTTON_SIZE, THEME_BUTTON_SIZE));
         statsPanel.setPosition(16 + THEME_BUTTON_SIZE + STATS_GAP, 16);
@@ -172,13 +163,13 @@ final class DemoWidgetScene implements AutoCloseable {
             tabs.addTab("Tab " + index, page);
         }
         List<TabPanel.Tab> tabList = tabs.tabs();
-        tabList.get(0).setIcon(lightThemeIcon);
-        tabList.get(1).setIcon(darkThemeIcon);
+        bindIcon("light-mode.png", tabs.iconSize(), tabList.get(0)::setIcon);
+        bindIcon("dark-mode.png", tabs.iconSize(), tabList.get(1)::setIcon);
         tabList.get(2).setTitle("Locked");
         tabList.get(2).setLocked(true);
         tabList.get(3).setTitle("A very long tab title that is truncated");
         tabList.get(4).setTitle("");
-        tabList.get(4).setIcon(windowIcon);
+        bindIcon("ui.png", tabs.iconSize(), tabList.get(4)::setIcon);
         tabs.setTabClosable(tabList.get(0), false);
         tabs.setTabMovable(tabList.get(11), false);
         return tabs;
@@ -226,41 +217,17 @@ final class DemoWidgetScene implements AutoCloseable {
 
         SegmentedButton actions = new SegmentedButton();
         actions.setTooltipText("Each segment runs its own action.");
-        Texture cutIcon = manager.context().createTexture(
-                ImageData.fromResource("assets/icons-128/scissors.png",
-                        THEME_ICON_SIZE, THEME_ICON_SIZE));
-        Texture copyIcon = manager.context().createTexture(
-                ImageData.fromResource("assets/icons-128/copy.png",
-                        THEME_ICON_SIZE, THEME_ICON_SIZE));
-        Texture pasteIcon = manager.context().createTexture(
-                ImageData.fromResource("assets/icons-128/paste.png",
-                        THEME_ICON_SIZE, THEME_ICON_SIZE));
-        Texture trashIcon = manager.context().createTexture(
-                ImageData.fromResource("assets/icons-128/trash.png",
-                        THEME_ICON_SIZE, THEME_ICON_SIZE));
-        actions.addSegment("Cut", cutIcon)
-                .setOnAction(() -> status.setText("Cut segment clicked"));
-        actions.addSegment("Copy", copyIcon)
-                .setOnAction(() -> status.setText("Copy segment clicked"));
-        actions.addSegment("Paste", pasteIcon)
-                .setOnAction(() -> status.setText("Paste segment clicked"));
-        actions.addSegment("Delete", trashIcon).setEnabled(false);
+        addIconSegment(actions, "Cut", "scissors.png").setOnAction(() -> status.setText("Cut segment clicked"));
+        addIconSegment(actions, "Copy", "copy.png").setOnAction(() -> status.setText("Copy segment clicked"));
+        addIconSegment(actions, "Paste", "paste.png").setOnAction(() -> status.setText("Paste segment clicked"));
+        addIconSegment(actions, "Delete", "trash.png").setEnabled(false);
 
         SegmentedButton alignment = new SegmentedButton();
         alignment.setSelectionMode(SegmentedButton.SelectionMode.SINGLE);
         alignment.setTooltipText("Radio-like selection; icons can be hidden above.");
-        Texture leftIcon = manager.context().createTexture(
-                ImageData.fromResource("assets/icons-128/align-left-02.png",
-                        THEME_ICON_SIZE, THEME_ICON_SIZE));
-        Texture centerIcon = manager.context().createTexture(
-                ImageData.fromResource("assets/icons-128/align-horizontal-centers-02.png",
-                        THEME_ICON_SIZE, THEME_ICON_SIZE));
-        Texture rightIcon = manager.context().createTexture(
-                ImageData.fromResource("assets/icons-128/align-right-02.png",
-                        THEME_ICON_SIZE, THEME_ICON_SIZE));
-        alignment.addSegment("Left", leftIcon);
-        alignment.addSegment("Center", centerIcon);
-        alignment.addSegment("Right", rightIcon);
+        addIconSegment(alignment, "Left", "align-left-02.png");
+        addIconSegment(alignment, "Center", "align-horizontal-centers-02.png");
+        addIconSegment(alignment, "Right", "align-right-02.png");
         alignment.setSelectedIndex(1);
         alignment.setOnSelectionChange(index ->
                 status.setText("Alignment segment " + index + " selected"));
@@ -296,6 +263,42 @@ final class DemoWidgetScene implements AutoCloseable {
                 manager.context().createFont(data.get(), 16, FontStyle.BOLD),
                 manager.context().createFont(data.get(), 16, FontStyle.ITALIC),
                 manager.context().createFont(data.get(), 16, FontStyle.BOLD_ITALIC));
+    }
+
+    private SegmentedButton.Segment addIconSegment(SegmentedButton button, String text, String name) {
+        SegmentedButton.Segment segment = button.addSegment(text);
+        bindIcon(name, button.iconSize(), segment::setIcon);
+        return segment;
+    }
+
+    private void bindIcon(String name, float size, Consumer<Texture> assign) {
+        iconSlots.add(new IconSlot(name, size, assign));
+    }
+
+    private final class IconSlot {
+        private final String name;
+        private final float size;
+        private final Consumer<Texture> assign;
+        private Texture texture;
+
+        private IconSlot(String name, float size, Consumer<Texture> assign) {
+            this.name = name;
+            this.size = size;
+            this.assign = assign;
+        }
+
+        private void resize(float density) {
+            int pixels = Math.clamp(Math.round(size * density), 1, 128);
+            if (texture != null && texture.width() == pixels) {
+                return;
+            }
+            Texture previous = texture;
+            texture = manager.context().createBundledIcon(name, pixels);
+            assign.accept(texture);
+            if (previous != null) {
+                manager.context().destroyTexture(previous);
+            }
+        }
     }
 
     private void toggleTheme() {

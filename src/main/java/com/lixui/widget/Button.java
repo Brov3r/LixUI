@@ -32,7 +32,6 @@ public class Button extends Panel {
             HorizontalAlignment.CENTER, VerticalAlignment.CENTER);
     private static final TextStyle LEADING = TextStyle.of(
             HorizontalAlignment.LEFT, VerticalAlignment.CENTER);
-    private static final Rect FULL_UV = new Rect(0, 0, 1, 1);
     private static final float DEFAULT_ICON_SIZE = 20;
     private static final float ICON_GAP = 8;
 
@@ -293,8 +292,7 @@ public class Button extends Panel {
         float contentWidth = iconSize + (hasText ? ICON_GAP + textSize.width() : 0);
         float contentX = centerX - contentWidth / 2;
         Color tint = iconColor(state(), style);
-        renderer.image(icon, new Rect(contentX, centerY - iconSize / 2, iconSize, iconSize),
-                FULL_UV, iconStyle, 0, tint);
+        renderer.icon(icon, new Rect(contentX, centerY - iconSize / 2, iconSize, iconSize), iconStyle, tint);
         if (hasText) {
             renderer.text(font, text, contentX + iconSize + ICON_GAP,
                     centerY, style.text(state()), LEADING);

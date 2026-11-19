@@ -349,12 +349,43 @@ public final class UiContext implements AutoCloseable {
         return texture;
     }
 
-    Texture acquireIcon(String resource, int size) {
+    /**
+     * Loads a bundled icon at the requested physical size, capped at the 128-pixel source.
+     * Enables mipmapping on backends supporting custom sampling.
+     *
+     * @param name PNG file name in the bundled icon set
+     * @param size requested edge length in physical pixels
+     * @return a texture tracked by this context
+     * @throws NullPointerException if the name is null
+     * @throws IllegalArgumentException if the size is not positive or the icon is missing
+     * @throws IllegalStateException if the context is closed
+     */
+    public Texture createBundledIcon(String name, int size) {
         ensureOpen();
-        IconKey key = new IconKey(resource, size);
+        Objects.requireNonNull(name, "name");
+        int resolution = iconResolution(size);
+        int pixels = Math.min(size, 128);
+        ImageData image = ImageData.fromResource("assets/icons-" + resolution + "/" + name, pixels, pixels);
+        try {
+            return createTexture(image, TextureOptions.MIPMAPPED);
+        } catch (UnsupportedOperationException unsupportedSampling) {
+            return createTexture(image);
+        }
+    }
+
+    private static int iconResolution(int size) {
+        if (size <= 0) {
+            throw new IllegalArgumentException("Icon size must be positive.");
+        }
+        return Integer.highestOneBit(Math.clamp(size, 16, 128) * 2 - 1);
+    }
+
+    Texture acquireIcon(String name, int size) {
+        ensureOpen();
+        IconKey key = new IconKey(name, Math.min(size, 128));
         SharedIcon icon = icons.get(key);
         if (icon == null) {
-            icon = new SharedIcon(createTexture(ImageData.fromResource(resource, size, size)));
+            icon = new SharedIcon(createBundledIcon(name, size));
             icons.put(key, icon);
         }
         icon.references++;

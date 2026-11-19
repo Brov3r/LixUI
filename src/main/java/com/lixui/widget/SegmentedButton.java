@@ -36,7 +36,6 @@ public class SegmentedButton extends Panel {
     private static final float ANIMATION_SNAP = 0.001f;
     private static final float LIGHT_SURFACE_LUMINANCE = 0.5f;
     private static final float LIGHT_LABEL_DARKENING = 0.55f;
-    private static final Rect FULL_UV = new Rect(0, 0, 1, 1);
 
     private final List<Segment> segments = new ArrayList<>();
     private float segmentPadding = DEFAULT_SEGMENT_PADDING;
@@ -556,9 +555,9 @@ public class SegmentedButton extends Panel {
             float textX = hasIcon && hasText ? startX + iconSize + iconGap : startX;
             Color color = segmentColor(segment, style, index);
             if (hasIcon) {
-                renderer.image(segment.icon,
+                renderer.icon(segment.icon,
                         new Rect(startX, centerY - iconSize / 2, iconSize, iconSize),
-                        FULL_UV, iconStyle, 0, color);
+                        iconStyle, color);
             }
             if (hasText) {
                 renderer.text(font, segment.text, textX, centerY, color,

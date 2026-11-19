@@ -230,6 +230,23 @@ public final class RenderManager {
     }
 
     /**
+     * Draws a tinted icon, aligning its slot to physical pixels under translation.
+     *
+     * @param texture icon texture to sample
+     * @param bounds icon slot in logical units
+     * @param style image placement in the slot
+     * @param tint color multiplied with the sampled texels
+     * @throws NullPointerException if any argument is null
+     * @throws IllegalStateException if no frame is in progress
+     * @throws IllegalArgumentException if the style repeats a clamped axis
+     */
+    public void icon(Texture texture, Rect bounds, ImageStyle style, Color tint) {
+        DrawList target = list();
+        Transform transform = currentTransform();
+        target.image(texture, snapToPixel(bounds, transform), 0, FULL_UV, applyOpacity(tint), transform, style);
+    }
+
+    /**
      * Appends a nine-patch texture with the full normalized UV range and no tint.
      * Corners keep their source pixel size, edges stretch along one axis and the center stretches
      * along both. Insets are measured in source pixels from the sampled region's edges.
@@ -703,16 +720,21 @@ public final class RenderManager {
         for (TextGlyph glyph : relative) {
             Rect bounds = glyph.bounds();
             Rect snapped = snapToPixel(new Rect(bounds.x() + x, bounds.y() + y,
-                    bounds.width(), bounds.height()));
+                    bounds.width(), bounds.height()), transform);
             glyphs.add(new TextGlyph(snapped, glyph.uv()));
             colors.add(solid != null ? solid : paint.colorAt(center(snapped)));
         }
         target.text(atlas, glyphs, colors, transform);
     }
 
-    private static Rect snapToPixel(Rect bounds) {
-        float x = Math.round(bounds.x());
-        float y = Math.round(bounds.y());
+    private Rect snapToPixel(Rect bounds, Transform transform) {
+        if (transform.m00() != 1 || transform.m11() != 1 || transform.m01() != 0 || transform.m10() != 0) {
+            return bounds;
+        }
+        float x = Math.round((bounds.x() + transform.m02()) * viewport.scaleX()) / viewport.scaleX()
+                - transform.m02();
+        float y = Math.round((bounds.y() + transform.m12()) * viewport.scaleY()) / viewport.scaleY()
+                - transform.m12();
         if (x == bounds.x() && y == bounds.y()) {
             return bounds;
         }

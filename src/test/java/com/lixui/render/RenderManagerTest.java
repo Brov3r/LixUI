@@ -528,6 +528,20 @@ class RenderManagerTest {
     }
 
     @Test
+    void alignsIconTexelsToFramebufferPixelsAfterWidgetTranslation() {
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+        manager.begin();
+        manager.withTransform(Transform.translation(0.25f, 0.25f),
+                () -> manager.icon(new TestTexture(28, 28), new Rect(3.1f, 2.1f, 14, 14),
+                        ImageStyle.ICON, Color.WHITE));
+        manager.end();
+        ImageCommand icon = (ImageCommand) backend.lastDrawList.commands().getFirst();
+        assertEquals(new Rect(3.25f, 2.25f, 14, 14), icon.bounds());
+    }
+
+    @Test
     void createsFontsDrawsTextAndReleasesTheirAtlases() {
         FontData data = SystemFonts.findDefault().orElse(null);
         Assumptions.assumeTrue(data != null, "No readable system font is installed.");
@@ -552,8 +566,8 @@ class RenderManagerTest {
         assertEquals(RED, text.colors().get(0));
         assertEquals(Transform.IDENTITY, text.transform());
         assertEquals(font.glyph('A').uv(), text.glyphs().get(0).uv());
-        assertEquals(new Rect(Math.round(10 + font.glyph('A').offsetX()),
-                Math.round(20 + font.ascent() + font.glyph('A').offsetY()),
+        assertEquals(new Rect(Math.round((10 + font.glyph('A').offsetX()) * 2) / 2f,
+                Math.round((20 + font.ascent() + font.glyph('A').offsetY()) * 2) / 2f,
                 font.glyph('A').width(), font.glyph('A').height()),
                 text.glyphs().get(0).bounds());
 
@@ -635,8 +649,8 @@ class RenderManagerTest {
                 () -> manager.text(font, "A", 0, 0, RED, HorizontalAlignment.LEFT, null));
         manager.end();
 
-        Rect expected = new Rect(Math.round(400 - width / 2 + glyph.offsetX()),
-                Math.round(300 - height / 2 + font.ascent() + glyph.offsetY()),
+        Rect expected = new Rect(Math.round((400 - width / 2 + glyph.offsetX()) * 2) / 2f,
+                Math.round((300 - height / 2 + font.ascent() + glyph.offsetY()) * 2) / 2f,
                 glyph.width(), glyph.height());
         TextCommand command = (TextCommand) backend.lastDrawList.commands().get(0);
         assertEquals(expected, command.glyphs().get(0).bounds());

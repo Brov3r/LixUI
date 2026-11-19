@@ -155,12 +155,7 @@ public final class OpenGlLayer implements RenderBackend {
     @Override
     public Texture createTexture(ImageData image, TextureOptions options) {
         ensureOpen();
-        Objects.requireNonNull(image, "image");
-        Objects.requireNonNull(options, "options");
-        try (OpenGlState state = new OpenGlState()) {
-            state.prepareUpload();
-            return backend.createTexture(image, options);
-        }
+        return backend.createTexture(image, options);
     }
 
     /**

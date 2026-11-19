@@ -43,7 +43,6 @@ public class Window extends ScrollPanel {
     private static final float COLLAPSE_SECONDS = 0.2f;
     private static final float DEFAULT_MINIMUM_WIDTH = 160;
     private static final float DEFAULT_MINIMUM_HEIGHT = 80;
-    private static final Rect FULL_UV = new Rect(0, 0, 1, 1);
 
     private final Header header;
     private final ResizeHandle resizeHandle;
@@ -662,7 +661,7 @@ public class Window extends ScrollPanel {
         try {
             for (String name : List.of("pushpin.png", "unlock.png", "minus.png",
                     "plus.png", "cross.png", "cursor-diagonal-resize.png")) {
-                loaded.add(context.acquireIcon("assets/icons-128/" + name, size));
+                loaded.add(context.acquireIcon(name, size));
             }
         } catch (RuntimeException | Error exception) {
             try {
@@ -788,8 +787,8 @@ public class Window extends ScrollPanel {
             float x = HEADER_PADDING;
             if (headerIcon != null) {
                 float y = (bounds().height() - headerIconSize) / 2;
-                renderer.image(headerIcon, new Rect(x, y, headerIconSize, headerIconSize),
-                        FULL_UV, headerIconStyle, 0, theme.text());
+                renderer.icon(headerIcon, new Rect(x, y, headerIconSize, headerIconSize),
+                        headerIconStyle, theme.text());
                 x += headerIconSize + HEADER_ICON_GAP;
             }
             Font font = font();
@@ -870,9 +869,9 @@ public class Window extends ScrollPanel {
             Color tint = !isEnabled() ? theme.textMuted().withAlpha(0.3f)
                     : isHovered() || isPressed() ? theme.text() : theme.textMuted().withAlpha(0.6f);
             float inset = 2;
-            renderer.image(resizeIcon, new Rect(inset, inset,
+            renderer.icon(resizeIcon, new Rect(inset, inset,
                     bounds().width() - inset * 2, bounds().height() - inset * 2),
-                    0, FULL_UV, tint);
+                    ImageStyle.FILL, tint);
         }
 
         @Override

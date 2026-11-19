@@ -888,7 +888,7 @@ public final class VulkanBackend implements RenderBackend {
                     .sType$Default()
                     .magFilter(filter(options.filter()))
                     .minFilter(filter(options.filter()))
-                    .mipmapMode(options.mipmaps()
+                    .mipmapMode(options.mipmaps() && options.filter() == TextureFilter.LINEAR
                             ? VK10.VK_SAMPLER_MIPMAP_MODE_LINEAR
                             : VK10.VK_SAMPLER_MIPMAP_MODE_NEAREST)
                     .addressModeU(addressMode(options.wrapU()))

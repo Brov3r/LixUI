@@ -1,6 +1,7 @@
 package com.lixui.backend.opengl;
 
 import com.lixui.backend.BatchScenario;
+import com.lixui.backend.MipmapScenario;
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Transform;
@@ -10,6 +11,7 @@ import com.lixui.graphics.Paint;
 import com.lixui.render.RenderManager;
 import com.lixui.render.ImageData;
 import com.lixui.render.Texture;
+import com.lixui.render.TextureFilter;
 import com.lixui.render.Viewport;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -46,7 +48,26 @@ class OpenGlBackendTest {
             try (OpenGlBackend backend = new OpenGlBackend()) {
                 RenderManager renderer = new RenderManager(backend);
                 renderer.resize(new Viewport(128, 128, 128, 128));
+                GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 8);
+                Texture rows = backend.createTexture(new ImageData(1, 2, new byte[]{
+                        -1, 0, 0, -1, 0, 0, -1, -1}));
+                assertEquals(8, GL11.glGetInteger(GL11.GL_UNPACK_ALIGNMENT));
+                GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 4);
+                clear();
+                renderer.begin();
+                renderer.image(rows, new Rect(0, 0, 32, 32));
+                renderer.end();
+                assertPixel(16, 2, Color.rgb(255, 0, 0), 1);
+                assertPixel(16, 29, Color.rgb(0, 0, 255), 1);
                 verifyGradients(renderer);
+                Texture nearest = MipmapScenario.stripes(renderer, TextureFilter.NEAREST);
+                Texture linear = MipmapScenario.stripes(renderer, TextureFilter.LINEAR);
+                clear();
+                renderer.begin();
+                MipmapScenario.draw(renderer, nearest, linear);
+                renderer.end();
+                assertPixel(4, 4, Color.rgb(191, 191, 191), 1);
+                assertPixel(2, 14, Color.rgb(128, 128, 128), 1);
                 verifyEllipses(renderer);
                 verifyEdgeCoverage(renderer, 1);
                 renderer.resize(new Viewport(128, 128, 64, 64));

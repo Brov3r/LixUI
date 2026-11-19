@@ -141,6 +141,13 @@ public final class OpenGlBackend implements RenderBackend {
     public Texture createTexture(ImageData image, TextureOptions options) {
         Objects.requireNonNull(image, "image");
         Objects.requireNonNull(options, "options");
+        try (OpenGlState state = new OpenGlState()) {
+            state.prepareUpload();
+            return uploadTexture(image, options);
+        }
+    }
+
+    private Texture uploadTexture(ImageData image, TextureOptions options) {
         int id = GL11.glGenTextures();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, id);
         try {
@@ -163,8 +170,6 @@ public final class OpenGlBackend implements RenderBackend {
         } catch (RuntimeException | Error exception) {
             GL11.glDeleteTextures(id);
             throw exception;
-        } finally {
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
         }
 
         GlTexture texture = new GlTexture(id, image.width(), image.height(), true, options);

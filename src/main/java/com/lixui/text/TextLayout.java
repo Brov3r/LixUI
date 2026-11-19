@@ -21,9 +21,10 @@ public final class TextLayout {
     private final float lineHeight;
     private final List<TextGlyph> glyphs;
     private final List<TextLine> lines;
+    private final float[] spacing;
 
     TextLayout(Font font, String text, TextStyle style, Size size, float lineHeight,
-               List<TextGlyph> glyphs, List<TextLine> lines) {
+               List<TextGlyph> glyphs, List<TextLine> lines, float[] spacing) {
         this.font = Objects.requireNonNull(font, "font");
         this.text = Objects.requireNonNull(text, "text");
         this.style = Objects.requireNonNull(style, "style");
@@ -31,6 +32,7 @@ public final class TextLayout {
         this.lineHeight = lineHeight;
         this.glyphs = List.copyOf(glyphs);
         this.lines = List.copyOf(lines);
+        this.spacing = spacing;
     }
 
     /**
@@ -95,8 +97,9 @@ public final class TextLayout {
      * @return the caret point at the top of the corresponding line
      */
     public Point caretPosition(int index) {
-        TextLine line = lineAt(index);
-        float x = line.x() + caretX(line, index);
+        int row = lineAt(index);
+        TextLine line = lines.get(row);
+        float x = line.x() + caretX(line, index, spacing[row]);
         return new Point(x, line.y());
     }
 
@@ -108,14 +111,17 @@ public final class TextLayout {
      * @return the closest text index
      */
     public int caretIndexAt(float x, float y) {
-        TextLine line = lineAtY(y);
+        int row = lineAtY(y);
+        TextLine line = lines.get(row);
         int bestIndex = line.start();
         float bestDistance = Math.abs(x - line.x());
         int index = line.start();
+        Font.LinePen pen = font.new LinePen();
         while (index < line.end()) {
             int codepoint = text.codePointAt(index);
             index += Character.charCount(codepoint);
-            float distance = Math.abs(x - (line.x() + caretX(line, index)));
+            pen.advance(codepoint, spacing[row]);
+            float distance = Math.abs(x - (line.x() + pen.position()));
             if (distance < bestDistance) {
                 bestDistance = distance;
                 bestIndex = index;
@@ -139,61 +145,52 @@ public final class TextLayout {
         if (from == to) {
             return List.of();
         }
-        for (TextLine line : lines) {
+        for (int row = 0; row < lines.size(); row++) {
+            TextLine line = lines.get(row);
             int lineStart = Math.max(from, line.start());
             int lineEnd = Math.min(to, line.end());
             if (lineStart >= lineEnd) {
                 continue;
             }
-            float first = line.x() + caretX(line, lineStart);
-            float second = line.x() + caretX(line, lineEnd);
+            float first = line.x() + caretX(line, lineStart, spacing[row]);
+            float second = line.x() + caretX(line, lineEnd, spacing[row]);
             rects.add(new Rect(Math.min(first, second), line.y(),
                     Math.abs(second - first), lineHeight));
         }
         return List.copyOf(rects);
     }
 
-    private TextLine lineAt(int index) {
+    private int lineAt(int index) {
         int clamped = Math.max(0, Math.min(index, text.length()));
-        TextLine selected = lines.get(0);
-        for (TextLine line : lines) {
-            if (clamped < line.start()) {
+        int selected = 0;
+        for (int row = 1; row < lines.size(); row++) {
+            if (clamped < lines.get(row).start()) {
                 break;
             }
-            selected = line;
+            selected = row;
         }
         return selected;
     }
 
-    private TextLine lineAtY(float y) {
+    private int lineAtY(float y) {
         if (lines.size() == 1 || lineHeight <= 0) {
-            return lines.get(0);
+            return 0;
         }
         float relative = y - lines.get(0).y();
         int index = (int) Math.floor(relative / lineHeight);
-        int clamped = Math.max(0, Math.min(index, lines.size() - 1));
-        return lines.get(clamped);
+        return Math.max(0, Math.min(index, lines.size() - 1));
     }
 
-    private float caretX(TextLine line, int index) {
-        int clamped = Math.max(line.start(), Math.min(index, line.end()));
-        String prefix = text.substring(line.start(), clamped);
-        return font.measure(prefix).width() + extraSpacing(line) * Font.spaceCount(prefix);
-    }
-
-    private float extraSpacing(TextLine line) {
-        if (style.horizontal() != HorizontalAlignment.JUSTIFY || style.maxWidth() <= 0) {
-            return 0;
+    private float caretX(TextLine line, int index, float extraSpace) {
+        Font.LinePen pen = font.new LinePen();
+        int end = Math.min(index, line.end());
+        for (int start = line.start(); start < end; ) {
+            int codepoint = text.codePointAt(start);
+            start += Character.charCount(codepoint);
+            if (start <= end) {
+                pen.advance(codepoint, extraSpace);
+            }
         }
-        if (line.end() >= text.length() || text.charAt(line.end()) == '\n') {
-            return 0;
-        }
-        String content = text.substring(line.start(), line.end());
-        int spaces = Font.spaceCount(content);
-        if (spaces == 0) {
-            return 0;
-        }
-        float natural = font.measure(content).width();
-        return natural < style.maxWidth() ? (style.maxWidth() - natural) / spaces : 0;
+        return pen.position();
     }
 }

@@ -37,6 +37,7 @@ public final class SystemFonts {
     private static final int ENGLISH_LANGUAGE = 0x409;
     private static final int MAC_PLATFORM = 1;
     private static final int NAME_ID_FAMILY = 1;
+    private static final int NAME_ID_SUBFAMILY = 2;
     private static final int NAME_ID_FULL_NAME = 4;
     private static final int NAME_ID_TYPOGRAPHIC_FAMILY = 16;
     private static final List<String> DEFAULT_FILE_NAMES = List.of(
@@ -107,7 +108,7 @@ public final class SystemFonts {
             return find(family);
         }
         for (String suffix : styleSuffixes(style)) {
-            Optional<FontData> face = find(family + " " + suffix);
+            Optional<FontData> face = find(family.strip() + " " + suffix);
             if (face.isPresent()) {
                 return face;
             }
@@ -146,15 +147,17 @@ public final class SystemFonts {
 
     private static synchronized Index index() {
         if (index == null) {
-            index = scan();
+            index = scan(fontDirectories());
         }
         return index;
     }
 
-    private static Index scan() {
+    static Index scan(List<Path> directories) {
         Map<String, Path> paths = new HashMap<>();
+        Map<String, Path> regularFaces = new HashMap<>();
+        Map<String, Path> familyFallbacks = new HashMap<>();
         SortedSet<String> families = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        for (Path directory : fontDirectories()) {
+        for (Path directory : directories) {
             if (!Files.isDirectory(directory)) {
                 continue;
             }
@@ -164,7 +167,16 @@ public final class SystemFonts {
                     if (names == null) {
                         continue;
                     }
-                    paths.putIfAbsent(normalize(names.family()), file);
+                    String family = normalize(names.family());
+                    familyFallbacks.putIfAbsent(family, file);
+                    if (names.subfamily() != null) {
+                        String subfamily = normalize(names.subfamily());
+                        paths.putIfAbsent(family + " " + subfamily, file);
+                        if (subfamily.equals("regular") || subfamily.equals("normal")
+                                || subfamily.equals("roman") || subfamily.equals("book")) {
+                            regularFaces.putIfAbsent(family, file);
+                        }
+                    }
                     if (names.fullName() != null) {
                         paths.putIfAbsent(normalize(names.fullName()), file);
                     }
@@ -175,6 +187,8 @@ public final class SystemFonts {
                 LOGGER.debug("Failed to scan font directory {}", directory, exception);
             }
         }
+        familyFallbacks.forEach(paths::putIfAbsent);
+        paths.putAll(regularFaces);
         return new Index(Map.copyOf(paths), List.copyOf(families));
     }
 
@@ -205,7 +219,12 @@ public final class SystemFonts {
             }
             String fullName = readName(info, MICROSOFT_PLATFORM, WINDOWS_UNICODE_BMP,
                     ENGLISH_LANGUAGE, NAME_ID_FULL_NAME);
-            return new FontNames(family, fullName);
+            String subfamily = readName(info, MICROSOFT_PLATFORM, WINDOWS_UNICODE_BMP,
+                    ENGLISH_LANGUAGE, NAME_ID_SUBFAMILY);
+            if (subfamily == null) {
+                subfamily = readName(info, MAC_PLATFORM, 0, 0, NAME_ID_SUBFAMILY);
+            }
+            return new FontNames(family, subfamily, fullName);
         } catch (IOException exception) {
             LOGGER.debug("Failed to read font file {}", file, exception);
             return null;
@@ -284,9 +303,9 @@ public final class SystemFonts {
         };
     }
 
-    private record Index(Map<String, Path> paths, List<String> families) {
+    record Index(Map<String, Path> paths, List<String> families) {
     }
 
-    private record FontNames(String family, String fullName) {
+    private record FontNames(String family, String subfamily, String fullName) {
     }
 }

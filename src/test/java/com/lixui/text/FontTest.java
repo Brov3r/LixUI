@@ -174,6 +174,27 @@ class FontTest {
     }
 
     @Test
+    void wrappingAtATabDoesNotInsertABlankLine() {
+        TextStyle style = new TextStyle(11, 0, 0, TextOverflow.CLIP,
+                HorizontalAlignment.LEFT, VerticalAlignment.TOP);
+        TextLayout layout = testFont().layoutBlockRelative("A\tB", style);
+        assertEquals(List.of(new TextLine(0, 1, 0, 0, 10),
+                new TextLine(2, 3, 0, 18, 7)), layout.lines());
+        assertEquals(2, layout.caretIndexAt(0, 20));
+    }
+
+    @Test
+    void truncatedJustifiedLineKeepsTheCaretBeforeTheEllipsis() {
+        TextStyle style = new TextStyle(42, 0, 1, TextOverflow.ELLIPSIS,
+                HorizontalAlignment.JUSTIFY, VerticalAlignment.TOP);
+        TextLayout layout = testFont().layoutBlockRelative("A A A\nA", style);
+        assertEquals(40, layout.size().width());
+        assertEquals(28, layout.caretPosition(4).x());
+        assertEquals(List.of(new Rect(0, 0, 28, 18)), layout.selectionRects(0, 7));
+        assertEquals(4, layout.caretIndexAt(39, 0));
+    }
+
+    @Test
     void hardBreaksWordsThatExceedTheMaximumWidth() {
         Font font = testFont();
         TextStyle style = new TextStyle(12, 0, 0, TextOverflow.CLIP,
@@ -290,6 +311,11 @@ class FontTest {
         assertNotNull(glyph);
         assertTrue(glyph.advance() > 0);
         assertTrue(coveredPixels(font, glyph) > 0);
+        byte[] pixels = font.atlas().pixels();
+        assertEquals(0, pixels[3]);
+        assertEquals(255, Byte.toUnsignedInt(pixels[0]));
+        assertEquals(255, Byte.toUnsignedInt(pixels[1]));
+        assertEquals(255, Byte.toUnsignedInt(pixels[2]));
         assertFalse(font.layout("AB", 0, 0).isEmpty());
         assertTrue(font.measure("AB").width() > font.measure("A").width());
     }
@@ -323,6 +349,15 @@ class FontTest {
         assertTrue(italicGlyph.width() > regularGlyph.width());
         assertTrue(boldItalicGlyph.width() >= italicGlyph.width());
         assertEquals(italicGlyph.height(), boldItalicGlyph.height());
+        double[] plainInk = inkProfile(regular, regularGlyph);
+        double[] boldInk = inkProfile(bold, boldGlyph);
+        double[] italicInk = inkProfile(italic, italicGlyph);
+        double[] combinedInk = inkProfile(boldItalic, boldItalicGlyph);
+        assertTrue(boldInk[0] > plainInk[0]);
+        assertEquals(plainInk[0], italicInk[0]);
+        assertEquals(boldInk[0], combinedInk[0]);
+        assertTrue(italicInk[1] > plainInk[1]);
+        assertTrue(combinedInk[1] > boldInk[1]);
 
         Font regularPair = Font.load(data, 32, new int[]{'A', 'B'});
         Font spacedPair = Font.load(data, 32, new int[]{'A', 'B'}, FontStyle.BOLD, 2);
@@ -380,6 +415,22 @@ class FontTest {
             }
         }
         return covered;
+    }
+
+    private static double[] inkProfile(Font font, Glyph glyph) {
+        ImageData atlas = font.atlas();
+        int left = Math.round(glyph.uv().x() * atlas.width());
+        int top = Math.round(glyph.uv().y() * atlas.height());
+        long ink = 0;
+        double moment = 0;
+        for (int y = 0; y < glyph.height(); y++) {
+            for (int x = 0; x < glyph.width(); x++) {
+                int alpha = Byte.toUnsignedInt(atlas.pixels()[((top + y) * atlas.width() + left + x) * 4 + 3]);
+                ink += alpha;
+                moment += (glyph.offsetX() + x) * alpha;
+            }
+        }
+        return new double[]{ink, moment / ink};
     }
 
     private static Font testFont() {

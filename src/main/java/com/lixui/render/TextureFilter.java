@@ -5,12 +5,12 @@ package com.lixui.render;
  */
 public enum TextureFilter {
     /**
-     * Selects the nearest texel, preserving hard pixel edges.
+     * Selects the nearest texel of the nearest mip level, preserving hard pixel edges.
      */
     NEAREST,
 
     /**
-     * Blends adjacent texels for smooth scaling.
+     * Blends adjacent texels and, when mipmaps are enabled, adjacent mip levels.
      */
     LINEAR
 }
