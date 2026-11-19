@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -31,6 +32,49 @@ class RenderManagerTest {
     private static final Viewport VIEWPORT = new Viewport(1600, 1200, 800, 600);
     private static final Rect LOGICAL = new Rect(0, 0, 800, 600);
     private static final Color RED = Color.rgb(255, 0, 0);
+
+    @Test
+    void withOpacityMultipliesColorsAndRestoresTheScope() {
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+
+        manager.begin();
+        manager.withOpacity(0.5f, () -> {
+            manager.rect(new Rect(0, 0, 10, 10), new Color(1, 0, 0, 1));
+            manager.withOpacity(0.5f, () -> manager.rect(new Rect(10, 0, 10, 10),
+                    new Color(0, 1, 0, 1)));
+            manager.mesh(List.of(new MeshVertex(0, 0, Color.WHITE),
+                    new MeshVertex(1, 0, Color.WHITE), new MeshVertex(0, 1, Color.WHITE)));
+            manager.pushMaskRect(new Rect(0, 0, 4, 4));
+            manager.popMask();
+            manager.fillRect(new Rect(0, 0, 10, 10), Paint.linear(new Point(0, 0),
+                    new Point(10, 0), new GradientStop(0, Color.WHITE),
+                    new GradientStop(1, Color.WHITE)));
+        });
+        manager.rect(new Rect(20, 0, 10, 10), new Color(0, 0, 1, 1));
+        manager.end();
+
+        List<DrawCommand> commands = backend.lastDrawList.commands();
+        assertEquals(0.5f, assertInstanceOf(RoundedRectCommand.class, commands.get(0)).color().a(),
+                0.0001f);
+        assertEquals(0.25f, assertInstanceOf(RoundedRectCommand.class, commands.get(1)).color().a(),
+                0.0001f);
+        MeshCommand mesh = assertInstanceOf(MeshCommand.class, commands.get(2));
+        assertEquals(0.5f, mesh.vertices().getFirst().color().a(), 0.0001f);
+        MaskBeginCommand mask = assertInstanceOf(MaskBeginCommand.class, commands.get(3));
+        assertEquals(1, mask.vertices().getFirst().color().a(), 0.0001f);
+        MeshCommand gradient = assertInstanceOf(MeshCommand.class, commands.get(5));
+        assertEquals(0.5f, gradient.vertices().getFirst().color().a(), 0.0001f);
+        assertEquals(1, assertInstanceOf(RoundedRectCommand.class, commands.get(6)).color().a(),
+                0.0001f);
+
+        assertThrows(IllegalArgumentException.class, () -> manager.withOpacity(-0.1f, () -> { }));
+        assertThrows(IllegalArgumentException.class,
+                () -> manager.withOpacity(Float.NaN, () -> { }));
+        assertThrows(NullPointerException.class, () -> manager.withOpacity(0.5f, null));
+        assertThrows(IllegalStateException.class, () -> manager.withOpacity(0.5f, () -> { }));
+    }
 
     @Test
     void resizeDelegatesAndExposesTheLogicalViewport() {

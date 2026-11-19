@@ -5,6 +5,7 @@ import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
 import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
+import com.lixui.graphics.GradientStop;
 import com.lixui.graphics.Paint;
 import com.lixui.text.Font;
 import com.lixui.text.FontData;
@@ -41,6 +42,7 @@ public final class RenderManager {
     private Viewport viewport;
     private Rect logicalViewport = Rect.EMPTY;
     private Antialiasing antialiasing = Antialiasing.LOW;
+    private float opacity = 1;
     private boolean drawing;
 
     /**
@@ -155,7 +157,7 @@ public final class RenderManager {
      * @throws IllegalStateException if no frame is in progress
      */
     public void image(Texture texture, Rect bounds) {
-        list().image(texture, bounds, 0, FULL_UV, Color.WHITE, currentTransform());
+        list().image(texture, bounds, 0, FULL_UV, applyOpacity(Color.WHITE), currentTransform());
     }
 
     /**
@@ -171,7 +173,7 @@ public final class RenderManager {
      * @throws IllegalStateException if no frame is in progress
      */
     public void image(Texture texture, Rect bounds, Rect uv) {
-        list().image(texture, bounds, 0, uv, Color.WHITE, currentTransform());
+        list().image(texture, bounds, 0, uv, applyOpacity(Color.WHITE), currentTransform());
     }
 
     /**
@@ -188,7 +190,7 @@ public final class RenderManager {
      * @throws IllegalStateException if no frame is in progress
      */
     public void image(Texture texture, Rect bounds, float radius, Rect uv, Color tint) {
-        list().image(texture, bounds, radius, uv, tint, currentTransform());
+        list().image(texture, bounds, radius, uv, applyOpacity(tint), currentTransform());
     }
 
     /**
@@ -613,6 +615,7 @@ public final class RenderManager {
         Objects.requireNonNull(font, "font");
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(paint, "paint");
+        paint = applyOpacity(paint);
         Objects.requireNonNull(relative, "relative");
         DrawList target = list();
         Texture atlas = fontAtlases.get(font);
@@ -678,6 +681,32 @@ public final class RenderManager {
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(style, "style");
         return font.measure(text, style);
+    }
+
+    /**
+     * Runs a drawing action with every color and paint multiplied by an opacity.
+     * Nested calls multiply their opacities, and the previous opacity is restored when the action
+     * completes. Masks are geometry-only and are not affected.
+     *
+     * @param opacity opacity in {@code [0, 1]}
+     * @param action drawing action
+     * @throws NullPointerException if {@code action} is null
+     * @throws IllegalArgumentException if the opacity is outside {@code [0, 1]} or non-finite
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void withOpacity(float opacity, Runnable action) {
+        Objects.requireNonNull(action, "action");
+        if (!Float.isFinite(opacity) || opacity < 0 || opacity > 1) {
+            throw new IllegalArgumentException("Opacity must be finite and in [0, 1].");
+        }
+        list();
+        float previous = this.opacity;
+        this.opacity = previous * opacity;
+        try {
+            action.run();
+        } finally {
+            this.opacity = previous;
+        }
     }
 
     /**
@@ -775,7 +804,7 @@ public final class RenderManager {
      */
     public void mesh(List<MeshVertex> vertices) {
         Objects.requireNonNull(vertices, "vertices");
-        drawMesh(vertices);
+        drawMesh(fadeVertices(vertices));
     }
 
     /**
@@ -791,6 +820,7 @@ public final class RenderManager {
     public void fillRect(Rect bounds, Paint paint) {
         Objects.requireNonNull(bounds, "bounds");
         Objects.requireNonNull(paint, "paint");
+        paint = applyOpacity(paint);
         DrawList drawList = list();
         Transform transform = currentTransform();
         if (paint instanceof Paint.Solid solid && isTranslation(transform)) {
@@ -817,6 +847,7 @@ public final class RenderManager {
     public void fillRoundedRect(Rect bounds, float radius, Paint paint) {
         Objects.requireNonNull(bounds, "bounds");
         Objects.requireNonNull(paint, "paint");
+        paint = applyOpacity(paint);
         ShapeTessellator.validateRadius(radius);
         DrawList drawList = list();
         Transform transform = currentTransform();
@@ -857,6 +888,7 @@ public final class RenderManager {
     public void fillEllipse(Point center, float radiusX, float radiusY, Paint paint) {
         Objects.requireNonNull(center, "center");
         Objects.requireNonNull(paint, "paint");
+        paint = applyOpacity(paint);
         ShapeTessellator.validateEllipse(center, radiusX, radiusY);
         DrawList target = list();
         if (backend.supportsAnalyticShapes() && ShapeCommand.supportsPaint(paint)) {
@@ -885,6 +917,7 @@ public final class RenderManager {
                         float startAngle, float sweepAngle, Paint paint) {
         Objects.requireNonNull(center, "center");
         Objects.requireNonNull(paint, "paint");
+        paint = applyOpacity(paint);
         ShapeTessellator.validateArc(center, radiusX, radiusY, startAngle, sweepAngle);
         drawMesh(ShapeTessellator.fillArc(
                 center, radiusX, radiusY, startAngle, sweepAngle, paint));
@@ -902,6 +935,7 @@ public final class RenderManager {
     public void fillPolygon(List<Point> points, Paint paint) {
         Objects.requireNonNull(points, "points");
         Objects.requireNonNull(paint, "paint");
+        paint = applyOpacity(paint);
         drawMesh(ShapeTessellator.fillPolygon(points, paint));
     }
 
@@ -918,6 +952,7 @@ public final class RenderManager {
     public void strokeRect(Rect bounds, float width, Paint paint) {
         Objects.requireNonNull(bounds, "bounds");
         Objects.requireNonNull(paint, "paint");
+        paint = applyOpacity(paint);
         ShapeTessellator.validateWidth(width);
         drawMesh(ShapeTessellator.strokeRect(bounds, width, paint));
     }
@@ -936,6 +971,7 @@ public final class RenderManager {
     public void strokeRoundedRect(Rect bounds, float radius, float width, Paint paint) {
         Objects.requireNonNull(bounds, "bounds");
         Objects.requireNonNull(paint, "paint");
+        paint = applyOpacity(paint);
         ShapeTessellator.validateRadius(radius);
         ShapeTessellator.validateWidth(width);
         drawMesh(ShapeTessellator.strokeRoundedRect(bounds, radius, width, paint));
@@ -956,6 +992,7 @@ public final class RenderManager {
         Objects.requireNonNull(start, "start");
         Objects.requireNonNull(end, "end");
         Objects.requireNonNull(paint, "paint");
+        paint = applyOpacity(paint);
         ShapeTessellator.validateWidth(width);
         drawMesh(ShapeTessellator.strokeLine(start, end, width, paint));
     }
@@ -990,6 +1027,7 @@ public final class RenderManager {
     public void strokeEllipse(Point center, float radiusX, float radiusY, float width, Paint paint) {
         Objects.requireNonNull(center, "center");
         Objects.requireNonNull(paint, "paint");
+        paint = applyOpacity(paint);
         ShapeTessellator.validateEllipse(center, radiusX, radiusY);
         ShapeTessellator.validateWidth(width);
         drawMesh(ShapeTessellator.strokeEllipse(center, radiusX, radiusY, width, paint));
@@ -1014,6 +1052,7 @@ public final class RenderManager {
                           float startAngle, float sweepAngle, float width, Paint paint) {
         Objects.requireNonNull(center, "center");
         Objects.requireNonNull(paint, "paint");
+        paint = applyOpacity(paint);
         ShapeTessellator.validateArc(center, radiusX, radiusY, startAngle, sweepAngle);
         ShapeTessellator.validateWidth(width);
         drawMesh(ShapeTessellator.strokeArc(
@@ -1033,6 +1072,7 @@ public final class RenderManager {
     public void strokePolyline(List<Point> points, float width, Paint paint) {
         Objects.requireNonNull(points, "points");
         Objects.requireNonNull(paint, "paint");
+        paint = applyOpacity(paint);
         ShapeTessellator.validateWidth(width);
         drawMesh(ShapeTessellator.strokePolyline(points, width, paint));
     }
@@ -1050,6 +1090,7 @@ public final class RenderManager {
     public void strokePolygon(List<Point> points, float width, Paint paint) {
         Objects.requireNonNull(points, "points");
         Objects.requireNonNull(paint, "paint");
+        paint = applyOpacity(paint);
         ShapeTessellator.validateWidth(width);
         drawMesh(ShapeTessellator.strokePolygon(points, width, paint));
     }
@@ -1228,6 +1269,42 @@ public final class RenderManager {
 
     private void drawMesh(List<MeshVertex> vertices) {
         list().meshOwned(transformVertices(vertices));
+    }
+
+    private Color applyOpacity(Color color) {
+        return opacity >= 1 ? color : color.withAlpha(color.a() * opacity);
+    }
+
+    private Paint applyOpacity(Paint paint) {
+        if (opacity >= 1) {
+            return paint;
+        }
+        return switch (paint) {
+            case Paint.Solid solid -> Paint.solid(applyOpacity(solid.color()));
+            case Paint.LinearGradient linear -> Paint.linear(linear.start(), linear.end(),
+                    fadeStops(linear.stops()));
+            case Paint.RadialGradient radial -> Paint.radial(radial.center(), radial.radius(),
+                    fadeStops(radial.stops()));
+        };
+    }
+
+    private List<GradientStop> fadeStops(List<GradientStop> stops) {
+        List<GradientStop> faded = new ArrayList<>(stops.size());
+        for (GradientStop stop : stops) {
+            faded.add(new GradientStop(stop.offset(), applyOpacity(stop.color())));
+        }
+        return faded;
+    }
+
+    private List<MeshVertex> fadeVertices(List<MeshVertex> vertices) {
+        if (opacity >= 1) {
+            return vertices;
+        }
+        List<MeshVertex> faded = new ArrayList<>(vertices.size());
+        for (MeshVertex vertex : vertices) {
+            faded.add(new MeshVertex(vertex.x(), vertex.y(), applyOpacity(vertex.color())));
+        }
+        return faded;
     }
 
     private List<MeshVertex> transformVertices(List<MeshVertex> vertices) {
