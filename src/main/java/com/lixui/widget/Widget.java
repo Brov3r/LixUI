@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Function;
 
 /**
  * A retained UI node with bounds, children, drawing, logic and input hooks.
@@ -773,10 +774,9 @@ public abstract class Widget {
      * @return the resolved font, or null when neither the widget tree nor the context defines one
      */
     public final Font font() {
-        for (Widget widget = this; widget != null; widget = widget.parent) {
-            if (widget.font != null) {
-                return widget.font;
-            }
+        Font inherited = resolveInherited(widget -> widget.font);
+        if (inherited != null) {
+            return inherited;
         }
         return context == null ? null : context.defaultFont();
     }
@@ -807,12 +807,18 @@ public abstract class Widget {
      * @return the resolved style, or null when neither the widget tree nor the context defines one
      */
     public final WidgetStyle style() {
+        WidgetStyle inherited = resolveInherited(widget -> widget.style);
+        return inherited != null ? inherited : defaultStyle();
+    }
+
+    private <T> T resolveInherited(Function<Widget, T> getter) {
         for (Widget widget = this; widget != null; widget = widget.parent) {
-            if (widget.style != null) {
-                return widget.style;
+            T value = getter.apply(widget);
+            if (value != null) {
+                return value;
             }
         }
-        return defaultStyle();
+        return null;
     }
 
     /**
