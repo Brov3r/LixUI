@@ -66,8 +66,12 @@ public class ScrollBar extends Widget {
      * Sets the normalized thumb position without invoking the value listener.
      *
      * @param value thumb position, clamped to {@code [0, 1]}
+     * @throws IllegalArgumentException if the position is non-finite
      */
     public void setValue(float value) {
+        if (!Float.isFinite(value)) {
+            throw new IllegalArgumentException("Scrollbar value must be finite.");
+        }
         this.value = clamp(value, 0, 1);
     }
 
@@ -84,8 +88,12 @@ public class ScrollBar extends Widget {
      * Sets the visible content fraction, which controls the thumb length.
      *
      * @param visibleFraction visible fraction, clamped to {@code [0, 1]}
+     * @throws IllegalArgumentException if the fraction is non-finite
      */
     public void setVisibleFraction(float visibleFraction) {
+        if (!Float.isFinite(visibleFraction)) {
+            throw new IllegalArgumentException("Visible fraction must be finite.");
+        }
         this.visibleFraction = clamp(visibleFraction, 0, 1);
     }
 
@@ -155,7 +163,11 @@ public class ScrollBar extends Widget {
         if (delta == 0) {
             return false;
         }
-        changeValue(value + delta * WHEEL_FRACTION);
+        float next = clamp(value + delta * WHEEL_FRACTION, 0, 1);
+        if (next == value) {
+            return false;
+        }
+        changeValue(next);
         return true;
     }
 

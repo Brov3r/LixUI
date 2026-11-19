@@ -212,6 +212,31 @@ class WidgetManagerTest {
     }
 
     @Test
+    void blocksHostPointerInputInsideUiAndDuringCapturedDrags() {
+        WidgetManager manager = manager(new RecordingBackend());
+        Panel panel = new Panel();
+        panel.setBounds(new Rect(10, 10, 100, 100));
+        manager.add(panel);
+        manager.render();
+
+        assertTrue(manager.blocksPointer(50, 50));
+        assertFalse(manager.blocksPointer(500, 500));
+        assertFalse(manager.blocksPointer(5, 5));
+        assertThrows(IllegalArgumentException.class, () -> manager.blocksPointer(Float.NaN, 1));
+
+        manager.handle(new PointerPressed(50, 50, MouseButton.LEFT, Modifiers.NONE));
+        manager.handle(new PointerMoved(500, 500));
+        assertTrue(manager.blocksPointer(500, 500));
+        manager.handle(new PointerReleased(500, 500, MouseButton.LEFT, Modifiers.NONE));
+        assertFalse(manager.blocksPointer(500, 500));
+
+        panel.setVisible(false);
+        assertFalse(manager.blocksPointer(50, 50));
+        manager.close();
+        assertFalse(manager.blocksPointer(50, 50));
+    }
+
+    @Test
     void tabTraversalFollowsDepthFirstFocusOrder() {
         RecordingBackend backend = new RecordingBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);

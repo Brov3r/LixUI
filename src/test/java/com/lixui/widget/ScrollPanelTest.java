@@ -1,6 +1,7 @@
 package com.lixui.widget;
 
 import com.lixui.geometry.Rect;
+import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
@@ -14,6 +15,8 @@ import com.lixui.render.ImageData;
 import com.lixui.render.MaskBeginCommand;
 import com.lixui.render.MaskEndCommand;
 import com.lixui.render.RenderBackend;
+import com.lixui.render.RenderManager;
+import com.lixui.render.RoundedRectCommand;
 import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
 import org.junit.jupiter.api.Test;
@@ -22,12 +25,138 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ScrollPanelTest {
     private static final Viewport VIEWPORT = new Viewport(1600, 1200, 800, 600);
     private static final Rect PANEL_BOUNDS = new Rect(0, 0, 200, 150);
+
+    @Test
+    void clipsContentDrawingAndHitTestingToInsets() {
+        RecordingBackend backend = new RecordingBackend();
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
+        manager.resize(VIEWPORT);
+        ScrollPanel panel = new ScrollPanel();
+        panel.setBounds(PANEL_BOUNDS);
+        panel.setContentInsets(20, 10, 15, 5);
+        Widget content = new Widget() {
+            /**
+             * Draws a recognizable content rectangle.
+             *
+             * @param renderer drawing manager
+             * @param frame current frame timing
+             */
+            @Override
+            protected void onDraw(RenderManager renderer, FrameInfo frame) {
+                renderer.rect(localBounds(), Color.WHITE);
+            }
+        };
+        content.setSize(400, 600);
+        panel.setContent(content);
+        manager.add(panel);
+        panel.setScroll(50, 60);
+        manager.render();
+
+        RoundedRectCommand command = backend.lastDrawList.commands().stream()
+                .filter(RoundedRectCommand.class::isInstance)
+                .map(RoundedRectCommand.class::cast)
+                .filter(value -> value.color().equals(Color.WHITE))
+                .findFirst().orElseThrow();
+        assertEquals(new Rect(5, 20, 185, 115), command.clip());
+        assertSame(panel, panel.hitTest(50, 10));
+        assertSame(content, panel.hitTest(50, 50));
+        assertSame(panel, panel.hitTest(2, 50));
+    }
+
+    @Test
+    void bubblesWheelToOuterPanelAtTheInnerScrollLimit() {
+        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        manager.resize(VIEWPORT);
+        ScrollPanel outer = new ScrollPanel();
+        outer.setBounds(PANEL_BOUNDS);
+        ScrollPanel inner = new ScrollPanel();
+        inner.setSize(200, 300);
+        Widget content = new Widget() { };
+        content.setSize(200, 600);
+        inner.setContent(content);
+        outer.setContent(inner);
+        manager.add(outer);
+        manager.layout();
+        inner.setScroll(0, 300);
+
+        manager.handle(new PointerScrolled(50, 50, 0, -1));
+        manager.update(0.2f);
+
+        assertEquals(300, inner.scrollY());
+        assertEquals(48, outer.scrollY());
+    }
+
+    @Test
+    void rejectsInvalidOffsetsWithoutCorruptingTheCurrentPosition() {
+        ScrollPanel panel = new ScrollPanel();
+        panel.setBounds(PANEL_BOUNDS);
+        Widget content = new Widget() { };
+        content.setSize(400, 600);
+        panel.setContent(content);
+        panel.setScroll(25, 30);
+
+        assertThrows(IllegalArgumentException.class, () -> panel.setScroll(Float.NaN, 40));
+        assertThrows(IllegalArgumentException.class, () -> panel.setScroll(40, Float.POSITIVE_INFINITY));
+        assertEquals(25, panel.scrollX());
+        assertEquals(30, panel.scrollY());
+        ScrollBar bar = bar(panel, ScrollBar.Orientation.VERTICAL);
+        assertThrows(IllegalArgumentException.class, () -> bar.setValue(Float.NaN));
+        assertThrows(IllegalArgumentException.class, () -> bar.setVisibleFraction(Float.NaN));
+    }
+
+    @Test
+    void failedReplacementPreservesTheOriginalContent() {
+        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        ScrollPanel panel = new ScrollPanel();
+        Widget original = new Widget() { };
+        panel.setContent(original);
+        manager.add(panel);
+        Widget broken = new Widget() {
+            /**
+             * Simulates failed content initialization.
+             *
+             * @throws IllegalStateException always
+             */
+            @Override
+            protected void onAttached() {
+                throw new IllegalStateException("Attachment failed.");
+            }
+        };
+
+        assertThrows(IllegalStateException.class, () -> panel.setContent(broken));
+        assertSame(original, panel.content());
+        assertSame(panel, original.parent());
+        assertSame(manager.context(), original.context());
+        assertEquals(3, panel.children().size());
+    }
+
+    @Test
+    void scrollingAnotherAxisDoesNotRestartTheFirstAnimation() {
+        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        manager.resize(VIEWPORT);
+        ScrollPanel panel = new ScrollPanel();
+        panel.setBounds(PANEL_BOUNDS);
+        Widget content = new Widget() { };
+        content.setSize(400, 600);
+        panel.setContent(content);
+        manager.add(panel);
+        manager.layout();
+
+        manager.handle(new PointerScrolled(50, 50, 0, -1));
+        manager.update(0.09f);
+        manager.handle(new PointerScrolled(50, 50, 1, 0));
+        manager.update(0.1f);
+
+        assertEquals(48, panel.scrollY());
+        assertTrue(panel.scrollX() > 0 && panel.scrollX() < 48);
+    }
 
     @Test
     void exposesScrollRangesAndAppliesTheContentOffset() {

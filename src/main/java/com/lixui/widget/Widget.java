@@ -32,6 +32,7 @@ import java.util.Objects;
 public abstract class Widget {
     private final List<Widget> children = new ArrayList<>();
     private final List<Widget> childView = Collections.unmodifiableList(children);
+    private List<Widget> childSnapshot = List.of();
     private Widget parent;
     private UiContext context;
     private Font font;
@@ -321,6 +322,7 @@ public abstract class Widget {
             }
         }
         children.add(child);
+        childSnapshot = null;
         child.setParent(this);
         try {
             if (context != null && !detaching) {
@@ -328,6 +330,7 @@ public abstract class Widget {
             }
         } catch (RuntimeException | Error exception) {
             children.removeIf(candidate -> candidate == child);
+            childSnapshot = null;
             child.setParent(null);
             notifyStateChanged();
             throw exception;
@@ -347,6 +350,7 @@ public abstract class Widget {
         for (int index = 0; index < children.size(); index++) {
             if (children.get(index) == child) {
                 children.remove(index);
+                childSnapshot = null;
                 try {
                     child.detach();
                 } finally {
@@ -383,6 +387,9 @@ public abstract class Widget {
      * @param visible true to show the widget
      */
     public final void setVisible(boolean visible) {
+        if (this.visible == visible) {
+            return;
+        }
         this.visible = visible;
         notifyStateChanged();
     }
@@ -403,6 +410,9 @@ public abstract class Widget {
      * @param enabled true to accept input
      */
     public final void setEnabled(boolean enabled) {
+        if (this.enabled == enabled) {
+            return;
+        }
         this.enabled = enabled;
         notifyStateChanged();
     }
@@ -608,6 +618,10 @@ public abstract class Widget {
         }
         for (int index = children.size() - 1; index >= 0; index--) {
             Widget child = children.get(index);
+            Rect childClip = childClip(child);
+            if (childClip != null && !childClip.contains(x, y)) {
+                continue;
+            }
             Widget hit = child.hitTest(x - child.bounds.x(), y - child.bounds.y());
             if (hit != null) {
                 return hit;
@@ -625,9 +639,15 @@ public abstract class Widget {
      */
     public final void update(FrameInfo frame) {
         Objects.requireNonNull(frame, "frame");
+        UiContext owner = context;
         onUpdate(frame);
-        for (Widget child : children) {
-            child.update(frame);
+        for (Widget child : childSnapshot()) {
+            if (context != owner) {
+                break;
+            }
+            if (child.parent == this) {
+                child.update(frame);
+            }
         }
     }
 
@@ -637,6 +657,8 @@ public abstract class Widget {
      * in the widget's local coordinate space. Invisible widgets and their subtrees are skipped.
      * When {@link #isClipToBounds()} is enabled, the widget and its children are clipped to the
      * widget bounds intersected with the active clip.
+     * Sized widgets outside the active clip skip their draw callback. Unclipped children are still
+     * considered independently; empty bounds keep supporting custom unbounded drawing nodes.
      *
      * @param renderer drawing manager for the current frame
      * @param frame timing information for the current frame
@@ -683,12 +705,35 @@ public abstract class Widget {
 
     private void drawLocal(RenderManager renderer, FrameInfo frame, Rect clip,
                            float absoluteX, float absoluteY) {
-        onDraw(renderer, frame);
+        UiContext owner = context;
+        if (intersectsClip(clip, absoluteX, absoluteY)) {
+            onDraw(renderer, frame);
+        }
+        if (context != owner || !visible) {
+            return;
+        }
         boolean masked = pushChildMask(renderer);
         try {
-            for (Widget child : children) {
-                child.drawSubtree(renderer, frame, clip,
-                        absoluteX + child.bounds.x(), absoluteY + child.bounds.y());
+            for (Widget child : childSnapshot()) {
+                if (context != owner || !visible) {
+                    break;
+                }
+                if (child.parent != this) {
+                    continue;
+                }
+                Rect childClip = childClip(child);
+                if (childClip == null) {
+                    child.drawSubtree(renderer, frame, clip,
+                            absoluteX + child.bounds.x(), absoluteY + child.bounds.y());
+                } else {
+                    Rect effectiveClip = clip.intersect(new Rect(
+                            absoluteX + childClip.x(), absoluteY + childClip.y(),
+                            childClip.width(), childClip.height()));
+                    if (!effectiveClip.isEmpty()) {
+                        renderer.withClip(effectiveClip, () -> child.drawSubtree(renderer, frame,
+                                effectiveClip, absoluteX + child.bounds.x(), absoluteY + child.bounds.y()));
+                    }
+                }
             }
         } finally {
             if (masked) {
@@ -739,8 +784,10 @@ public abstract class Widget {
      * children with new bounds.
      */
     protected void onLayout() {
-        for (Widget child : children) {
-            child.layout(child.bounds());
+        for (Widget child : childSnapshot()) {
+            if (child.parent == this) {
+                child.layout(child.bounds());
+            }
         }
     }
 
@@ -760,6 +807,16 @@ public abstract class Widget {
      * @param frame timing information for the current frame
      */
     protected void onDraw(RenderManager renderer, FrameInfo frame) {
+    }
+
+    /**
+     * Returns an optional clip for a direct child's subtree and pointer hit testing.
+     *
+     * @param child direct child being drawn or hit-tested
+     * @return a rectangle in this widget's local coordinates, or null for no additional clip
+     */
+    protected Rect childClip(Widget child) {
+        return null;
     }
 
     /**
@@ -1018,11 +1075,19 @@ public abstract class Widget {
         context = newContext;
         try {
             onAttached();
-            for (Widget child : List.copyOf(children)) {
-                child.attach(newContext);
+            for (Widget child : childSnapshot()) {
+                if (child.parent == this && context == newContext) {
+                    child.attach(newContext);
+                }
             }
         } catch (RuntimeException | Error exception) {
-            detach();
+            try {
+                detach();
+            } catch (RuntimeException | Error cleanupFailure) {
+                if (cleanupFailure != exception) {
+                    exception.addSuppressed(cleanupFailure);
+                }
+            }
             throw exception;
         }
     }
@@ -1032,14 +1097,28 @@ public abstract class Widget {
             return;
         }
         detaching = true;
+        RuntimeException failure = null;
         try {
-            for (Widget child : List.copyOf(children)) {
-                child.detach();
+            for (Widget child : childSnapshot()) {
+                if (child.parent == this) {
+                    try {
+                        child.detach();
+                    } catch (RuntimeException exception) {
+                        failure = recordFailure(failure, exception);
+                    }
+                }
             }
-            onDetached();
+            try {
+                onDetached();
+            } catch (RuntimeException exception) {
+                failure = recordFailure(failure, exception);
+            }
         } finally {
             context = null;
             detaching = false;
+        }
+        if (failure != null) {
+            throw failure;
         }
     }
 
@@ -1047,10 +1126,44 @@ public abstract class Widget {
         if (context == null) {
             return;
         }
+        UiContext owner = context;
         onContextChanged();
-        for (Widget child : List.copyOf(children)) {
-            child.contextChanged();
+        for (Widget child : childSnapshot()) {
+            if (context != owner) {
+                break;
+            }
+            if (child.parent == this) {
+                child.contextChanged();
+            }
         }
+    }
+
+    private List<Widget> childSnapshot() {
+        if (childSnapshot == null) {
+            childSnapshot = List.copyOf(children);
+        }
+        return childSnapshot;
+    }
+
+    private boolean intersectsClip(Rect clip, float x, float y) {
+        if (bounds.isEmpty()) {
+            return true;
+        }
+        WidgetStyle resolvedStyle = style();
+        float padding = resolvedStyle == null ? 1 : resolvedStyle.borderWidth() / 2 + 1;
+        return x - padding < clip.right() && y - padding < clip.bottom()
+                && (double) x + bounds.width() + padding > clip.x()
+                && (double) y + bounds.height() + padding > clip.y();
+    }
+
+    static RuntimeException recordFailure(RuntimeException failure, RuntimeException exception) {
+        if (failure == null) {
+            return exception;
+        }
+        if (failure != exception) {
+            failure.addSuppressed(exception);
+        }
+        return failure;
     }
 
     private void notifyStateChanged() {

@@ -130,7 +130,7 @@ public class Button extends Panel {
     }
 
     /**
-     * Assigns an icon texture and draws it at the default size.
+     * Assigns a caller-owned icon texture drawn at the configured icon size.
      *
      * @param icon icon texture, or null to clear it
      */
@@ -244,7 +244,7 @@ public class Button extends Panel {
     protected Size onMeasure(LayoutConstraints constraints) {
         WidgetStyle style = style();
         Font font = font();
-        if (style == null || (font == null && icon == null)) {
+        if (style == null) {
             return super.onMeasure(constraints);
         }
         float contentWidth = 0;
@@ -255,7 +255,7 @@ public class Button extends Panel {
             contentHeight = textSize.height();
         }
         if (icon != null) {
-            contentWidth += (contentWidth > 0 ? ICON_GAP : 0) + iconSize;
+            contentWidth += (font != null && !text.isEmpty() ? ICON_GAP : 0) + iconSize;
             contentHeight = Math.max(contentHeight, iconSize);
         }
         float padding = style.padding();
@@ -370,7 +370,9 @@ public class Button extends Panel {
             return true;
         }
         if (key == Key.SPACE) {
-            spacePressed = true;
+            if (!repeat) {
+                spacePressed = true;
+            }
             return true;
         }
         return false;

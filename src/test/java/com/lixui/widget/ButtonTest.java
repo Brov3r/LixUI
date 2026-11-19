@@ -109,6 +109,36 @@ class ButtonTest {
     }
 
     @Test
+    void keyRepeatAfterFocusTransferDoesNotArmSpaceActivation() {
+        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        Button first = new Button();
+        Button second = new Button();
+        int[] actions = {0};
+        second.setOnAction(() -> actions[0]++);
+        manager.add(first).add(second);
+        manager.focus(first);
+        manager.handle(new KeyPressed(Key.SPACE, Modifiers.NONE, false));
+        manager.focus(second);
+        manager.handle(new KeyPressed(Key.SPACE, Modifiers.NONE, true));
+        manager.handle(new KeyReleased(Key.SPACE, Modifiers.NONE));
+
+        assertEquals(0, actions[0]);
+    }
+
+    @Test
+    void emptyButtonReservesPaddingWithoutAFont() {
+        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        Button button = new Button();
+        manager.add(button);
+
+        Size size = button.measure(LayoutConstraints.loose(1000, 1000));
+
+        float padding = manager.context().theme().controlStyle().padding();
+        assertEquals(padding * 2, size.width());
+        assertEquals(padding * 2, size.height());
+    }
+
+    @Test
     void rejectsInvalidIconArguments() {
         Button button = new Button("Go");
 

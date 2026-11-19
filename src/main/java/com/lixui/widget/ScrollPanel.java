@@ -87,12 +87,11 @@ public class ScrollPanel extends Panel {
      */
     public void setContent(Widget content) {
         Objects.requireNonNull(content, "content");
-        if (content == this) {
-            throw new IllegalArgumentException("A scroll panel cannot contain itself.");
+        if (content == this.content) {
+            return;
         }
-        if (content.parent() != null || content.context() != null) {
-            throw new IllegalArgumentException("Content already belongs to a widget tree.");
-        }
+        // Validate and attach first so a failed replacement preserves the current content.
+        add(content);
         remove(verticalBar);
         remove(horizontalBar);
         if (this.content != null) {
@@ -104,7 +103,6 @@ public class ScrollPanel extends Panel {
         scrollY = 0;
         targetScrollX = 0;
         targetScrollY = 0;
-        add(content);
         add(verticalBar);
         add(horizontalBar);
     }
@@ -149,8 +147,12 @@ public class ScrollPanel extends Panel {
      *
      * @param scrollX horizontal offset
      * @param scrollY vertical offset
+     * @throws IllegalArgumentException if an offset is non-finite
      */
     public void setScroll(float scrollX, float scrollY) {
+        if (!Float.isFinite(scrollX) || !Float.isFinite(scrollY)) {
+            throw new IllegalArgumentException("Scroll offsets must be finite.");
+        }
         cancelScrollAnimations();
         this.scrollX = clamp(scrollX, 0, maxScrollX());
         this.scrollY = clamp(scrollY, 0, maxScrollY());
@@ -165,6 +167,7 @@ public class ScrollPanel extends Panel {
      *
      * @param deltaX horizontal offset change
      * @param deltaY vertical offset change
+     * @throws IllegalArgumentException if an offset or resulting position is non-finite
      */
     public void scrollBy(float deltaX, float deltaY) {
         setScroll(scrollX + deltaX, scrollY + deltaY);
@@ -257,6 +260,8 @@ public class ScrollPanel extends Panel {
      */
     protected void setScrollBarsSuppressed(boolean suppressed) {
         scrollBarsSuppressed = suppressed;
+        verticalBar.setEnabled(scrollEnabled && !suppressed);
+        horizontalBar.setEnabled(scrollEnabled && !suppressed);
     }
 
     /**
@@ -276,6 +281,8 @@ public class ScrollPanel extends Panel {
      */
     public void setScrollEnabled(boolean scrollEnabled) {
         this.scrollEnabled = scrollEnabled;
+        verticalBar.setEnabled(scrollEnabled && !scrollBarsSuppressed);
+        horizontalBar.setEnabled(scrollEnabled && !scrollBarsSuppressed);
         if (!scrollEnabled) {
             cancelScrollAnimations();
             targetScrollX = scrollX;
@@ -362,6 +369,19 @@ public class ScrollPanel extends Panel {
     }
 
     /**
+     * Restricts content drawing and pointer input to the inset viewport.
+     *
+     * @param child direct child being drawn or hit-tested
+     * @return the content viewport, or null for fixed controls
+     */
+    @Override
+    protected Rect childClip(Widget child) {
+        return child == content
+                ? new Rect(contentInsetLeft, contentInsetTop, contentAreaWidth(), contentAreaHeight())
+                : null;
+    }
+
+    /**
      * Clips children to the rounded panel shape.
      *
      * @param renderer drawing manager for the current frame
@@ -411,30 +431,32 @@ public class ScrollPanel extends Panel {
         }
         float maxX = maxScrollX();
         float maxY = maxScrollY();
-        boolean scrolled = false;
+        float nextX = targetScrollX;
+        float nextY = targetScrollY;
         if (deltaY != 0) {
             if (maxY > 0) {
-                animateScrollBy(0, -deltaY * WHEEL_STEP);
-                scrolled = true;
+                nextY -= deltaY * WHEEL_STEP;
             } else if (maxX > 0) {
-                animateScrollBy(-deltaY * WHEEL_STEP, 0);
-                scrolled = true;
+                nextX -= deltaY * WHEEL_STEP;
             }
         }
         if (deltaX != 0 && maxX > 0) {
-            animateScrollBy(deltaX * WHEEL_STEP, 0);
-            scrolled = true;
+            nextX += deltaX * WHEEL_STEP;
         }
-        return scrolled;
-    }
-
-    private void animateScrollBy(float deltaX, float deltaY) {
-        animateScrollTo(targetScrollX + deltaX, targetScrollY + deltaY);
+        nextX = clamp(nextX, 0, maxX);
+        nextY = clamp(nextY, 0, maxY);
+        if (nextX == targetScrollX && nextY == targetScrollY) {
+            return false;
+        }
+        animateScrollTo(nextX, nextY);
+        return true;
     }
 
     private void animateScrollTo(float x, float y) {
         float targetX = clamp(x, 0, maxScrollX());
         float targetY = clamp(y, 0, maxScrollY());
+        boolean changeX = targetX != targetScrollX || horizontalAnimation == null;
+        boolean changeY = targetY != targetScrollY || verticalAnimation == null;
         targetScrollX = targetX;
         targetScrollY = targetY;
         Animator animator = context() == null ? null : context().animator();
@@ -443,10 +465,10 @@ public class ScrollPanel extends Panel {
             return;
         }
         animationOwner = animator;
-        if (scrollX == targetX) {
+        if (changeX) {
             cancelHorizontalAnimation(animator);
-        } else {
-            cancelHorizontalAnimation(animator);
+        }
+        if (changeX && scrollX != targetX) {
             horizontalAnimation = animator.animate(scrollX, targetX, SMOOTH_SCROLL_SECONDS,
                     Easing.EASE_OUT, value -> {
                         scrollX = clamp(value, 0, maxScrollX());
@@ -454,10 +476,10 @@ public class ScrollPanel extends Panel {
                         syncScrollbars();
                     }).setOnComplete(() -> horizontalAnimation = null);
         }
-        if (scrollY == targetY) {
+        if (changeY) {
             cancelVerticalAnimation(animator);
-        } else {
-            cancelVerticalAnimation(animator);
+        }
+        if (changeY && scrollY != targetY) {
             verticalAnimation = animator.animate(scrollY, targetY, SMOOTH_SCROLL_SECONDS,
                     Easing.EASE_OUT, value -> {
                         scrollY = clamp(value, 0, maxScrollY());
@@ -567,6 +589,8 @@ public class ScrollPanel extends Panel {
     @Override
     protected void onDetached() {
         cancelScrollAnimations();
+        targetScrollX = scrollX;
+        targetScrollY = scrollY;
     }
 
     private static void setVisibleIfChanged(Widget widget, boolean visible) {

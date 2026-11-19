@@ -59,6 +59,7 @@ public final class WidgetManager implements AutoCloseable {
     private final UiContext context;
     private final List<Widget> widgets = new ArrayList<>();
     private final List<Widget> widgetView = Collections.unmodifiableList(widgets);
+    private List<Widget> widgetSnapshot = List.of();
     private final EnumMap<MouseButton, Widget> captures = new EnumMap<>(MouseButton.class);
     private final EnumMap<MouseButton, PressState> presses = new EnumMap<>(MouseButton.class);
     private Widget hovered;
@@ -218,10 +219,12 @@ public final class WidgetManager implements AutoCloseable {
             throw new IllegalArgumentException("Widget is already registered.");
         }
         widgets.add(widget);
+        widgetSnapshot = null;
         try {
             widget.attach(context);
         } catch (RuntimeException | Error exception) {
             widgets.removeIf(candidate -> candidate == widget);
+            widgetSnapshot = null;
             pruneInteraction();
             throw exception;
         }
@@ -241,6 +244,7 @@ public final class WidgetManager implements AutoCloseable {
         for (int index = 0; index < widgets.size(); index++) {
             if (widgets.get(index) == widget) {
                 widgets.remove(index);
+                widgetSnapshot = null;
                 try {
                     widget.detach();
                 } finally {
@@ -286,8 +290,10 @@ public final class WidgetManager implements AutoCloseable {
      */
     public void layout() {
         ensureOpen();
-        for (Widget widget : widgets) {
-            widget.layout(widget.bounds());
+        for (Widget widget : widgetSnapshot()) {
+            if (widget.context() == context) {
+                widget.layout(widget.bounds());
+            }
         }
         updateHover();
         refreshCursor();
@@ -321,8 +327,10 @@ public final class WidgetManager implements AutoCloseable {
         }
         context.updateAnimations(deltaSeconds);
         updatePresses();
-        for (Widget widget : widgets) {
-            widget.update(frame);
+        for (Widget widget : widgetSnapshot()) {
+            if (widget.context() == context) {
+                widget.update(frame);
+            }
         }
         updateHover();
         refreshCursor();
@@ -354,16 +362,25 @@ public final class WidgetManager implements AutoCloseable {
         pruneInteraction();
         layout();
         renderer.begin();
-        for (Widget widget : widgets) {
-            widget.draw(renderer, frame);
+        try {
+            for (Widget widget : widgetSnapshot()) {
+                if (widget.context() == context) {
+                    widget.draw(renderer, frame);
+                }
+            }
+            renderer.end();
+        } catch (RuntimeException | Error exception) {
+            renderer.abort();
+            throw exception;
         }
-        renderer.end();
     }
 
     /**
      * Detaches every widget and releases resources created through the manager context.
      * Hover, focus and pointer captures are cleared. The render backend and platform adapter are
      * owned by the host and are not closed by this method.
+     *
+     * @throws RuntimeException if cleanup fails, after the remaining resources have been released
      */
     @Override
     public void close() {
@@ -372,15 +389,36 @@ public final class WidgetManager implements AutoCloseable {
         }
         closed = true;
         clearCaptures();
-        clearHover();
-        focus(null);
+        RuntimeException failure = null;
+        try {
+            clearHover();
+        } catch (RuntimeException exception) {
+            failure = Widget.recordFailure(failure, exception);
+        }
+        try {
+            focus(null);
+        } catch (RuntimeException exception) {
+            failure = Widget.recordFailure(failure, exception);
+        }
         resetClickSequence();
         pointerInside = false;
-        for (Widget widget : List.copyOf(widgets)) {
-            widget.detach();
+        for (Widget widget : widgetSnapshot()) {
+            try {
+                widget.detach();
+            } catch (RuntimeException exception) {
+                failure = Widget.recordFailure(failure, exception);
+            }
         }
         widgets.clear();
-        context.close();
+        widgetSnapshot = List.of();
+        try {
+            context.close();
+        } catch (RuntimeException exception) {
+            failure = Widget.recordFailure(failure, exception);
+        }
+        if (failure != null) {
+            throw failure;
+        }
     }
 
     /**
@@ -390,6 +428,37 @@ public final class WidgetManager implements AutoCloseable {
      */
     public Widget hovered() {
         return hovered;
+    }
+
+    /**
+     * Reports whether UI currently owns the pointer at the supplied viewport position.
+     * Hosts should skip their own hit testing and click handling while this method returns true,
+     * then pass the same event to {@link #handle(InputEvent)}. The check also covers an active
+     * pointer capture, so a drag that leaves the UI still blocks the host until release.
+     *
+     * @param x horizontal viewport coordinate in logical UI units
+     * @param y vertical viewport coordinate in logical UI units
+     * @return true when a visible, enabled widget or an active pointer capture would handle the input
+     * @throws IllegalArgumentException if a coordinate is non-finite
+     */
+    public boolean blocksPointer(float x, float y) {
+        if (!Float.isFinite(x) || !Float.isFinite(y)) {
+            throw new IllegalArgumentException("Pointer coordinates must be finite.");
+        }
+        if (closed) {
+            return false;
+        }
+        if (!captures.isEmpty()) {
+            return true;
+        }
+        for (int index = widgets.size() - 1; index >= 0; index--) {
+            Widget widget = widgets.get(index);
+            if (widget.isVisible() && widget.isEnabled()
+                    && widget.contains(x - widget.bounds().x(), y - widget.bounds().y())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -407,8 +476,12 @@ public final class WidgetManager implements AutoCloseable {
      *
      * @param widget widget to focus, or null to clear focus
      * @throws IllegalArgumentException if the widget is not focusable or is not registered
+     * @throws IllegalStateException if a non-null widget is supplied after the manager is closed
      */
     public void focus(Widget widget) {
+        if (closed && widget != null) {
+            throw new IllegalStateException("Widget manager is closed.");
+        }
         if (widget == focused) {
             return;
         }
@@ -527,9 +600,18 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     private void notifyContextChanged() {
-        for (Widget widget : widgets) {
-            widget.contextChanged();
+        for (Widget widget : widgetSnapshot()) {
+            if (widget.context() == context) {
+                widget.contextChanged();
+            }
         }
+    }
+
+    private List<Widget> widgetSnapshot() {
+        if (widgetSnapshot == null) {
+            widgetSnapshot = List.copyOf(widgets);
+        }
+        return widgetSnapshot;
     }
 
     private void ensureOpen() {
@@ -1055,6 +1137,9 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     private boolean isAttached(Widget widget) {
+        if (widget.context() != context) {
+            return false;
+        }
         Widget top = widget;
         while (top.parent() != null) {
             top = top.parent();

@@ -354,6 +354,63 @@ class WidgetTest {
     }
 
     @Test
+    void cullsOffscreenDrawingButStillUpdatesAndFindsOverflowingChildren() {
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager renderer = new RenderManager(backend);
+        renderer.resize(VIEWPORT);
+        List<String> log = new ArrayList<>();
+        Probe root = new Probe("root", log);
+        Probe visibleChild = new Probe("visible", log);
+        Probe hiddenChild = new Probe("hidden", log);
+        root.setBounds(new Rect(900, 0, 100, 100));
+        visibleChild.setBounds(new Rect(-200, 0, 50, 50));
+        hiddenChild.setBounds(new Rect(0, 0, 50, 50));
+        root.add(visibleChild).add(hiddenChild);
+
+        root.update(FrameInfo.ZERO);
+        assertEquals(List.of("update:root", "update:visible", "update:hidden"), log);
+        log.clear();
+        renderer.begin();
+        root.draw(renderer, FrameInfo.ZERO);
+        renderer.end();
+
+        assertEquals(List.of("draw:visible"), log);
+        assertEquals(1, backend.lastDrawList.commands().size());
+
+        root.setClipToBounds(true);
+        log.clear();
+        renderer.begin();
+        root.draw(renderer, FrameInfo.ZERO);
+        renderer.end();
+        assertTrue(log.isEmpty());
+    }
+
+    @Test
+    void cullsUnclippedChildrenOutsideTheParentClip() {
+        RenderManager renderer = new RenderManager(new RecordingBackend());
+        renderer.resize(VIEWPORT);
+        List<String> log = new ArrayList<>();
+        Probe root = new Probe("root", log);
+        Probe child = new Probe("child", log);
+        root.setBounds(new Rect(10, 10, 100, 100));
+        root.setClipToBounds(true);
+        child.setBounds(new Rect(0, 200, 50, 50));
+        root.add(child);
+
+        renderer.begin();
+        root.draw(renderer, FrameInfo.ZERO);
+        renderer.end();
+        assertEquals(List.of("draw:root"), log);
+
+        child.setPosition(0, 90);
+        log.clear();
+        renderer.begin();
+        root.draw(renderer, FrameInfo.ZERO);
+        renderer.end();
+        assertEquals(List.of("draw:root", "draw:child"), log);
+    }
+
+    @Test
     void rejectsNullArguments() {
         Probe probe = new Probe("probe", new ArrayList<>());
         FrameInfo frame = FrameInfo.ZERO;

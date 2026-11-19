@@ -109,6 +109,17 @@ public final class RenderManager {
     }
 
     /**
+     * Discards the current frame without submitting it to the backend.
+     * Calling this method without an active frame is harmless.
+     */
+    public void abort() {
+        drawing = false;
+        drawList.reset(logicalViewport);
+        transforms.clear();
+        transforms.push(Transform.IDENTITY);
+    }
+
+    /**
      * Appends a rectangle with sharp corners.
      *
      * @param bounds rectangle to fill
