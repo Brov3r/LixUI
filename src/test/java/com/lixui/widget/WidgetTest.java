@@ -1,15 +1,12 @@
 package com.lixui.widget;
 
+import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
 import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
-import com.lixui.render.DrawList;
-import com.lixui.render.ImageData;
-import com.lixui.render.RenderBackend;
 import com.lixui.render.RenderManager;
-import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
 import com.lixui.text.Font;
 import com.lixui.text.FontData;
@@ -180,7 +177,7 @@ class WidgetTest {
 
     @Test
     void drawingTranslatesParentAndChildIntoTheirLocalOrigins() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager renderer = new RenderManager(backend);
         renderer.resize(VIEWPORT);
         Probe root = new Probe("root", new ArrayList<>());
@@ -199,7 +196,7 @@ class WidgetTest {
 
     @Test
     void clipToBoundsClipsTheWidgetAndItsChildren() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager renderer = new RenderManager(backend);
         renderer.resize(VIEWPORT);
         Probe root = new Probe("root", new ArrayList<>());
@@ -214,16 +211,16 @@ class WidgetTest {
         root.draw(renderer, FrameInfo.ZERO);
         renderer.end();
 
-        assertEquals(2, backend.lastDrawList.commands().size());
-        assertEquals(new Rect(0, 0, 50, 50), backend.lastDrawList.commands().get(0).clip());
-        assertEquals(new Rect(40, 40, 10, 10), backend.lastDrawList.commands().get(1).clip());
+        assertEquals(2, backend.lastDrawList().commands().size());
+        assertEquals(new Rect(0, 0, 50, 50), backend.lastDrawList().commands().get(0).clip());
+        assertEquals(new Rect(40, 40, 10, 10), backend.lastDrawList().commands().get(1).clip());
 
         child.setBounds(new Rect(60, 0, 40, 40));
         renderer.begin();
         root.draw(renderer, FrameInfo.ZERO);
         renderer.end();
 
-        assertEquals(1, backend.lastDrawList.commands().size());
+        assertEquals(1, backend.lastDrawList().commands().size());
     }
 
     @Test
@@ -314,7 +311,7 @@ class WidgetTest {
 
     @Test
     void drawVisitsParentThenChildrenAndSkipsInvisibleSubtrees() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager renderer = new RenderManager(backend);
         renderer.resize(VIEWPORT);
         List<String> log = new ArrayList<>();
@@ -330,7 +327,7 @@ class WidgetTest {
         renderer.end();
 
         assertEquals(List.of("draw:root", "draw:child"), log);
-        assertEquals(2, backend.lastDrawList.commands().size());
+        assertEquals(2, backend.lastDrawList().commands().size());
         assertSame(frame, root.lastFrame);
         assertSame(frame, child.lastFrame);
 
@@ -341,7 +338,7 @@ class WidgetTest {
         renderer.end();
 
         assertEquals(List.of("draw:root"), log);
-        assertEquals(1, backend.lastDrawList.commands().size());
+        assertEquals(1, backend.lastDrawList().commands().size());
 
         log.clear();
         root.setVisible(false);
@@ -350,12 +347,12 @@ class WidgetTest {
         renderer.end();
 
         assertTrue(log.isEmpty());
-        assertTrue(backend.lastDrawList.commands().isEmpty());
+        assertTrue(backend.lastDrawList().commands().isEmpty());
     }
 
     @Test
     void cullsOffscreenDrawingButStillUpdatesAndFindsOverflowingChildren() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager renderer = new RenderManager(backend);
         renderer.resize(VIEWPORT);
         List<String> log = new ArrayList<>();
@@ -375,7 +372,7 @@ class WidgetTest {
         renderer.end();
 
         assertEquals(List.of("draw:visible"), log);
-        assertEquals(1, backend.lastDrawList.commands().size());
+        assertEquals(1, backend.lastDrawList().commands().size());
 
         root.setClipToBounds(true);
         log.clear();
@@ -387,7 +384,7 @@ class WidgetTest {
 
     @Test
     void cullsUnclippedChildrenOutsideTheParentClip() {
-        RenderManager renderer = new RenderManager(new RecordingBackend());
+        RenderManager renderer = new RenderManager(new TestBackend());
         renderer.resize(VIEWPORT);
         List<String> log = new ArrayList<>();
         Probe root = new Probe("root", log);
@@ -417,7 +414,7 @@ class WidgetTest {
 
         assertThrows(NullPointerException.class, () -> probe.setBounds(null));
         assertThrows(NullPointerException.class, () -> probe.draw(null, frame));
-        assertThrows(NullPointerException.class, () -> probe.draw(new RenderManager(new RecordingBackend()), null));
+        assertThrows(NullPointerException.class, () -> probe.draw(new RenderManager(new TestBackend()), null));
         assertThrows(NullPointerException.class, () -> probe.update(null));
     }
 
@@ -490,30 +487,4 @@ class WidgetTest {
         }
     }
 
-    private static final class RecordingBackend implements RenderBackend {
-        private DrawList lastDrawList;
-
-        @Override
-        public void resize(Viewport viewport) {
-        }
-
-        @Override
-        public void draw(DrawList drawList) {
-            lastDrawList = drawList;
-        }
-
-        @Override
-        public Texture createTexture(ImageData image) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void destroyTexture(Texture texture) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void close() {
-        }
-    }
 }

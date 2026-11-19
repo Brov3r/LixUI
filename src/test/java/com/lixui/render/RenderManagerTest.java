@@ -1,5 +1,7 @@
 package com.lixui.render;
 
+import com.lixui.widget.testsupport.TestTexture;
+import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
@@ -45,7 +47,7 @@ class RenderManagerTest {
 
     @Test
     void withOpacityMultipliesColorsAndRestoresTheScope() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
 
@@ -65,7 +67,7 @@ class RenderManagerTest {
         manager.rect(new Rect(20, 0, 10, 10), new Color(0, 0, 1, 1));
         manager.end();
 
-        List<DrawCommand> commands = backend.lastDrawList.commands();
+        List<DrawCommand> commands = backend.lastDrawList().commands();
         assertEquals(0.5f, assertInstanceOf(RoundedRectCommand.class, commands.get(0)).color().a(),
                 0.0001f);
         assertEquals(0.25f, assertInstanceOf(RoundedRectCommand.class, commands.get(1)).color().a(),
@@ -88,20 +90,20 @@ class RenderManagerTest {
 
     @Test
     void resizeDelegatesAndExposesTheLogicalViewport() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
 
         assertSame(Rect.EMPTY, manager.viewport());
 
         manager.resize(VIEWPORT);
 
-        assertSame(VIEWPORT, backend.viewport);
+        assertSame(VIEWPORT, backend.viewport());
         assertEquals(LOGICAL, manager.viewport());
     }
 
     @Test
     void beginDrawEndSubmitsTheCompletedList() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
 
@@ -110,15 +112,15 @@ class RenderManagerTest {
         manager.roundedRect(new Rect(20, 30, 100, 50), 8, RED);
         manager.end();
 
-        assertEquals(1, backend.drawCalls);
-        assertEquals(2, backend.lastDrawList.commands().size());
-        assertEquals(LOGICAL, backend.lastDrawList.viewport());
-        assertEquals(LOGICAL, backend.lastDrawList.commands().get(0).clip());
+        assertEquals(1, backend.drawCalls());
+        assertEquals(2, backend.lastDrawList().commands().size());
+        assertEquals(LOGICAL, backend.lastDrawList().viewport());
+        assertEquals(LOGICAL, backend.lastDrawList().commands().get(0).clip());
     }
 
     @Test
     void withClipScopesCommandsAndRestoresTheClip() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         Rect clip = new Rect(0, 0, 100, 100);
@@ -128,13 +130,13 @@ class RenderManagerTest {
         manager.rect(new Rect(200, 200, 50, 50), RED);
         manager.end();
 
-        assertEquals(clip, backend.lastDrawList.commands().get(0).clip());
-        assertEquals(LOGICAL, backend.lastDrawList.commands().get(1).clip());
+        assertEquals(clip, backend.lastDrawList().commands().get(0).clip());
+        assertEquals(LOGICAL, backend.lastDrawList().commands().get(1).clip());
     }
 
     @Test
     void beginResetsCommandsFromThePreviousFrame() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
 
@@ -145,12 +147,12 @@ class RenderManagerTest {
         manager.begin();
         manager.end();
 
-        assertTrue(backend.lastDrawList.commands().isEmpty());
+        assertTrue(backend.lastDrawList().commands().isEmpty());
     }
 
     @Test
     void rejectsFrameMisuse() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
 
         assertThrows(IllegalStateException.class, manager::begin);
@@ -166,20 +168,20 @@ class RenderManagerTest {
 
     @Test
     void createsAndDestroysTexturesThroughTheBackend() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         ImageData image = new ImageData(2, 2, new byte[16]);
 
         Texture texture = manager.createTexture(image);
         manager.destroyTexture(texture);
 
-        assertSame(image, backend.createdImage);
-        assertSame(texture, backend.destroyedTexture);
+        assertSame(image, backend.lastImage());
+        assertSame(texture, backend.lastDestroyedTexture());
     }
 
     @Test
     void fillRectUsesSolidSdfAndGradientMesh() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         Rect bounds = new Rect(10, 10, 100, 50);
@@ -192,7 +194,7 @@ class RenderManagerTest {
         manager.fillRect(bounds, gradient);
         manager.end();
 
-        List<DrawCommand> commands = backend.lastDrawList.commands();
+        List<DrawCommand> commands = backend.lastDrawList().commands();
         assertEquals(2, commands.size());
         assertTrue(commands.get(0) instanceof RoundedRectCommand);
         assertTrue(commands.get(1) instanceof MeshCommand);
@@ -201,7 +203,7 @@ class RenderManagerTest {
 
     @Test
     void shapeApiEmitsMeshesForCurvesStrokesAndPolygons() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         List<Point> square = List.of(
@@ -226,7 +228,7 @@ class RenderManagerTest {
         manager.strokePolygon(square, 4, Paint.solid(RED));
         manager.end();
 
-        List<DrawCommand> commands = backend.lastDrawList.commands();
+        List<DrawCommand> commands = backend.lastDrawList().commands();
         assertEquals(13, commands.size());
         assertTrue(commands.get(0) instanceof RoundedRectCommand);
         for (int index = 1; index < commands.size(); index++) {
@@ -237,7 +239,7 @@ class RenderManagerTest {
 
     @Test
     void rejectsInvalidShapeArguments() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         manager.begin();
@@ -259,7 +261,7 @@ class RenderManagerTest {
 
     @Test
     void transformsAffectShapeAndMeshGeometry() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         manager.setAntialiasing(Antialiasing.OFF);
@@ -273,17 +275,17 @@ class RenderManagerTest {
         });
         manager.end();
 
-        DrawCommand command = backend.lastDrawList.commands().get(0);
+        DrawCommand command = backend.lastDrawList().commands().get(0);
         assertTrue(command instanceof RoundedRectCommand);
         assertEquals(new Rect(10, 20, 100, 50), command.bounds());
-        command = backend.lastDrawList.commands().get(1);
+        command = backend.lastDrawList().commands().get(1);
         assertTrue(command instanceof MeshCommand);
         assertEquals(new Rect(10, 20, 100, 50), command.bounds());
     }
 
     @Test
     void translatedRoundedRectPreservesClipColorAndClampedRadius() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         Rect clip = new Rect(0, 0, 80, 60);
@@ -299,7 +301,7 @@ class RenderManagerTest {
         manager.popClip();
         manager.end();
 
-        RoundedRectCommand command = (RoundedRectCommand) backend.lastDrawList.commands().getFirst();
+        RoundedRectCommand command = (RoundedRectCommand) backend.lastDrawList().commands().getFirst();
         assertEquals(new Rect(22, 28, 100, 50), command.bounds());
         assertEquals(25, command.radius());
         assertEquals(translucent, command.color());
@@ -308,7 +310,7 @@ class RenderManagerTest {
 
     @Test
     void scalingRotationAndGradientsKeepTheMeshPath() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         Rect bounds = new Rect(0, 0, 100, 50);
@@ -324,7 +326,7 @@ class RenderManagerTest {
                 () -> manager.fillRect(bounds, gradient));
         manager.end();
 
-        List<DrawCommand> commands = backend.lastDrawList.commands();
+        List<DrawCommand> commands = backend.lastDrawList().commands();
         assertEquals(3, commands.size());
         assertTrue(commands.stream().allMatch(MeshCommand.class::isInstance));
         assertEquals(new Rect(0, 0, 200, 150), commands.get(0).bounds());
@@ -336,7 +338,7 @@ class RenderManagerTest {
 
     @Test
     void transformsApplyToImageCommandsWithTheAtlasRegion() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         Texture texture = new TestTexture(256, 256);
@@ -349,7 +351,7 @@ class RenderManagerTest {
         manager.image(texture, bounds);
         manager.end();
 
-        List<DrawCommand> commands = backend.lastDrawList.commands();
+        List<DrawCommand> commands = backend.lastDrawList().commands();
         ImageCommand transformed = (ImageCommand) commands.get(0);
         assertSame(texture, transformed.texture());
         assertEquals(bounds, transformed.bounds());
@@ -362,7 +364,7 @@ class RenderManagerTest {
 
     @Test
     void groupTransformsComposeAndResetEachFrame() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
 
@@ -387,7 +389,7 @@ class RenderManagerTest {
 
     @Test
     void withTransformRestoresThePreviousTransformWhenTheActionFails() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         manager.begin();
@@ -403,7 +405,7 @@ class RenderManagerTest {
 
     @Test
     void transformsApplyToTextureMasks() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         Texture texture = new TestTexture(64, 64);
@@ -418,7 +420,7 @@ class RenderManagerTest {
         });
         manager.end();
 
-        List<DrawCommand> commands = backend.lastDrawList.commands();
+        List<DrawCommand> commands = backend.lastDrawList().commands();
         MaskTextureBeginCommand begin = (MaskTextureBeginCommand) commands.get(0);
         assertSame(texture, begin.texture());
         assertEquals(bounds, begin.bounds());
@@ -429,7 +431,7 @@ class RenderManagerTest {
 
     @Test
     void maskApiEmitsBeginAndEndCommands() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         List<Point> triangle = List.of(
@@ -449,7 +451,7 @@ class RenderManagerTest {
         manager.popMask();
         manager.end();
 
-        List<DrawCommand> commands = backend.lastDrawList.commands();
+        List<DrawCommand> commands = backend.lastDrawList().commands();
         assertEquals(9, commands.size());
         assertTrue(commands.get(0) instanceof MaskBeginCommand);
         assertTrue(commands.get(1) instanceof RoundedRectCommand);
@@ -464,7 +466,7 @@ class RenderManagerTest {
 
     @Test
     void rejectsMaskMisuse() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         manager.begin();
@@ -478,27 +480,27 @@ class RenderManagerTest {
 
     @Test
     void antialiasingChangesTessellationDensity() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         manager.setAntialiasing(Antialiasing.OFF);
         manager.begin();
         manager.fillCircle(new Point(100, 100), 50, Paint.solid(RED));
         manager.end();
-        int coarse = ((MeshCommand) backend.lastDrawList.commands().get(0)).vertices().size();
+        int coarse = ((MeshCommand) backend.lastDrawList().commands().get(0)).vertices().size();
 
         manager.setAntialiasing(Antialiasing.HIGH);
         manager.begin();
         manager.fillCircle(new Point(100, 100), 50, Paint.solid(RED));
         manager.end();
-        int dense = ((MeshCommand) backend.lastDrawList.commands().get(0)).vertices().size();
+        int dense = ((MeshCommand) backend.lastDrawList().commands().get(0)).vertices().size();
 
         assertTrue(dense > coarse);
     }
 
     @Test
     void nestedMasksEmitBalancedCommands() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         List<Point> triangle = List.of(
@@ -516,7 +518,7 @@ class RenderManagerTest {
         manager.popMask();
         manager.end();
 
-        List<DrawCommand> commands = backend.lastDrawList.commands();
+        List<DrawCommand> commands = backend.lastDrawList().commands();
         assertEquals(7, commands.size());
         assertTrue(commands.get(0) instanceof MaskBeginCommand);
         assertTrue(commands.get(1) instanceof MaskBeginCommand);
@@ -529,7 +531,7 @@ class RenderManagerTest {
 
     @Test
     void alignsIconTexelsToFramebufferPixelsAfterWidgetTranslation() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         manager.begin();
@@ -537,19 +539,19 @@ class RenderManagerTest {
                 () -> manager.icon(new TestTexture(28, 28), new Rect(3.1f, 2.1f, 14, 14),
                         ImageStyle.ICON, Color.WHITE));
         manager.end();
-        ImageCommand icon = (ImageCommand) backend.lastDrawList.commands().getFirst();
+        ImageCommand icon = (ImageCommand) backend.lastDrawList().commands().getFirst();
         assertEquals(new Rect(3.25f, 2.25f, 14, 14), icon.bounds());
     }
 
     @Test
     void drawsNativeSizeIconWithoutResamplingAtFractionalDensity() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(new Viewport(1000, 750, 800, 600));
         manager.begin();
         manager.icon(new TestTexture(18, 18), new Rect(3, 3, 14, 14), ImageStyle.ICON, Color.WHITE);
         manager.end();
-        ImageCommand icon = (ImageCommand) backend.lastDrawList.commands().getFirst();
+        ImageCommand icon = (ImageCommand) backend.lastDrawList().commands().getFirst();
         assertEquals(new Rect(3.2f, 3.2f, 14.4f, 14.4f), icon.bounds());
     }
 
@@ -557,11 +559,11 @@ class RenderManagerTest {
     void createsFontsDrawsTextAndReleasesTheirAtlases() {
         FontData data = SystemFonts.findDefault().orElse(null);
         Assumptions.assumeTrue(data != null, "No readable system font is installed.");
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         Font font = manager.createFont(data, 20, new int[]{'A', 'B'});
-        assertSame(font.atlas(), backend.createdImage);
+        assertSame(font.atlas(), backend.lastImage());
 
         manager.begin();
         manager.text(font, "AB", new Point(10, 20), RED);
@@ -570,11 +572,11 @@ class RenderManagerTest {
         assertThrows(NullPointerException.class, () -> manager.text(font, "A", 0, 0, (Color) null));
         manager.end();
 
-        List<DrawCommand> commands = backend.lastDrawList.commands();
+        List<DrawCommand> commands = backend.lastDrawList().commands();
         assertEquals(1, commands.size());
         TextCommand text = (TextCommand) commands.get(0);
         assertEquals(2, text.glyphs().size());
-        assertSame(backend.createdTexture, text.texture());
+        assertSame(backend.lastCreatedTexture(), text.texture());
         assertEquals(RED, text.colors().get(0));
         assertEquals(Transform.IDENTITY, text.transform());
         assertEquals(font.glyph('A').uv(), text.glyphs().get(0).uv());
@@ -589,14 +591,14 @@ class RenderManagerTest {
         assertEquals(font.measure("AB").height(), manager.measureText(font, "AB").height(), 0.0001f);
 
         manager.destroyFont(font);
-        assertSame(backend.createdTexture, backend.destroyedTexture);
+        assertSame(backend.lastCreatedTexture(), backend.lastDestroyedTexture());
     }
 
     @Test
     void createsStyledFontVariants() {
         FontData data = SystemFonts.findDefault().orElse(null);
         Assumptions.assumeTrue(data != null, "No readable system font is installed.");
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
 
@@ -604,7 +606,7 @@ class RenderManagerTest {
 
         assertEquals(FontStyle.BOLD, bold.style());
         assertEquals(1.5f, bold.letterSpacing(), 0.0001f);
-        assertSame(bold.atlas(), backend.createdImage);
+        assertSame(bold.atlas(), backend.lastImage());
     }
 
     @Test
@@ -618,7 +620,7 @@ class RenderManagerTest {
             }
         }
         Assumptions.assumeTrue(family != null, "No installed bold face is available.");
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
 
@@ -626,12 +628,12 @@ class RenderManagerTest {
 
         assertEquals(FontStyle.REGULAR, bold.style());
         assertNotNull(bold.glyph('A'));
-        assertSame(bold.atlas(), backend.createdImage);
+        assertSame(bold.atlas(), backend.lastImage());
     }
 
     @Test
     void systemFontLookupReturnsEmptyForMissingFamilies() {
-        RenderManager manager = new RenderManager(new RecordingBackend());
+        RenderManager manager = new RenderManager(new TestBackend());
 
         assertTrue(manager.createFont("lixui-missing-family", 16, FontStyle.BOLD).isEmpty());
         assertThrows(NullPointerException.class,
@@ -644,7 +646,7 @@ class RenderManagerTest {
     void alignsTextAroundTheAnchor() {
         FontData data = SystemFonts.findDefault().orElse(null);
         Assumptions.assumeTrue(data != null, "No readable system font is installed.");
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         Font font = manager.createFont(data, 30, new int[]{'A', 'B'});
@@ -664,7 +666,7 @@ class RenderManagerTest {
         Rect expected = new Rect(Math.round((400 - width / 2 + glyph.offsetX()) * 2) / 2f,
                 Math.round((300 - height / 2 + font.ascent() + glyph.offsetY()) * 2) / 2f,
                 glyph.width(), glyph.height());
-        TextCommand command = (TextCommand) backend.lastDrawList.commands().get(0);
+        TextCommand command = (TextCommand) backend.lastDrawList().commands().get(0);
         assertEquals(expected, command.glyphs().get(0).bounds());
     }
 
@@ -672,7 +674,7 @@ class RenderManagerTest {
     void textSupportsWrappedStyles() {
         FontData data = SystemFonts.findDefault().orElse(null);
         Assumptions.assumeTrue(data != null, "No readable system font is installed.");
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         Font font = manager.createFont(data, 24, new int[]{'A', 'B', ' '});
@@ -685,14 +687,14 @@ class RenderManagerTest {
         manager.end();
 
         assertTrue(measured.height() > font.lineHeight());
-        assertEquals(1, backend.lastDrawList.commands().size());
+        assertEquals(1, backend.lastDrawList().commands().size());
     }
 
     @Test
     void textSupportsPaintGradients() {
         FontData data = SystemFonts.findDefault().orElse(null);
         Assumptions.assumeTrue(data != null, "No readable system font is installed.");
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         Font font = manager.createFont(data, 40, new int[]{'A', 'B'});
@@ -704,7 +706,7 @@ class RenderManagerTest {
         assertThrows(NullPointerException.class, () -> manager.text(font, "A", 0, 0, (Paint) null));
         manager.end();
 
-        List<DrawCommand> commands = backend.lastDrawList.commands();
+        List<DrawCommand> commands = backend.lastDrawList().commands();
         assertEquals(1, commands.size());
         TextCommand command = (TextCommand) commands.get(0);
         assertEquals(2, command.colors().size());
@@ -720,7 +722,7 @@ class RenderManagerTest {
     void textRejectsFontsCreatedByAnotherManager() {
         FontData data = SystemFonts.findDefault().orElse(null);
         Assumptions.assumeTrue(data != null, "No readable system font is installed.");
-        RenderManager manager = new RenderManager(new RecordingBackend());
+        RenderManager manager = new RenderManager(new TestBackend());
         manager.resize(VIEWPORT);
         Font font = Font.load(data, 16, new int[]{'A'});
 
@@ -732,7 +734,7 @@ class RenderManagerTest {
 
     @Test
     void rejectsNullArguments() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         manager.begin();
@@ -749,13 +751,11 @@ class RenderManagerTest {
         assertThrows(NullPointerException.class, () -> manager.destroyTexture(null));
     }
 
-    private record TestTexture(int width, int height) implements Texture {
-    }
 
     @Test
     void analyticBackendReceivesShapesWithoutTessellatingGradientsOrEllipses() {
-        RecordingBackend backend = new RecordingBackend();
-        backend.analytic = true;
+        TestBackend backend = new TestBackend();
+        backend.setAnalytic(true);
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         Paint gradient = Paint.radial(new Point(50, 50), 40,
@@ -769,7 +769,7 @@ class RenderManagerTest {
         manager.popTransform();
         manager.end();
 
-        List<DrawCommand> commands = backend.lastDrawList.commands();
+        List<DrawCommand> commands = backend.lastDrawList().commands();
         assertEquals(2, commands.size());
         ShapeCommand rectangle = (ShapeCommand) commands.get(0);
         ShapeCommand ellipse = (ShapeCommand) commands.get(1);
@@ -783,8 +783,8 @@ class RenderManagerTest {
 
     @Test
     void oversizedGradientsFallBackWithoutDroppingStops() {
-        RecordingBackend backend = new RecordingBackend();
-        backend.analytic = true;
+        TestBackend backend = new TestBackend();
+        backend.setAnalytic(true);
         RenderManager manager = new RenderManager(backend);
         manager.resize(VIEWPORT);
         Paint gradient = Paint.linear(new Point(0, 0), new Point(100, 0),
@@ -796,55 +796,9 @@ class RenderManagerTest {
         manager.fillRect(new Rect(0, 0, 100, 50), gradient);
         manager.end();
 
-        assertTrue(backend.lastDrawList.commands().getFirst() instanceof MeshCommand);
+        assertTrue(backend.lastDrawList().commands().getFirst() instanceof MeshCommand);
         assertThrows(IllegalArgumentException.class,
                 () -> new ShapeCommand(LOGICAL, 0, false, gradient, LOGICAL, Transform.IDENTITY));
     }
 
-    private static final class RecordingBackend implements RenderBackend {
-        private boolean analytic;
-        private Viewport viewport;
-        private DrawList lastDrawList;
-        private int drawCalls;
-        private ImageData createdImage;
-        private Texture createdTexture;
-        private Texture destroyedTexture;
-
-        /**
-         * Returns the capability selected by the test.
-         *
-         * @return whether analytic commands should be emitted
-         */
-        @Override
-        public boolean supportsAnalyticShapes() {
-            return analytic;
-        }
-
-        @Override
-        public void resize(Viewport viewport) {
-            this.viewport = viewport;
-        }
-
-        @Override
-        public void draw(DrawList drawList) {
-            lastDrawList = drawList;
-            drawCalls++;
-        }
-
-        @Override
-        public Texture createTexture(ImageData image) {
-            createdImage = image;
-            createdTexture = new TestTexture(image.width(), image.height());
-            return createdTexture;
-        }
-
-        @Override
-        public void destroyTexture(Texture texture) {
-            destroyedTexture = texture;
-        }
-
-        @Override
-        public void close() {
-        }
-    }
 }

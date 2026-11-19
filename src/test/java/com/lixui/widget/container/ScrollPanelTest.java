@@ -1,5 +1,6 @@
 package com.lixui.widget.container;
 
+import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.FrameInfo;
@@ -13,14 +14,10 @@ import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.input.event.PointerScrolled;
 import com.lixui.render.command.DrawCommand;
-import com.lixui.render.DrawList;
-import com.lixui.render.ImageData;
 import com.lixui.render.command.MaskBeginCommand;
 import com.lixui.render.command.MaskEndCommand;
-import com.lixui.render.RenderBackend;
 import com.lixui.render.RenderManager;
 import com.lixui.render.command.RoundedRectCommand;
-import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
 import org.junit.jupiter.api.Test;
 
@@ -38,7 +35,7 @@ class ScrollPanelTest {
 
     @Test
     void clipsContentDrawingAndHitTestingToInsets() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(VIEWPORT);
         ScrollPanel panel = new ScrollPanel();
@@ -62,7 +59,7 @@ class ScrollPanelTest {
         panel.setScroll(50, 60);
         manager.render();
 
-        RoundedRectCommand command = backend.lastDrawList.commands().stream()
+        RoundedRectCommand command = backend.lastDrawList().commands().stream()
                 .filter(RoundedRectCommand.class::isInstance)
                 .map(RoundedRectCommand.class::cast)
                 .filter(value -> value.color().equals(Color.WHITE))
@@ -75,7 +72,7 @@ class ScrollPanelTest {
 
     @Test
     void bubblesWheelToOuterPanelAtTheInnerScrollLimit() {
-        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         manager.resize(VIEWPORT);
         ScrollPanel outer = new ScrollPanel();
         outer.setBounds(PANEL_BOUNDS);
@@ -116,7 +113,7 @@ class ScrollPanelTest {
 
     @Test
     void failedReplacementPreservesTheOriginalContent() {
-        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         ScrollPanel panel = new ScrollPanel();
         Widget original = new Widget() { };
         panel.setContent(original);
@@ -142,7 +139,7 @@ class ScrollPanelTest {
 
     @Test
     void scrollingAnotherAxisDoesNotRestartTheFirstAnimation() {
-        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         manager.resize(VIEWPORT);
         ScrollPanel panel = new ScrollPanel();
         panel.setBounds(PANEL_BOUNDS);
@@ -163,7 +160,7 @@ class ScrollPanelTest {
 
     @Test
     void autoSizeMeasuresTheContentAndInsets() {
-        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         manager.resize(VIEWPORT);
         ScrollPanel panel = new ScrollPanel();
         panel.setContentInsets(5, 6, 7, 8);
@@ -181,7 +178,7 @@ class ScrollPanelTest {
 
     @Test
     void exposesScrollRangesAndAppliesTheContentOffset() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(VIEWPORT);
         ScrollPanel panel = new ScrollPanel();
@@ -206,7 +203,7 @@ class ScrollPanelTest {
 
     @Test
     void dragsTheVerticalAndHorizontalBars() {
-        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         manager.resize(VIEWPORT);
         ScrollPanel panel = new ScrollPanel();
         panel.setBounds(PANEL_BOUNDS);
@@ -237,7 +234,7 @@ class ScrollPanelTest {
 
     @Test
     void ignoresNonPrimaryButtonsWhenDraggingBars() {
-        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         manager.resize(VIEWPORT);
         ScrollPanel panel = new ScrollPanel();
         panel.setBounds(PANEL_BOUNDS);
@@ -257,7 +254,7 @@ class ScrollPanelTest {
 
     @Test
     void wheelScrollsTheContentAndBarsHandleTheirOwnWheelInput() {
-        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         manager.resize(VIEWPORT);
         ScrollPanel panel = new ScrollPanel();
         panel.setBounds(PANEL_BOUNDS);
@@ -288,7 +285,7 @@ class ScrollPanelTest {
 
     @Test
     void clipsChildrenWithARoundedMask() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(VIEWPORT);
         ScrollPanel panel = new ScrollPanel();
@@ -301,7 +298,7 @@ class ScrollPanelTest {
 
         int maskBegin = -1;
         int maskEnd = -1;
-        List<DrawCommand> commands = backend.lastDrawList.commands();
+        List<DrawCommand> commands = backend.lastDrawList().commands();
         for (int index = 0; index < commands.size(); index++) {
             if (commands.get(index) instanceof MaskBeginCommand) {
                 maskBegin = index;
@@ -315,7 +312,7 @@ class ScrollPanelTest {
 
     @Test
     void configuresScrollbarsAndScrolling() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(VIEWPORT);
         ScrollPanel panel = new ScrollPanel();
@@ -360,7 +357,7 @@ class ScrollPanelTest {
 
     @Test
     void removesScrollbarsWhenContentFits() {
-        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         manager.resize(VIEWPORT);
         ScrollPanel panel = new ScrollPanel();
         panel.setBounds(PANEL_BOUNDS);
@@ -383,30 +380,4 @@ class ScrollPanelTest {
         throw new AssertionError("Missing scrollbar: " + orientation);
     }
 
-    private static final class RecordingBackend implements RenderBackend {
-        private DrawList lastDrawList;
-
-        @Override
-        public void resize(Viewport viewport) {
-        }
-
-        @Override
-        public void draw(DrawList drawList) {
-            lastDrawList = drawList;
-        }
-
-        @Override
-        public Texture createTexture(ImageData image) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void destroyTexture(Texture texture) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void close() {
-        }
-    }
 }

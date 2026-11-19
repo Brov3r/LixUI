@@ -1,5 +1,6 @@
 package com.lixui.widget;
 
+import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.geometry.Rect;
 import com.lixui.input.InputState;
 import com.lixui.input.Modifiers;
@@ -7,11 +8,7 @@ import com.lixui.input.MouseButton;
 import com.lixui.input.event.PointerMoved;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.render.command.DrawCommand;
-import com.lixui.render.DrawList;
-import com.lixui.render.ImageData;
-import com.lixui.render.RenderBackend;
 import com.lixui.render.command.RoundedRectCommand;
-import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
 import com.lixui.widget.testsupport.FixedWidget;
 import com.lixui.widget.tooltip.TooltipSettings;
@@ -31,7 +28,7 @@ class TooltipTest {
 
     @Test
     void reportsTheTooltipDelayAndFadeThroughDrawCommands() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
             manager.resize(VIEWPORT);
             Panel owner = new Panel();
@@ -45,18 +42,18 @@ class TooltipTest {
             manager.update(0.5f);
             assertNotNull(tooltip.context());
             manager.render();
-            assertEquals(2, backend.lastDrawList.commands().size());
+            assertEquals(2, backend.lastDrawList().commands().size());
 
             manager.update(0.06f);
             manager.render();
-            List<DrawCommand> fadingIn = backend.lastDrawList.commands();
+            List<DrawCommand> fadingIn = backend.lastDrawList().commands();
             assertEquals(4, fadingIn.size());
             assertEquals(0.5f, assertInstanceOf(RoundedRectCommand.class,
                     fadingIn.get(2)).color().a(), 0.02f);
 
             manager.update(0.06f);
             manager.render();
-            List<DrawCommand> shown = backend.lastDrawList.commands();
+            List<DrawCommand> shown = backend.lastDrawList().commands();
             assertEquals(1, assertInstanceOf(RoundedRectCommand.class,
                     shown.get(2)).color().a(), 0.02f);
             assertEquals(new Rect(32, 38, 80, 30), tooltip.bounds());
@@ -66,18 +63,18 @@ class TooltipTest {
             manager.update(0.06f);
             manager.render();
             assertEquals(0.5f, assertInstanceOf(RoundedRectCommand.class,
-                    backend.lastDrawList.commands().get(2)).color().a(), 0.02f);
+                    backend.lastDrawList().commands().get(2)).color().a(), 0.02f);
 
             manager.update(0.07f);
             assertNull(tooltip.context());
             manager.render();
-            assertEquals(2, backend.lastDrawList.commands().size());
+            assertEquals(2, backend.lastDrawList().commands().size());
         }
     }
 
     @Test
     void settingsCustomizeDelayOffsetFadeAndGlobalToggle() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
             manager.resize(VIEWPORT);
             manager.setTooltipSettings(TooltipSettings.defaults()
@@ -102,7 +99,7 @@ class TooltipTest {
             manager.render();
             assertNull(tooltip.context());
             assertFalse(manager.areTooltipsEnabled());
-            assertEquals(2, backend.lastDrawList.commands().size());
+            assertEquals(2, backend.lastDrawList().commands().size());
 
             manager.setTooltipsEnabled(true);
             manager.update(0.11f);
@@ -113,7 +110,7 @@ class TooltipTest {
 
     @Test
     void perWidgetSettingsOverrideTheManagerDefaults() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
             manager.resize(VIEWPORT);
             Panel outer = new Panel();
@@ -142,7 +139,7 @@ class TooltipTest {
 
     @Test
     void disabledSubtreeSuppressesInheritedTooltips() {
-        try (WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend())) {
+        try (WidgetManager manager = new WidgetManager(new InputState(), new TestBackend())) {
             manager.resize(VIEWPORT);
             Panel outer = new Panel();
             outer.setBounds(new Rect(0, 0, 300, 200));
@@ -173,7 +170,7 @@ class TooltipTest {
 
     @Test
     void tooltipDoesNotBlockPointerInput() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
             manager.resize(VIEWPORT);
             manager.setTooltipSettings(TooltipSettings.defaults().withFade(0, 0));
@@ -197,7 +194,7 @@ class TooltipTest {
 
     @Test
     void pressingHidesTheTooltipAndCloseDetachesIt() {
-        try (WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend())) {
+        try (WidgetManager manager = new WidgetManager(new InputState(), new TestBackend())) {
             manager.resize(VIEWPORT);
             Panel owner = new Panel();
             owner.setBounds(new Rect(0, 0, 300, 200));
@@ -240,32 +237,5 @@ class TooltipTest {
                 () -> TooltipSettings.defaults().withOffset(Float.POSITIVE_INFINITY, 0));
     }
 
-    private static final class RecordingBackend implements RenderBackend {
-        private DrawList lastDrawList;
 
-        @Override
-        public void resize(Viewport viewport) {
-        }
-
-        @Override
-        public void draw(DrawList drawList) {
-            lastDrawList = drawList;
-        }
-
-        @Override
-        public Texture createTexture(ImageData image) {
-            return new TestTexture(image.width(), image.height());
-        }
-
-        @Override
-        public void destroyTexture(Texture texture) {
-        }
-
-        @Override
-        public void close() {
-        }
-    }
-
-    private record TestTexture(int width, int height) implements Texture {
-    }
 }

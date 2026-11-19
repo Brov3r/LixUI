@@ -1,11 +1,10 @@
 package com.lixui.widget;
 
+import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
-import com.lixui.render.DrawList;
 import com.lixui.render.ImageData;
-import com.lixui.render.RenderBackend;
 import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
@@ -23,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class WidgetLifecycleTest {
     @Test
     void rootUpdateCanRemoveItselfAndDefersNewRoots() {
-        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         List<String> updates = new ArrayList<>();
         Widget added = updatingWidget("added", updates);
         Widget first = new Widget() {
@@ -78,7 +77,7 @@ class WidgetLifecycleTest {
 
     @Test
     void drawingCanRemoveASiblingWithoutDrawingTheDetachedWidget() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(new Viewport(100, 100, 100, 100));
         Widget root = new Widget() { };
@@ -112,13 +111,13 @@ class WidgetLifecycleTest {
 
         manager.render();
 
-        assertEquals(1, backend.frames);
+        assertEquals(1, backend.drawCalls());
         assertNull(removed.context());
     }
 
     @Test
     void failedDrawingDiscardsCommandsAndAllowsTheNextFrame() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(new Viewport(100, 100, 100, 100));
         boolean[] fail = {true};
@@ -143,16 +142,16 @@ class WidgetLifecycleTest {
         manager.add(widget);
 
         assertThrows(IllegalStateException.class, manager::render);
-        assertEquals(0, backend.frames);
+        assertEquals(0, backend.drawCalls());
         fail[0] = false;
         manager.render();
-        assertEquals(1, backend.frames);
-        assertEquals(1, backend.commands);
+        assertEquals(1, backend.drawCalls());
+        assertEquals(1, backend.lastCommandCount());
     }
 
     @Test
     void closeDetachesEverySubtreeAndReleasesResourcesAfterCallbackFailures() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         RuntimeException failure = new IllegalStateException("Detach failed.");
         List<String> detached = new ArrayList<>();
@@ -172,14 +171,14 @@ class WidgetLifecycleTest {
         assertNull(second.context());
         assertNull(other.context());
         assertTrue(manager.widgets().isEmpty());
-        assertEquals(List.of(texture), backend.destroyed);
+        assertEquals(List.of(texture), backend.destroyed());
         manager.close();
-        assertEquals(1, backend.destroyed.size());
+        assertEquals(1, backend.destroyed().size());
     }
 
     @Test
     void attachmentFailureRemainsPrimaryWhenRollbackAlsoFails() {
-        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         RuntimeException attachFailure = new IllegalArgumentException("Attach failed.");
         RuntimeException detachFailure = new IllegalStateException("Detach failed.");
         Widget widget = new Widget() {
@@ -241,60 +240,5 @@ class WidgetLifecycleTest {
         };
     }
 
-    private record TestTexture(int width, int height) implements Texture {
-    }
 
-    private static final class RecordingBackend implements RenderBackend {
-        private final List<Texture> destroyed = new ArrayList<>();
-        private int frames;
-        private int commands;
-
-        /**
-         * Accepts the viewport without allocating graphics resources.
-         *
-         * @param viewport requested viewport
-         */
-        @Override
-        public void resize(Viewport viewport) {
-        }
-
-        /**
-         * Records completed frames and their command count.
-         *
-         * @param drawList submitted commands
-         */
-        @Override
-        public void draw(DrawList drawList) {
-            frames++;
-            commands = drawList.commands().size();
-        }
-
-        /**
-         * Creates a lightweight texture handle.
-         *
-         * @param image source pixels
-         * @return a texture with the source dimensions
-         */
-        @Override
-        public Texture createTexture(ImageData image) {
-            return new TestTexture(image.width(), image.height());
-        }
-
-        /**
-         * Records texture disposal.
-         *
-         * @param texture released texture
-         */
-        @Override
-        public void destroyTexture(Texture texture) {
-            destroyed.add(texture);
-        }
-
-        /**
-         * Closes this resource-free backend.
-         */
-        @Override
-        public void close() {
-        }
-    }
 }

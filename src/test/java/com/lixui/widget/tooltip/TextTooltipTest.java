@@ -1,15 +1,12 @@
 package com.lixui.widget.tooltip;
 
+import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
 import com.lixui.input.InputState;
 import com.lixui.input.event.PointerMoved;
 import com.lixui.render.command.DrawCommand;
-import com.lixui.render.DrawList;
-import com.lixui.render.ImageData;
-import com.lixui.render.RenderBackend;
 import com.lixui.render.command.TextCommand;
-import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
 import com.lixui.text.Font;
 import com.lixui.text.FontData;
@@ -50,7 +47,7 @@ class TextTooltipTest {
     void drawsPanelSurfaceAndTextThroughTheTooltipOverlay() {
         Optional<FontData> data = SystemFonts.findDefault();
         Assumptions.assumeTrue(data.isPresent(), "No readable system font is installed.");
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
             manager.resize(VIEWPORT);
             Font font = manager.context().createFont(data.get(), 16);
@@ -67,7 +64,7 @@ class TextTooltipTest {
             manager.update(0.01f);
             manager.render();
 
-            List<DrawCommand> commands = backend.lastDrawList.commands();
+            List<DrawCommand> commands = backend.lastDrawList().commands();
             assertEquals(5, commands.size());
             TextCommand text = assertInstanceOf(TextCommand.class, commands.get(4));
             assertEquals(4, text.glyphs().size());
@@ -76,32 +73,5 @@ class TextTooltipTest {
         }
     }
 
-    private static final class RecordingBackend implements RenderBackend {
-        private DrawList lastDrawList;
 
-        @Override
-        public void resize(Viewport viewport) {
-        }
-
-        @Override
-        public void draw(DrawList drawList) {
-            lastDrawList = drawList;
-        }
-
-        @Override
-        public Texture createTexture(ImageData image) {
-            return new TestTexture(image.width(), image.height());
-        }
-
-        @Override
-        public void destroyTexture(Texture texture) {
-        }
-
-        @Override
-        public void close() {
-        }
-    }
-
-    private record TestTexture(int width, int height) implements Texture {
-    }
 }

@@ -1,16 +1,13 @@
 package com.lixui.widget;
 
+import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
 import com.lixui.render.command.DrawCommand;
-import com.lixui.render.DrawList;
-import com.lixui.render.ImageData;
 import com.lixui.render.command.MeshCommand;
 import com.lixui.render.MeshVertex;
-import com.lixui.render.RenderBackend;
 import com.lixui.render.command.RoundedRectCommand;
-import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
 import com.lixui.theme.WidgetStyle;
 import org.junit.jupiter.api.Test;
@@ -28,7 +25,7 @@ class PanelTest {
 
     @Test
     void drawsThePanelStyleBackgroundAndBorder() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(VIEWPORT);
         Panel panel = new Panel();
@@ -37,7 +34,7 @@ class PanelTest {
 
         manager.render();
 
-        List<DrawCommand> commands = backend.lastDrawList.commands();
+        List<DrawCommand> commands = backend.lastDrawList().commands();
         assertEquals(2, commands.size());
         RoundedRectCommand background = assertInstanceOf(RoundedRectCommand.class, commands.get(0));
         WidgetStyle style = manager.context().theme().panelStyle();
@@ -49,7 +46,7 @@ class PanelTest {
 
     @Test
     void resolvesInteractiveBackgroundStatesFromACustomStyle() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(VIEWPORT);
         Panel panel = new Panel();
@@ -64,21 +61,21 @@ class PanelTest {
         panel.setHovered(true);
         manager.render();
         RoundedRectCommand hovered = assertInstanceOf(RoundedRectCommand.class,
-                backend.lastDrawList.commands().get(0));
+                backend.lastDrawList().commands().get(0));
         assertEquals(style.hoverBackground(), hovered.color());
 
         panel.setHovered(false);
         panel.setEnabled(false);
         manager.render();
         RoundedRectCommand disabled = assertInstanceOf(RoundedRectCommand.class,
-                backend.lastDrawList.commands().get(0));
+                backend.lastDrawList().commands().get(0));
         assertEquals(style.disabledBackground(), disabled.color());
-        assertEquals(2, backend.lastDrawList.commands().size());
+        assertEquals(2, backend.lastDrawList().commands().size());
     }
 
     @Test
     void focusOutlineCanBeDisabled() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(VIEWPORT);
         Panel panel = new Panel();
@@ -99,15 +96,15 @@ class PanelTest {
         assertEquals(style.border(), borderColor(backend));
     }
 
-    private static Color borderColor(RecordingBackend backend) {
+    private static Color borderColor(TestBackend backend) {
         MeshCommand border = assertInstanceOf(MeshCommand.class,
-                backend.lastDrawList.commands().get(1));
+                backend.lastDrawList().commands().get(1));
         return border.vertices().get(0).color();
     }
 
     @Test
     void keepsTheBorderInsideBoundsSoClippingDoesNotCutItInHalf() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(VIEWPORT);
         Panel panel = new Panel();
@@ -118,7 +115,7 @@ class PanelTest {
         manager.render();
 
         MeshCommand border = assertInstanceOf(MeshCommand.class,
-                backend.lastDrawList.commands().get(1));
+                backend.lastDrawList().commands().get(1));
         for (MeshVertex vertex : border.vertices()) {
             assertTrue(vertex.x() >= PANEL_BOUNDS.x() && vertex.x() <= PANEL_BOUNDS.right(),
                     "x=" + vertex.x());
@@ -133,7 +130,7 @@ class PanelTest {
 
     @Test
     void diagonalCornersTessellateACustomOutline() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(VIEWPORT);
         Panel panel = new Panel();
@@ -143,7 +140,7 @@ class PanelTest {
 
         manager.render();
 
-        List<DrawCommand> commands = backend.lastDrawList.commands();
+        List<DrawCommand> commands = backend.lastDrawList().commands();
         assertEquals(2, commands.size());
         assertInstanceOf(MeshCommand.class, commands.get(0));
         assertInstanceOf(MeshCommand.class, commands.get(1));
@@ -157,30 +154,4 @@ class PanelTest {
                 () -> new Panel.Corners(0, 0, Float.POSITIVE_INFINITY, 0));
     }
 
-    private static final class RecordingBackend implements RenderBackend {
-        private DrawList lastDrawList;
-
-        @Override
-        public void resize(Viewport viewport) {
-        }
-
-        @Override
-        public void draw(DrawList drawList) {
-            lastDrawList = drawList;
-        }
-
-        @Override
-        public Texture createTexture(ImageData image) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void destroyTexture(Texture texture) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void close() {
-        }
-    }
 }

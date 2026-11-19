@@ -1,5 +1,6 @@
 package com.lixui.widget;
 
+import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.control.Button;
 import com.lixui.widget.container.Window;
 import com.lixui.geometry.Rect;
@@ -11,10 +12,7 @@ import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.render.command.DrawCommand;
 import com.lixui.render.DrawList;
-import com.lixui.render.ImageData;
-import com.lixui.render.RenderBackend;
 import com.lixui.render.command.RoundedRectCommand;
-import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
 import com.lixui.widget.testsupport.FixedWidget;
 import org.junit.jupiter.api.Test;
@@ -31,7 +29,7 @@ class WidgetOrderTest {
 
     @Test
     void alwaysOnTopIsDrawnAndHitTestedAboveLaterRegularWidgets() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
             manager.resize(VIEWPORT);
             Panel bottom = panel(new Rect(0, 0, 100, 100));
@@ -43,7 +41,7 @@ class WidgetOrderTest {
             manager.render();
 
             assertEquals(List.of(bottom, later, top),
-                    paintedPanels(backend.lastDrawList, bottom, top, later));
+                    paintedPanels(backend.lastDrawList(), bottom, top, later));
             manager.handle(new PointerMoved(50, 50));
             assertEquals(top, manager.hovered());
         }
@@ -51,7 +49,7 @@ class WidgetOrderTest {
 
     @Test
     void bringToFrontMovesTheTopLevelAncestorToTheTop() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
             manager.resize(VIEWPORT);
             Panel first = panel(new Rect(0, 0, 100, 100));
@@ -63,7 +61,7 @@ class WidgetOrderTest {
             manager.bringToFront(child);
             manager.render();
 
-            assertEquals(List.of(second, first), paintedPanels(backend.lastDrawList, first, second));
+            assertEquals(List.of(second, first), paintedPanels(backend.lastDrawList(), first, second));
             assertThrows(IllegalArgumentException.class, () -> manager.bringToFront(new Panel()));
             assertThrows(NullPointerException.class, () -> manager.bringToFront(null));
         }
@@ -71,7 +69,7 @@ class WidgetOrderTest {
 
     @Test
     void plainWidgetsKeepTheirOrderOnClickUnlessOptedIn() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
             manager.resize(VIEWPORT);
             Panel first = panel(new Rect(0, 0, 100, 100));
@@ -81,13 +79,13 @@ class WidgetOrderTest {
             click(manager, 10, 10);
 
             manager.render();
-            assertEquals(List.of(first, second), paintedPanels(backend.lastDrawList, first, second));
+            assertEquals(List.of(first, second), paintedPanels(backend.lastDrawList(), first, second));
         }
     }
 
     @Test
     void optedInWidgetsAndWindowsRaiseOnPointerPress() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
             manager.resize(VIEWPORT);
             Panel first = panel(new Rect(0, 0, 100, 100));
@@ -98,13 +96,13 @@ class WidgetOrderTest {
             click(manager, 10, 10);
 
             manager.render();
-            assertEquals(List.of(second, first), paintedPanels(backend.lastDrawList, first, second));
+            assertEquals(List.of(second, first), paintedPanels(backend.lastDrawList(), first, second));
         }
     }
 
     @Test
     void windowsRaiseByDefaultAndStayBelowAlwaysOnTopWidgets() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
             manager.resize(VIEWPORT);
             Window lower = new Window();
@@ -118,7 +116,7 @@ class WidgetOrderTest {
             click(manager, 20, 20);
 
             manager.render();
-            List<Widget> painted = paintedPanels(backend.lastDrawList, lower, upper, pinned);
+            List<Widget> painted = paintedPanels(backend.lastDrawList(), lower, upper, pinned);
             assertTrue(painted.indexOf(lower) > painted.indexOf(upper));
             assertEquals(pinned, painted.getLast());
             assertTrue(lower.isRaiseOnFocus());
@@ -127,7 +125,7 @@ class WidgetOrderTest {
 
     @Test
     void focusRaisesTheTopLevelAncestorWhenEnabled() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
             manager.resize(VIEWPORT);
             Panel first = panel(new Rect(0, 0, 200, 100));
@@ -141,7 +139,7 @@ class WidgetOrderTest {
             manager.focus(button);
 
             manager.render();
-            assertEquals(List.of(second, first), paintedPanels(backend.lastDrawList, first, second));
+            assertEquals(List.of(second, first), paintedPanels(backend.lastDrawList(), first, second));
         }
     }
 
@@ -170,32 +168,5 @@ class WidgetOrderTest {
         return painted;
     }
 
-    private static final class RecordingBackend implements RenderBackend {
-        private DrawList lastDrawList;
 
-        @Override
-        public void resize(Viewport viewport) {
-        }
-
-        @Override
-        public void draw(DrawList drawList) {
-            lastDrawList = drawList;
-        }
-
-        @Override
-        public Texture createTexture(ImageData image) {
-            return new TestTexture(image.width(), image.height());
-        }
-
-        @Override
-        public void destroyTexture(Texture texture) {
-        }
-
-        @Override
-        public void close() {
-        }
-    }
-
-    private record TestTexture(int width, int height) implements Texture {
-    }
 }

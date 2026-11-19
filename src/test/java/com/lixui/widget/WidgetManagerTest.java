@@ -1,5 +1,6 @@
 package com.lixui.widget;
 
+import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.animation.Easing;
 import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
@@ -16,12 +17,8 @@ import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.platform.Cursor;
 import com.lixui.platform.UiPlatform;
-import com.lixui.render.DrawList;
-import com.lixui.render.ImageData;
 import com.lixui.render.Antialiasing;
-import com.lixui.render.RenderBackend;
 import com.lixui.render.RenderManager;
-import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
 import com.lixui.theme.Theme;
 import org.junit.jupiter.api.Test;
@@ -43,18 +40,18 @@ class WidgetManagerTest {
 
     @Test
     void resizeDelegatesAndExposesTheLogicalViewport() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
 
         manager.resize(VIEWPORT);
 
-        assertSame(VIEWPORT, backend.viewport);
+        assertSame(VIEWPORT, backend.viewport());
         assertEquals(new Rect(0, 0, 800, 600), manager.viewport());
     }
 
     @Test
     void renderDrawsTopLevelWidgetsInInsertionOrder() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         List<String> log = new ArrayList<>();
         Probe first = new Probe("first", log);
         Probe second = new Probe("second", log);
@@ -65,12 +62,12 @@ class WidgetManagerTest {
         manager.render();
 
         assertEquals(List.of("draw:first", "draw:second"), log);
-        assertEquals(2, backend.lastDrawList.commands().size());
+        assertEquals(2, backend.lastDrawList().commands().size());
     }
 
     @Test
     void hitTestingConvertsViewportCoordinatesToTopLevelLocalCoordinates() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         Probe root = new Probe("root", new ArrayList<>());
         Probe child = new Probe("child", new ArrayList<>());
         root.setBounds(new Rect(100, 50, 200, 200));
@@ -90,7 +87,7 @@ class WidgetManagerTest {
 
     @Test
     void renderRunsALayoutPassBeforeDrawing() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         Probe root = new Probe("root", new ArrayList<>());
         root.setBounds(ROOT_BOUNDS);
         WidgetManager manager = manager(backend, root);
@@ -102,7 +99,7 @@ class WidgetManagerTest {
 
     @Test
     void attachingAndRemovingWidgetsRunsLifecycleHooks() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         List<String> log = new ArrayList<>();
         LifecycleProbe root = new LifecycleProbe("root", log);
@@ -139,7 +136,7 @@ class WidgetManagerTest {
 
     @Test
     void contextChangesNotifyAttachedSubtrees() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         List<String> log = new ArrayList<>();
         LifecycleProbe root = new LifecycleProbe("root", log);
@@ -167,7 +164,7 @@ class WidgetManagerTest {
 
     @Test
     void closeDetachesWidgetsAndRejectsFurtherFrames() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         List<String> log = new ArrayList<>();
         LifecycleProbe root = new LifecycleProbe("root", log);
@@ -188,7 +185,7 @@ class WidgetManagerTest {
 
     @Test
     void pointerEventsBubbleUntilConsumed() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         List<String> log = new ArrayList<>();
         BubbleProbe root = new BubbleProbe("root", log);
@@ -213,7 +210,7 @@ class WidgetManagerTest {
 
     @Test
     void blocksHostPointerInputInsideUiAndDuringCapturedDrags() {
-        WidgetManager manager = manager(new RecordingBackend());
+        WidgetManager manager = manager(new TestBackend());
         Panel panel = new Panel();
         panel.setBounds(new Rect(10, 10, 100, 100));
         manager.add(panel);
@@ -238,7 +235,7 @@ class WidgetManagerTest {
 
     @Test
     void tabTraversalFollowsDepthFirstFocusOrder() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         Probe root = new Probe("root", new ArrayList<>());
         Probe first = new Probe("first", new ArrayList<>());
@@ -272,7 +269,7 @@ class WidgetManagerTest {
 
     @Test
     void tabTraversalStaysInsideTheNearestFocusScope() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         Probe root = new Probe("root", new ArrayList<>());
         Probe scope = new Probe("scope", new ArrayList<>());
@@ -304,7 +301,7 @@ class WidgetManagerTest {
 
     @Test
     void generatesClicksDoubleClicksDragsAndLongPresses() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         List<String> log = new ArrayList<>();
         GestureProbe root = new GestureProbe(log);
@@ -342,7 +339,7 @@ class WidgetManagerTest {
 
     @Test
     void stateChangesClearHoverFocusAndCaptures() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         Probe root = new Probe("root", new ArrayList<>());
         root.setBounds(new Rect(0, 0, 100, 100));
@@ -379,7 +376,7 @@ class WidgetManagerTest {
 
     @Test
     void hoverFollowsBoundsChangesAndCursorUsesTheHoveredAncestor() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RecordingPlatform platform = new RecordingPlatform();
         WidgetManager manager = new WidgetManager(new InputState(), backend, platform);
         CursorProbe root = new CursorProbe();
@@ -403,7 +400,7 @@ class WidgetManagerTest {
 
     @Test
     void explicitPointerCaptureSetsAndClearsPressedState() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         Probe root = new Probe("root", new ArrayList<>());
         root.setBounds(new Rect(0, 0, 100, 100));
@@ -423,7 +420,7 @@ class WidgetManagerTest {
 
     @Test
     void nestedWidgetsDrawParentFirstAndHitTestTheChildFirst() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         List<String> log = new ArrayList<>();
         Probe root = new Probe("root", log);
         Probe child = new Probe("child", log);
@@ -451,7 +448,7 @@ class WidgetManagerTest {
 
     @Test
     void updateDrainsInputAndUpdatesEveryTopLevelWidget() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         InputState input = new InputState();
         List<String> log = new ArrayList<>();
         Probe root = new Probe("root", log);
@@ -470,7 +467,7 @@ class WidgetManagerTest {
 
     @Test
     void pressCapturesANestedWidgetUntilRelease() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         Probe root = new Probe("root", new ArrayList<>());
         Probe child = new Probe("child", new ArrayList<>());
         root.setBounds(ROOT_BOUNDS);
@@ -496,7 +493,7 @@ class WidgetManagerTest {
 
     @Test
     void keyboardEventsGoToTheFocusedChild() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         InputState input = new InputState();
         Probe root = new Probe("root", new ArrayList<>());
         Probe child = new Probe("child", new ArrayList<>());
@@ -522,7 +519,7 @@ class WidgetManagerTest {
 
     @Test
     void updateAdvancesFrameInfoAndPassesItToUpdateAndDraw() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         List<String> log = new ArrayList<>();
         Probe root = new Probe("root", log);
         root.setBounds(ROOT_BOUNDS);
@@ -541,7 +538,7 @@ class WidgetManagerTest {
 
     @Test
     void advancesAnimationsWithTheFrameClock() {
-        WidgetManager manager = manager(new RecordingBackend());
+        WidgetManager manager = manager(new TestBackend());
         List<Float> values = new ArrayList<>();
         manager.animator().animate(0, 1, 1, Easing.LINEAR, values::add);
 
@@ -554,7 +551,7 @@ class WidgetManagerTest {
 
     @Test
     void removingATopLevelWidgetClearsItsInteraction() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         Probe root = new Probe("root", new ArrayList<>());
         root.setBounds(ROOT_BOUNDS);
         root.setFocusable(true);
@@ -573,7 +570,7 @@ class WidgetManagerTest {
 
     @Test
     void focusLossClearsHoverAndCapturesButKeepsWidgetFocus() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         Probe root = new Probe("root", new ArrayList<>());
         root.setBounds(ROOT_BOUNDS);
         root.setFocusable(true);
@@ -591,7 +588,7 @@ class WidgetManagerTest {
 
     @Test
     void addRejectsParentedAndDuplicateWidgets() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         Probe root = new Probe("root", new ArrayList<>());
         Probe child = new Probe("child", new ArrayList<>());
         WidgetManager manager = manager(backend, root);
@@ -604,7 +601,7 @@ class WidgetManagerTest {
 
     @Test
     void focusRejectsForeignWidgets() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         Probe root = new Probe("root", new ArrayList<>());
         Probe foreign = new Probe("foreign", new ArrayList<>());
         root.setBounds(ROOT_BOUNDS);
@@ -619,8 +616,8 @@ class WidgetManagerTest {
     void attachedWidgetCannotBeSharedWithAnotherManagerOrParent() {
         Probe root = new Probe("root", new ArrayList<>());
         Probe parent = new Probe("parent", new ArrayList<>());
-        WidgetManager first = manager(new RecordingBackend(), root);
-        WidgetManager second = manager(new RecordingBackend(), parent);
+        WidgetManager first = manager(new TestBackend(), root);
+        WidgetManager second = manager(new TestBackend(), parent);
         Widget detachedParent = new Widget() { };
 
         assertThrows(IllegalArgumentException.class, () -> second.add(root));
@@ -643,7 +640,7 @@ class WidgetManagerTest {
     @Test
     void failedChildAttachmentRollsBackTreeAndFocus() {
         Widget root = new Widget() { };
-        WidgetManager manager = manager(new RecordingBackend(), root);
+        WidgetManager manager = manager(new TestBackend(), root);
         IllegalStateException failure = new IllegalStateException("Attachment failed.");
         Widget child = new Widget() {
             /**
@@ -670,7 +667,7 @@ class WidgetManagerTest {
 
     @Test
     void failedRootAttachmentPreservesWidgetsAddedByTheCallback() {
-        WidgetManager manager = manager(new RecordingBackend());
+        WidgetManager manager = manager(new TestBackend());
         Widget sibling = new Widget() { };
         IllegalStateException failure = new IllegalStateException("Attachment failed.");
         Widget root = new Widget() {
@@ -701,7 +698,7 @@ class WidgetManagerTest {
         child.setBounds(CHILD_BOUNDS);
         child.setFocusable(true);
         root.add(child);
-        WidgetManager manager = manager(new RecordingBackend(), root);
+        WidgetManager manager = manager(new TestBackend(), root);
         manager.handle(new PointerPressed(60, 60, MouseButton.LEFT, Modifiers.NONE));
 
         root.remove(child);
@@ -723,7 +720,7 @@ class WidgetManagerTest {
         child.setFocusable(true);
         root.add(branch);
         branch.add(child);
-        WidgetManager manager = manager(new RecordingBackend(), root);
+        WidgetManager manager = manager(new TestBackend(), root);
         manager.focus(child);
         manager.capturePointer(child, MouseButton.LEFT);
 
@@ -754,7 +751,7 @@ class WidgetManagerTest {
         };
         child.setFocusable(true);
         root.add(child);
-        WidgetManager manager = manager(new RecordingBackend(), root);
+        WidgetManager manager = manager(new TestBackend(), root);
         manager.focus(child);
         manager.capturePointer(child, MouseButton.LEFT);
 
@@ -775,7 +772,7 @@ class WidgetManagerTest {
         first.setFocusable(true);
         second.setFocusable(true);
         third.setFocusable(true);
-        WidgetManager manager = manager(new RecordingBackend(), first, second, third);
+        WidgetManager manager = manager(new TestBackend(), first, second, third);
         manager.focus(second);
 
         manager.focusNext(true);
@@ -793,7 +790,7 @@ class WidgetManagerTest {
 
     @Test
     void delegatesAntialiasingSettings() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = manager(backend, new Probe("root", new ArrayList<>()));
 
         manager.setAntialiasing(Antialiasing.HIGH);
@@ -803,7 +800,7 @@ class WidgetManagerTest {
 
     @Test
     void rejectsNullArgumentsInvalidDeltaAndRenderBeforeResize() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         InputState input = new InputState();
         WidgetManager manager = new WidgetManager(input, backend);
 
@@ -816,7 +813,7 @@ class WidgetManagerTest {
         assertThrows(IllegalStateException.class, manager::render);
     }
 
-    private static WidgetManager manager(RecordingBackend backend, Widget... widgets) {
+    private static WidgetManager manager(TestBackend backend, Widget... widgets) {
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(VIEWPORT);
         for (Widget widget : widgets) {
@@ -830,7 +827,7 @@ class WidgetManagerTest {
         List<String> log = new ArrayList<>();
         GestureProbe widget = new GestureProbe(log);
         widget.setBounds(ROOT_BOUNDS);
-        WidgetManager manager = manager(new RecordingBackend(), widget);
+        WidgetManager manager = manager(new TestBackend(), widget);
         manager.handle(new PointerPressed(10, 10, MouseButton.LEFT, Modifiers.NONE));
         manager.capturePointer(widget, MouseButton.LEFT);
         manager.handle(new PointerReleased(10, 10, MouseButton.LEFT, Modifiers.NONE));
@@ -844,7 +841,7 @@ class WidgetManagerTest {
         List<String> log = new ArrayList<>();
         GestureProbe widget = new GestureProbe(log);
         widget.setBounds(ROOT_BOUNDS);
-        WidgetManager manager = manager(new RecordingBackend(), widget);
+        WidgetManager manager = manager(new TestBackend(), widget);
         manager.handle(new PointerPressed(10, 10, MouseButton.LEFT, Modifiers.NONE));
         manager.handle(new PointerReleased(100, 100, MouseButton.LEFT, Modifiers.NONE));
 
@@ -857,7 +854,7 @@ class WidgetManagerTest {
         List<String> log = new ArrayList<>();
         GestureProbe widget = new GestureProbe(log);
         widget.setBounds(ROOT_BOUNDS);
-        WidgetManager manager = manager(new RecordingBackend(), widget);
+        WidgetManager manager = manager(new TestBackend(), widget);
         click(manager, 10, 10);
         log.clear();
 
@@ -876,7 +873,7 @@ class WidgetManagerTest {
         List<String> log = new ArrayList<>();
         GestureProbe widget = new GestureProbe(log);
         widget.setBounds(ROOT_BOUNDS);
-        WidgetManager manager = manager(new RecordingBackend(), widget);
+        WidgetManager manager = manager(new TestBackend(), widget);
         click(manager, 10, 10);
         log.clear();
 
@@ -894,7 +891,7 @@ class WidgetManagerTest {
         List<String> log = new ArrayList<>();
         GestureProbe widget = new GestureProbe(log);
         widget.setBounds(ROOT_BOUNDS);
-        WidgetManager manager = manager(new RecordingBackend(), widget);
+        WidgetManager manager = manager(new TestBackend(), widget);
         click(manager, 10, 10);
         log.clear();
 
@@ -910,7 +907,7 @@ class WidgetManagerTest {
         List<String> log = new ArrayList<>();
         GestureProbe widget = new GestureProbe(log);
         widget.setBounds(ROOT_BOUNDS);
-        WidgetManager manager = manager(new RecordingBackend(), widget);
+        WidgetManager manager = manager(new TestBackend(), widget);
         click(manager, 10, 10);
         manager.handle(new PointerPressed(10, 10, MouseButton.LEFT, Modifiers.NONE));
         manager.releasePointerCapture(MouseButton.LEFT);
@@ -931,7 +928,7 @@ class WidgetManagerTest {
     void widgetsCannotReleaseAnotherWidgetsCapture() {
         Widget first = new Widget() { };
         Widget second = new Widget() { };
-        WidgetManager manager = manager(new RecordingBackend(), first, second);
+        WidgetManager manager = manager(new TestBackend(), first, second);
         manager.capturePointer(second, MouseButton.LEFT);
 
         first.releasePointerCapture(MouseButton.LEFT);
@@ -942,7 +939,7 @@ class WidgetManagerTest {
 
     @Test
     void focusRedirectedByABlurCallbackHasOnlyOneOwner() {
-        WidgetManager manager = manager(new RecordingBackend());
+        WidgetManager manager = manager(new TestBackend());
         Widget requested = new Widget() { };
         Widget redirected = new Widget() { };
         Widget first = new Widget() {
@@ -974,7 +971,7 @@ class WidgetManagerTest {
 
     @Test
     void removalDuringPointerEnterDoesNotCaptureTheDetachedWidget() {
-        WidgetManager manager = manager(new RecordingBackend());
+        WidgetManager manager = manager(new TestBackend());
         Widget widget = new Widget() {
             /**
              * Removes this widget while hover is being assigned.
@@ -1015,7 +1012,7 @@ class WidgetManagerTest {
             }
         };
         widget.setBounds(ROOT_BOUNDS);
-        WidgetManager manager = manager(new RecordingBackend(), widget);
+        WidgetManager manager = manager(new TestBackend(), widget);
         manager.handle(new PointerPressed(10, 10, MouseButton.LEFT, Modifiers.NONE));
 
         assertSame(failure, assertThrows(IllegalStateException.class,
@@ -1058,7 +1055,7 @@ class WidgetManagerTest {
             }
         };
         widget.setBounds(ROOT_BOUNDS);
-        WidgetManager manager = manager(new RecordingBackend(), widget);
+        WidgetManager manager = manager(new TestBackend(), widget);
         manager.handle(new PointerPressed(10, 10, MouseButton.LEFT, Modifiers.NONE));
         manager.handle(new PointerMoved(30, 10));
         manager.handle(new PointerMoved(40, 10));
@@ -1071,7 +1068,7 @@ class WidgetManagerTest {
     void unfocusedWindowDoesNotDispatchKeyboardOrTextEvents() {
         Probe widget = new Probe("keyboard", new ArrayList<>());
         widget.setFocusable(true);
-        WidgetManager manager = manager(new RecordingBackend(), widget);
+        WidgetManager manager = manager(new TestBackend(), widget);
         manager.focus(widget);
         widget.events.clear();
         manager.handle(new FocusChanged(false));
@@ -1088,7 +1085,7 @@ class WidgetManagerTest {
 
     @Test
     void keyboardBubblingStopsWhenItsSubtreeIsRemoved() {
-        WidgetManager manager = manager(new RecordingBackend());
+        WidgetManager manager = manager(new TestBackend());
         Probe root = new Probe("root", new ArrayList<>());
         Widget child = new Widget() {
             /**
@@ -1554,32 +1551,4 @@ class WidgetManagerTest {
         }
     }
 
-    private static final class RecordingBackend implements RenderBackend {
-        private Viewport viewport;
-        private DrawList lastDrawList;
-
-        @Override
-        public void resize(Viewport viewport) {
-            this.viewport = viewport;
-        }
-
-        @Override
-        public void draw(DrawList drawList) {
-            lastDrawList = drawList;
-        }
-
-        @Override
-        public Texture createTexture(ImageData image) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void destroyTexture(Texture texture) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void close() {
-        }
-    }
 }

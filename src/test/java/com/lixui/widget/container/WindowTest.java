@@ -1,5 +1,6 @@
 package com.lixui.widget.container;
 
+import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.control.Button;
@@ -12,10 +13,6 @@ import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.input.event.PointerScrolled;
 import com.lixui.platform.Cursor;
-import com.lixui.render.DrawList;
-import com.lixui.render.ImageData;
-import com.lixui.render.RenderBackend;
-import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
 import org.junit.jupiter.api.Test;
 
@@ -35,7 +32,7 @@ class WindowTest {
 
     @Test
     void sharesIconsAtDisplayResolutionAndReleasesTheLastReference() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
             manager.resize(VIEWPORT);
             Window first = createWindow(manager);
@@ -45,41 +42,41 @@ class WindowTest {
             collectButtons(first, firstButtons);
             collectButtons(second, secondButtons);
 
-            assertEquals(6, backend.created.size());
+            assertEquals(6, backend.created().size());
             assertEquals(28, firstButtons.getFirst().icon().width());
             assertSame(firstButtons.getFirst().icon(), secondButtons.getFirst().icon());
 
             manager.remove(first);
-            assertTrue(backend.destroyed.isEmpty());
+            assertTrue(backend.destroyed().isEmpty());
             assertNull(firstButtons.getFirst().icon());
 
             manager.resize(new Viewport(800, 600, 800, 600));
             assertEquals(14, secondButtons.getFirst().icon().width());
-            assertEquals(12, backend.created.size());
-            assertEquals(6, backend.destroyed.size());
+            assertEquals(12, backend.created().size());
+            assertEquals(6, backend.destroyed().size());
 
             manager.remove(second);
-            assertEquals(12, backend.destroyed.size());
+            assertEquals(12, backend.destroyed().size());
         }
-        assertEquals(12, backend.destroyed.size());
+        assertEquals(12, backend.destroyed().size());
     }
 
     @Test
     void rollsBackPartiallyLoadedIconsWhenUploadFails() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
-            backend.failAfter = 2;
+            backend.setFailAfter(2);
             Window window = new Window();
             assertThrows(IllegalStateException.class, () -> manager.add(window));
             assertNull(window.context());
             assertTrue(manager.widgets().isEmpty());
-            assertEquals(2, backend.destroyed.size());
+            assertEquals(2, backend.destroyed().size());
 
-            backend.failAfter = Integer.MAX_VALUE;
+            backend.setFailAfter(Integer.MAX_VALUE);
             manager.add(window);
-            assertEquals(8, backend.created.size());
+            assertEquals(8, backend.created().size());
         }
-        assertEquals(8, backend.destroyed.size());
+        assertEquals(8, backend.destroyed().size());
     }
 
     @Test
@@ -311,7 +308,7 @@ class WindowTest {
     }
 
     private static WidgetManager manager() {
-        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         manager.resize(VIEWPORT);
         return manager;
     }
@@ -352,52 +349,5 @@ class WindowTest {
         }
     }
 
-    private static final class RecordingBackend implements RenderBackend {
-        private DrawList lastDrawList;
-        private final List<Texture> created = new ArrayList<>();
-        private final List<Texture> destroyed = new ArrayList<>();
-        private int failAfter = Integer.MAX_VALUE;
 
-        @Override
-        public void resize(Viewport viewport) {
-        }
-
-        @Override
-        public void draw(DrawList drawList) {
-            lastDrawList = drawList;
-        }
-
-        @Override
-        public Texture createTexture(ImageData image) {
-            if (created.size() >= failAfter) {
-                throw new IllegalStateException("Texture upload failed.");
-            }
-            Texture texture = new TestTexture(image.width(), image.height());
-            created.add(texture);
-            return texture;
-        }
-
-        @Override
-        public void destroyTexture(Texture texture) {
-            destroyed.add(texture);
-        }
-
-        @Override
-        public void close() {
-        }
-    }
-
-    private record TestTexture(int width, int height) implements Texture {
-        /**
-         * Creates a lightweight texture handle for widget tests.
-         *
-         * @param width texture width
-         * @param height texture height
-         */
-        private TestTexture {
-            if (width <= 0 || height <= 0) {
-                throw new IllegalArgumentException("Texture dimensions must be positive.");
-            }
-        }
-    }
 }

@@ -1,5 +1,7 @@
 package com.lixui.widget.control;
 
+import com.lixui.widget.testsupport.TestTexture;
+import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.LayoutConstraints;
 import com.lixui.geometry.Rect;
@@ -13,14 +15,10 @@ import com.lixui.input.MouseButton;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.render.command.DrawCommand;
-import com.lixui.render.DrawList;
 import com.lixui.render.command.ImageCommand;
-import com.lixui.render.ImageData;
 import com.lixui.render.command.MeshCommand;
-import com.lixui.render.RenderBackend;
 import com.lixui.render.command.RoundedRectCommand;
 import com.lixui.render.command.TextCommand;
-import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
 import com.lixui.text.Font;
 import com.lixui.text.FontData;
@@ -42,7 +40,7 @@ class ButtonTest {
 
     @Test
     void activatesFromPointerKeyboardAndDoubleClick() {
-        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         Button button = new Button("Save");
         button.setBounds(BUTTON_BOUNDS);
         int[] actions = {0};
@@ -84,7 +82,7 @@ class ButtonTest {
     void drawsIconAndLabelAndMeasuresBoth() {
         Optional<FontData> data = SystemFonts.findDefault();
         Assumptions.assumeTrue(data.isPresent(), "No readable system font is installed.");
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(VIEWPORT);
         Font font = manager.context().createFont(data.get(), 16);
@@ -100,7 +98,7 @@ class ButtonTest {
         assertTrue(withIcon.width() > textOnly.width());
         assertTrue(withIcon.height() >= textOnly.height());
         manager.render();
-        List<DrawCommand> commands = backend.lastDrawList.commands();
+        List<DrawCommand> commands = backend.lastDrawList().commands();
         assertEquals(4, commands.size());
         RoundedRectCommand background = assertInstanceOf(RoundedRectCommand.class, commands.get(0));
         assertEquals(manager.context().theme().controlStyle().cornerRadius(), background.radius(),
@@ -112,7 +110,7 @@ class ButtonTest {
 
     @Test
     void keyRepeatAfterFocusTransferDoesNotArmSpaceActivation() {
-        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         Button first = new Button();
         Button second = new Button();
         int[] actions = {0};
@@ -129,7 +127,7 @@ class ButtonTest {
 
     @Test
     void emptyButtonReservesPaddingWithoutAFont() {
-        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         Button button = new Button();
         manager.add(button);
 
@@ -155,43 +153,5 @@ class ButtonTest {
         manager.handle(new PointerReleased(x, y, MouseButton.LEFT, Modifiers.NONE));
     }
 
-    private record TestTexture(int width, int height) implements Texture {
-        /**
-         * Creates a standalone texture handle for draw-command tests.
-         *
-         * @param width texture width
-         * @param height texture height
-         */
-        private TestTexture {
-            if (width <= 0 || height <= 0) {
-                throw new IllegalArgumentException("Texture dimensions must be positive.");
-            }
-        }
-    }
 
-    private static final class RecordingBackend implements RenderBackend {
-        private DrawList lastDrawList;
-
-        @Override
-        public void resize(Viewport viewport) {
-        }
-
-        @Override
-        public void draw(DrawList drawList) {
-            lastDrawList = drawList;
-        }
-
-        @Override
-        public Texture createTexture(ImageData image) {
-            return new TestTexture(image.width(), image.height());
-        }
-
-        @Override
-        public void destroyTexture(Texture texture) {
-        }
-
-        @Override
-        public void close() {
-        }
-    }
 }

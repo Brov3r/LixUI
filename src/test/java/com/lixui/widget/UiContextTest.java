@@ -1,11 +1,10 @@
 package com.lixui.widget;
 
+import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.geometry.Rect;
 import com.lixui.platform.Cursor;
 import com.lixui.platform.UiPlatform;
-import com.lixui.render.DrawList;
 import com.lixui.render.ImageData;
-import com.lixui.render.RenderBackend;
 import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
@@ -16,8 +15,6 @@ import com.lixui.theme.Theme;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -32,7 +29,7 @@ class UiContextTest {
 
     @Test
     void exposesViewportScaleThemeClipboardAndCursor() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RecordingPlatform platform = new RecordingPlatform();
         try (UiContext context = new UiContext(new RenderManager(backend), platform)) {
             assertEquals(Rect.EMPTY, context.viewport());
@@ -67,11 +64,11 @@ class UiContextTest {
 
     @Test
     void bundledIconPreservesOriginalCoverageAndTintAcrossTransparentEdges() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (UiContext context = new UiContext(new RenderManager(backend), UiPlatform.NONE)) {
             context.createBundledIcon("copy.svg", 16);
             byte[] source = ImageData.fromResource("assets/icons/copy.svg", 16, 16).pixels();
-            byte[] uploaded = backend.lastImage.pixels();
+            byte[] uploaded = backend.lastImage().pixels();
             assertEquals(source.length, uploaded.length);
             for (int i = 0; i < source.length; i += 4) {
                 assertEquals(source[i + 3], uploaded[i + 3]);
@@ -86,14 +83,14 @@ class UiContextTest {
     void treatsMissingPlatformClipboardAsEmpty() {
         RecordingPlatform platform = new RecordingPlatform();
         platform.clipboard = null;
-        try (UiContext context = new UiContext(new RenderManager(new RecordingBackend()), platform)) {
+        try (UiContext context = new UiContext(new RenderManager(new TestBackend()), platform)) {
             assertEquals("", context.clipboardText());
         }
     }
 
     @Test
     void releasesOwnedTexturesAndFontsOnClose() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         RecordingPlatform platform = new RecordingPlatform();
         UiContext context = new UiContext(new RenderManager(backend), platform);
         Texture texture = context.createTexture(IMAGE);
@@ -104,27 +101,27 @@ class UiContextTest {
 
         context.close();
 
-        assertEquals(2, backend.destroyed.size());
-        assertTrue(backend.destroyed.contains(texture));
+        assertEquals(2, backend.destroyed().size());
+        assertTrue(backend.destroyed().contains(texture));
         assertNull(context.defaultFont());
         assertThrows(IllegalStateException.class, () -> context.createTexture(IMAGE));
         assertThrows(IllegalStateException.class, context::clipboardText);
 
         context.close();
-        assertEquals(2, backend.destroyed.size());
+        assertEquals(2, backend.destroyed().size());
     }
 
     @Test
     void destroysOwnedResourcesOnlyOnce() {
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (UiContext context = new UiContext(new RenderManager(backend), new RecordingPlatform())) {
             Texture texture = context.createTexture(IMAGE);
 
             context.destroyTexture(texture);
             context.destroyTexture(texture);
 
-            assertEquals(1, backend.destroyed.size());
-            assertTrue(backend.destroyed.contains(texture));
+            assertEquals(1, backend.destroyed().size());
+            assertTrue(backend.destroyed().contains(texture));
         }
     }
 
@@ -132,7 +129,7 @@ class UiContextTest {
     void destroyingTheDefaultFontClearsIt() {
         Optional<FontData> fontData = SystemFonts.findDefault();
         Assumptions.assumeTrue(fontData.isPresent());
-        RecordingBackend backend = new RecordingBackend();
+        TestBackend backend = new TestBackend();
         try (UiContext context = new UiContext(new RenderManager(backend), new RecordingPlatform())) {
             Font font = context.createFont(fontData.get(), 12);
             context.setDefaultFont(font);
@@ -141,16 +138,16 @@ class UiContextTest {
             context.destroyFont(font);
 
             assertNull(context.defaultFont());
-            assertEquals(1, backend.destroyed.size());
+            assertEquals(1, backend.destroyed().size());
         }
     }
 
     @Test
     void rejectsNullPlatformArgumentsAndClosedOperations() {
         assertThrows(NullPointerException.class,
-                () -> new UiContext(new RenderManager(new RecordingBackend()), null));
+                () -> new UiContext(new RenderManager(new TestBackend()), null));
         RecordingPlatform platform = new RecordingPlatform();
-        UiContext context = new UiContext(new RenderManager(new RecordingBackend()), platform);
+        UiContext context = new UiContext(new RenderManager(new TestBackend()), platform);
         assertThrows(NullPointerException.class, () -> context.setClipboardText(null));
         assertThrows(NullPointerException.class, () -> context.setCursor(null));
         assertThrows(NullPointerException.class, () -> context.createTexture(null));
@@ -161,33 +158,6 @@ class UiContextTest {
     private record RecordedTexture(int width, int height) implements Texture {
     }
 
-    private static final class RecordingBackend implements RenderBackend {
-        private final List<Texture> destroyed = new ArrayList<>();
-        private ImageData lastImage;
-
-        @Override
-        public void resize(Viewport viewport) {
-        }
-
-        @Override
-        public void draw(DrawList drawList) {
-        }
-
-        @Override
-        public Texture createTexture(ImageData image) {
-            lastImage = image;
-            return new RecordedTexture(image.width(), image.height());
-        }
-
-        @Override
-        public void destroyTexture(Texture texture) {
-            destroyed.add(texture);
-        }
-
-        @Override
-        public void close() {
-        }
-    }
 
     private static final class RecordingPlatform implements UiPlatform {
         private String clipboard = "";
