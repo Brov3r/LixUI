@@ -22,14 +22,17 @@ import com.lixui.theme.Theme;
 import com.lixui.theme.WidgetStyle;
 import com.lixui.widget.control.Button;
 import com.lixui.widget.control.CheckBox;
+import com.lixui.widget.control.Dropdown;
 import com.lixui.widget.FrameInfo;
 import com.lixui.widget.control.KnobSlider;
 import com.lixui.widget.control.Label;
+import com.lixui.widget.control.MultiSelect;
 import com.lixui.widget.Panel;
 import com.lixui.widget.control.RadioBox;
 import com.lixui.widget.control.RangeSlider;
 import com.lixui.widget.control.RichLabel;
 import com.lixui.widget.control.SegmentedButton;
+import com.lixui.widget.control.SelectOption;
 import com.lixui.widget.control.Separator;
 import com.lixui.widget.control.Slider;
 import com.lixui.widget.container.Accordion;
@@ -124,6 +127,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(decoratedLabel).add(justifiedLabel).add(richLabel);
         innerTabs = createInnerTabs();
         outerTabs = new TabPanel();
+        bindIcon("menu.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Popup", createPopupPage())::setIcon);
         bindIcon("text.svg", outerTabs.iconSize(), outerTabs.addTab("Labels", labelsPage)::setIcon);
         bindIcon("ui.svg", outerTabs.iconSize(), outerTabs.addTab("Tabs", innerTabs)::setIcon);
         bindIcon("adjustment.svg", outerTabs.iconSize(), outerTabs.addTab("Controls", createControlsPage())::setIcon);
@@ -443,6 +448,57 @@ final class DemoWidgetScene implements AutoCloseable {
         Label label = new Label(text);
         label.setFontFamily(fontFamily);
         return label;
+    }
+
+    private Widget createPopupPage() {
+        Dropdown dropdown = new Dropdown();
+        dropdown.setMinimumSize(320, 40);
+        dropdown.setMaximumSize(420, 46);
+        dropdown.setPlaceholder("Choose a class");
+        dropdown.setMaxPopupHeight(160);
+        addClassOption(dropdown, "Knight", "sword.svg");
+        addClassOption(dropdown, "Ranger", "bow.svg");
+        addClassOption(dropdown, "Mage", "potion.svg");
+        addClassOption(dropdown, "Healer", "shield.svg");
+        addClassOption(dropdown, "Rogue", "dagger.svg");
+        dropdown.setSelectedIndex(0);
+
+        MultiSelect multiselect = new MultiSelect();
+        multiselect.setMinimumSize(320, 40);
+        multiselect.setMaximumSize(420, 46);
+        multiselect.setPlaceholder("Choose abilities");
+        multiselect.setMaxPopupHeight(180);
+        addAbilityOption(multiselect, "Swordsmanship", "sword.svg");
+        addAbilityOption(multiselect, "Archery", "bow.svg");
+        addAbilityOption(multiselect, "Alchemy", "potion.svg");
+        addAbilityOption(multiselect, "Shielding", "shield.svg");
+        addAbilityOption(multiselect, "Lockpicking", "key.svg");
+        addAbilityOption(multiselect, "Survival", "torch.svg");
+        addAbilityOption(multiselect, "Cooking", "bread.svg");
+        addAbilityOption(multiselect, "Repair", "tool-kit.svg");
+        multiselect.setSelected(0, true);
+        multiselect.setSelected(2, true);
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(10);
+        page.setCrossAlignment(VBox.CrossAlignment.START);
+        page.add(sliderCaption("Dropdown"))
+                .add(dropdown)
+                .add(sliderCaption("Multi-select"))
+                .add(multiselect);
+        return page;
+    }
+
+    private void addClassOption(Dropdown dropdown, String label, String icon) {
+        SelectOption option = dropdown.addOption(label);
+        bindIcon(icon, dropdown.iconSize(), option::setIcon);
+    }
+
+    private void addAbilityOption(MultiSelect multiselect, String label, String icon) {
+        SelectOption option = new SelectOption(label);
+        multiselect.addOption(option);
+        bindIcon(icon, multiselect.iconSize(), option::setIcon);
     }
 
     private Widget createTablePage() {

@@ -211,6 +211,34 @@ public final class UiContext implements AutoCloseable {
     }
 
     /**
+     * Registers a widget as a top-level overlay in the owning manager.
+     * The widget is attached to this context and drawn above regular widgets when it is marked
+     * {@link Widget#setAlwaysOnTop(boolean) always on top}.
+     *
+     * @param widget widget without a parent or manager
+     * @throws NullPointerException if {@code widget} is null
+     * @throws IllegalArgumentException if the widget already has a parent or manager
+     * @throws IllegalStateException if the context has no manager or is closed
+     */
+    public void addTopLevel(Widget widget) {
+        ensureOpen();
+        manager().add(Objects.requireNonNull(widget, "widget"));
+    }
+
+    /**
+     * Removes a top-level widget from the owning manager.
+     *
+     * @param widget widget to remove
+     * @return true when the widget was registered
+     * @throws NullPointerException if {@code widget} is null
+     * @throws IllegalStateException if the context has no manager or is closed
+     */
+    public boolean removeTopLevel(Widget widget) {
+        ensureOpen();
+        return manager().remove(Objects.requireNonNull(widget, "widget"));
+    }
+
+    /**
      * Gives keyboard focus to a widget.
      *
      * @param widget widget to focus
