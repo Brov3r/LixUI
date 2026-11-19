@@ -1,11 +1,11 @@
 package com.lixui.backend.opengl;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
 import com.lixui.render.ImageData;
 import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
-import com.lixui.render.Viewport;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.lwjgl.glfw.GLFW;
@@ -112,7 +112,7 @@ class OpenGlLayerTest {
                     new byte[]{(byte) 255, (byte) 255, (byte) 255, (byte) 255}));
             assertArrayEquals(expected, hostState(), "Texture uploads must preserve host state.");
             RenderManager renderer = new RenderManager(layer);
-            renderer.resize(new Viewport(128, 128, 128, 128));
+            renderer.resize(TestViewports.FRAMEBUFFER);
             renderer.begin();
             renderer.pushMaskRect(new Rect(20, 20, 30, 30));
             renderer.rect(new Rect(0, 0, 100, 100), new Color(1, 0, 0, 0.5f));

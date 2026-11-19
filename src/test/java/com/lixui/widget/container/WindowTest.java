@@ -1,5 +1,6 @@
 package com.lixui.widget.container;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
@@ -27,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WindowTest {
-    private static final Viewport VIEWPORT = new Viewport(1600, 1200, 800, 600);
+    private static final Viewport VIEWPORT = TestViewports.HIDPI;
     private static final Rect WINDOW_BOUNDS = new Rect(10, 10, 300, 240);
 
     @Test
@@ -50,7 +51,7 @@ class WindowTest {
             assertTrue(backend.destroyed().isEmpty());
             assertNull(firstButtons.getFirst().icon());
 
-            manager.resize(new Viewport(800, 600, 800, 600));
+            manager.resize(TestViewports.LOGICAL);
             assertEquals(14, secondButtons.getFirst().icon().width());
             assertEquals(12, backend.created().size());
             assertEquals(6, backend.destroyed().size());

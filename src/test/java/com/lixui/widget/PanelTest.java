@@ -1,5 +1,6 @@
 package com.lixui.widget;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
@@ -20,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PanelTest {
-    private static final Viewport VIEWPORT = new Viewport(1600, 1200, 800, 600);
+    private static final Viewport VIEWPORT = TestViewports.HIDPI;
     private static final Rect PANEL_BOUNDS = new Rect(10, 20, 200, 100);
 
     @Test

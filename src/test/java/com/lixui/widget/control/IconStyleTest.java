@@ -1,5 +1,6 @@
 package com.lixui.widget.control;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.widget.WidgetManager;
 import com.lixui.geometry.Rect;
 import com.lixui.input.InputState;
@@ -15,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class IconStyleTest {
-    private static final Viewport VIEWPORT = new Viewport(800, 600, 800, 600);
+    private static final Viewport VIEWPORT = TestViewports.LOGICAL;
 
     @Test
     void buttonPreservesTheIconAspectRatioByDefault() {

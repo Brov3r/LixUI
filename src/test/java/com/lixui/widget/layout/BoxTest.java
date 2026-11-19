@@ -1,5 +1,6 @@
 package com.lixui.widget.layout;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
 import com.lixui.input.InputState;
@@ -20,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BoxTest {
-    private static final Viewport VIEWPORT = new Viewport(800, 600, 800, 600);
+    private static final Viewport VIEWPORT = TestViewports.LOGICAL;
 
     @Test
     void vboxStacksChildrenWithGapPaddingAndStretch() {

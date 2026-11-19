@@ -1,5 +1,6 @@
 package com.lixui.render;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.widget.testsupport.TestTexture;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.geometry.Point;
@@ -41,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RenderManagerTest {
-    private static final Viewport VIEWPORT = new Viewport(1600, 1200, 800, 600);
+    private static final Viewport VIEWPORT = TestViewports.HIDPI;
     private static final Rect LOGICAL = new Rect(0, 0, 800, 600);
     private static final Color RED = Color.rgb(255, 0, 0);
 

@@ -1,5 +1,6 @@
 package com.lixui.widget.control;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.widget.testsupport.TestTexture;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.WidgetManager;
@@ -35,7 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ButtonTest {
-    private static final Viewport VIEWPORT = new Viewport(1600, 1200, 800, 600);
+    private static final Viewport VIEWPORT = TestViewports.HIDPI;
     private static final Rect BUTTON_BOUNDS = new Rect(10, 20, 160, 44);
 
     @Test

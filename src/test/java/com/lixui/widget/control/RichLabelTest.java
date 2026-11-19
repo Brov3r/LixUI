@@ -1,5 +1,6 @@
 package com.lixui.widget.control;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.LayoutConstraints;
 import com.lixui.geometry.Rect;
@@ -32,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RichLabelTest {
-    private static final Viewport VIEWPORT = new Viewport(800, 600, 800, 600);
+    private static final Viewport VIEWPORT = TestViewports.LOGICAL;
 
     @Test
     void measuresMixedFontRuns() {

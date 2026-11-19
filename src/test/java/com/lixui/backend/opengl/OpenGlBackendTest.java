@@ -1,5 +1,6 @@
 package com.lixui.backend.opengl;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.backend.BatchScenario;
 import com.lixui.backend.MipmapScenario;
 import com.lixui.geometry.Point;
@@ -47,7 +48,7 @@ class OpenGlBackendTest {
             GL.createCapabilities();
             try (OpenGlBackend backend = new OpenGlBackend()) {
                 RenderManager renderer = new RenderManager(backend);
-                renderer.resize(new Viewport(128, 128, 128, 128));
+                renderer.resize(TestViewports.FRAMEBUFFER);
                 GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 8);
                 Texture rows = backend.createTexture(new ImageData(1, 2, new byte[]{
                         -1, 0, 0, -1, 0, 0, -1, -1}));
@@ -72,7 +73,7 @@ class OpenGlBackendTest {
                 verifyEdgeCoverage(renderer, 1);
                 renderer.resize(new Viewport(128, 128, 64, 64));
                 verifyEdgeCoverage(renderer, 2);
-                renderer.resize(new Viewport(128, 128, 128, 128));
+                renderer.resize(TestViewports.FRAMEBUFFER);
                 Texture texture = backend.createTexture(new ImageData(1, 1,
                         new byte[]{(byte) 255, (byte) 255, (byte) 255, (byte) 255}));
                 clear();

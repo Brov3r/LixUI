@@ -1,5 +1,6 @@
 package com.lixui.widget;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.geometry.Rect;
 import com.lixui.platform.Cursor;
@@ -24,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class UiContextTest {
-    private static final Viewport VIEWPORT = new Viewport(1600, 1200, 800, 600);
+    private static final Viewport VIEWPORT = TestViewports.HIDPI;
     private static final ImageData IMAGE = new ImageData(1, 1, new byte[4]);
 
     @Test

@@ -1,5 +1,6 @@
 package com.lixui.widget;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.animation.Easing;
 import com.lixui.geometry.Rect;
@@ -34,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WidgetManagerTest {
-    private static final Viewport VIEWPORT = new Viewport(1600, 1200, 800, 600);
+    private static final Viewport VIEWPORT = TestViewports.HIDPI;
     private static final Rect ROOT_BOUNDS = new Rect(0, 0, 200, 200);
     private static final Rect CHILD_BOUNDS = new Rect(50, 50, 100, 100);
 

@@ -1,5 +1,6 @@
 package com.lixui.widget.control;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.widget.WidgetManager;
 import com.lixui.geometry.Rect;
 import com.lixui.input.InputState;
@@ -19,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class RangeSliderTest {
-    private static final Viewport VIEWPORT = new Viewport(1600, 1200, 800, 600);
+    private static final Viewport VIEWPORT = TestViewports.HIDPI;
 
     @Test
     void clampsValuesAndKeepsThemOrdered() {

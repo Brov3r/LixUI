@@ -1,5 +1,6 @@
 package com.lixui.render;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.geometry.Insets;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Transform;
@@ -17,7 +18,7 @@ class RenderManagerNinePatchTest {
     void appliesOpacityAndTransformToEveryPatch() {
         TestBackend backend = new TestBackend();
         RenderManager renderer = new RenderManager(backend);
-        renderer.resize(new Viewport(800, 600, 800, 600));
+        renderer.resize(TestViewports.LOGICAL);
 
         renderer.begin();
         renderer.withTransform(Transform.translation(5, 7), () -> renderer.withOpacity(0.5f,

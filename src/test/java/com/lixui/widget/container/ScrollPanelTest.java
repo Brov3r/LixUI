@@ -1,5 +1,6 @@
 package com.lixui.widget.container;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
@@ -30,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ScrollPanelTest {
-    private static final Viewport VIEWPORT = new Viewport(1600, 1200, 800, 600);
+    private static final Viewport VIEWPORT = TestViewports.HIDPI;
     private static final Rect PANEL_BOUNDS = new Rect(0, 0, 200, 150);
 
     @Test

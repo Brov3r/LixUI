@@ -1,5 +1,6 @@
 package com.lixui.widget.container;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.FrameInfo;
@@ -38,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TabPanelTest {
-    private static final Viewport VIEWPORT = new Viewport(800, 600, 800, 600);
+    private static final Viewport VIEWPORT = TestViewports.LOGICAL;
 
     @Test
     void selectsTabsAndShowsOnlyTheActivePage() {

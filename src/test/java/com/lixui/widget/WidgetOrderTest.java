@@ -1,5 +1,6 @@
 package com.lixui.widget;
 
+import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.control.Button;
 import com.lixui.widget.container.Window;
@@ -25,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WidgetOrderTest {
-    private static final Viewport VIEWPORT = new Viewport(800, 600, 800, 600);
+    private static final Viewport VIEWPORT = TestViewports.LOGICAL;
 
     @Test
     void alwaysOnTopIsDrawnAndHitTestedAboveLaterRegularWidgets() {
