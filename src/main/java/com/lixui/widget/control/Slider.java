@@ -43,10 +43,8 @@ public class Slider extends Widget {
 
     private final SliderTooltip tooltip = new SliderTooltip();
     private Orientation orientation = Orientation.HORIZONTAL;
-    private float minimum;
-    private float maximum = 1;
+    private final RangeBounds range = new RangeBounds("Slider");
     private float value;
-    private float step;
     private float thumbSize = DEFAULT_THUMB_SIZE;
     private float trackThickness = DEFAULT_TRACK_THICKNESS;
     private boolean showRangeLabels = true;
@@ -97,7 +95,7 @@ public class Slider extends Widget {
      * @return the minimum value
      */
     public final float minimum() {
-        return minimum;
+        return range.minimum();
     }
 
     /**
@@ -106,7 +104,7 @@ public class Slider extends Widget {
      * @return the maximum value
      */
     public final float maximum() {
-        return maximum;
+        return range.maximum();
     }
 
     /**
@@ -118,9 +116,7 @@ public class Slider extends Widget {
      *                                  maximum
      */
     public final void setRange(float minimum, float maximum) {
-        SliderSupport.validateRange(minimum, maximum);
-        this.minimum = minimum;
-        this.maximum = maximum;
+        range.setRange(minimum, maximum);
         changeValue(value);
     }
 
@@ -151,7 +147,7 @@ public class Slider extends Widget {
      * @return the step size, or zero when the range is continuous
      */
     public final float step() {
-        return step;
+        return range.step();
     }
 
     /**
@@ -162,10 +158,7 @@ public class Slider extends Widget {
      * @throws IllegalArgumentException if the step is negative or non-finite
      */
     public final void setStep(float step) {
-        if (!Float.isFinite(step) || step < 0) {
-            throw new IllegalArgumentException("Slider step must be finite and non-negative.");
-        }
-        this.step = step;
+        range.setStep(step);
         changeValue(value);
     }
 
@@ -295,8 +288,8 @@ public class Slider extends Widget {
         float minLabelWidth = 0;
         float maxLabelWidth = 0;
         if (showRangeLabels && font != null) {
-            minLabelWidth = font.measure(SliderSupport.formatCompact(minimum)).width();
-            maxLabelWidth = font.measure(SliderSupport.formatCompact(maximum)).width();
+            minLabelWidth = font.measure(SliderSupport.formatCompact(range.minimum())).width();
+            maxLabelWidth = font.measure(SliderSupport.formatCompact(range.maximum())).width();
         }
         if (orientation == Orientation.HORIZONTAL) {
             float width = showRangeLabels && font != null
@@ -349,7 +342,7 @@ public class Slider extends Widget {
         float track = Math.min(trackThickness, cross);
         SliderSupport.drawTicks(renderer, theme, vertical, isEnabled(),
                 center, start, length, track, tickCount);
-        float position = geometry.positionForValue(value, minimum, maximum);
+        float position = geometry.positionForValue(value, range.minimum(), range.maximum());
         if (track > 0 && length > 0) {
             Color trackColor = SliderSupport.trackColor(theme, isEnabled());
             Color accentColor = SliderSupport.accentColor(theme, isEnabled());
@@ -383,8 +376,8 @@ public class Slider extends Widget {
                 thumbX, thumbY, thumb);
         if (labels) {
             SliderSupport.drawLabels(renderer, font, theme, vertical, isEnabled(), bounds,
-                    SliderSupport.formatCompact(minimum),
-                    SliderSupport.formatCompact(maximum));
+                    SliderSupport.formatCompact(range.minimum()),
+                    SliderSupport.formatCompact(range.maximum()));
         }
         drawTooltip(renderer, theme, font, bounds, thumbX, thumbY, radius);
     }
@@ -471,7 +464,7 @@ public class Slider extends Widget {
         if (delta == 0) {
             return false;
         }
-        setValue(value + delta * SliderSupport.keyboardStep(minimum, maximum, step));
+        setValue(value + delta * SliderSupport.keyboardStep(range.minimum(), range.maximum(), range.step()));
         return true;
     }
 
@@ -485,7 +478,7 @@ public class Slider extends Widget {
      */
     @Override
     protected boolean onKeyPressed(Key key, Modifiers modifiers, boolean repeat) {
-        return SliderSupport.handleKey(key, minimum, maximum, step, value, this::setValue);
+        return SliderSupport.handleKey(key, range.minimum(), range.maximum(), range.step(), value, this::setValue);
     }
 
     private void drawTooltip(RenderManager renderer, Theme theme, Font font, Rect bounds,
@@ -500,14 +493,14 @@ public class Slider extends Widget {
         float anchorBottom;
         if (hoveredEnd >= 0 && showRangeLabels) {
             boolean minimumEnd = hoveredEnd == 0;
-            String text = SliderSupport.formatCompact(minimumEnd ? minimum : maximum);
+            String text = SliderSupport.formatCompact(minimumEnd ? range.minimum() : range.maximum());
             Rect label = minimumEnd
                     ? SliderSupport.minLabelBounds(bounds, font, isVertical(), text)
                     : SliderSupport.maxLabelBounds(bounds, font, isVertical(), text);
             anchorX = label.x() + label.width() / 2;
             anchorTop = label.y();
             anchorBottom = label.y() + label.height();
-            tooltipValue = minimumEnd ? minimum : maximum;
+            tooltipValue = minimumEnd ? range.minimum() : range.maximum();
         } else {
             anchorX = isVertical() ? bounds.width() / 2 : thumbX;
             anchorTop = thumbY - radius;
@@ -526,8 +519,8 @@ public class Slider extends Widget {
         }
         Rect bounds = localBounds();
         boolean vertical = isVertical();
-        String minText = SliderSupport.formatCompact(minimum);
-        String maxText = SliderSupport.formatCompact(maximum);
+        String minText = SliderSupport.formatCompact(range.minimum());
+        String maxText = SliderSupport.formatCompact(range.maximum());
         if (SliderSupport.minLabelBounds(bounds, font, vertical, minText).contains(x, y)) {
             hoveredEnd = 0;
         } else if (SliderSupport.maxLabelBounds(bounds, font, vertical, maxText).contains(x, y)) {
@@ -549,11 +542,11 @@ public class Slider extends Widget {
     private float valueAtPosition(float x, float y) {
         SliderSupport.Geometry geometry = geometry();
         float position = geometry.axisPosition(x, y);
-        return geometry.valueAtPosition(position, minimum, maximum, step);
+        return geometry.valueAtPosition(position, range.minimum(), range.maximum(), range.step());
     }
 
     private void changeValue(float next) {
-        float quantized = SliderSupport.quantize(next, minimum, maximum, step);
+        float quantized = range.quantize(next);
         if (quantized == value) {
             return;
         }

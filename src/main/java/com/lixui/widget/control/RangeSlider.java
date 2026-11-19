@@ -42,11 +42,9 @@ public class RangeSlider extends Widget {
 
     private final SliderTooltip tooltip = new SliderTooltip();
     private Orientation orientation = Orientation.HORIZONTAL;
-    private float minimum;
-    private float maximum = 1;
+    private final RangeBounds range = new RangeBounds("Range slider");
     private float lowValue;
     private float highValue = 1;
-    private float step;
     private float thumbSize = DEFAULT_THUMB_SIZE;
     private float trackThickness = DEFAULT_TRACK_THICKNESS;
     private boolean showRangeLabels = true;
@@ -100,7 +98,7 @@ public class RangeSlider extends Widget {
      * @return the minimum value
      */
     public final float minimum() {
-        return minimum;
+        return range.minimum();
     }
 
     /**
@@ -109,7 +107,7 @@ public class RangeSlider extends Widget {
      * @return the maximum value
      */
     public final float maximum() {
-        return maximum;
+        return range.maximum();
     }
 
     /**
@@ -121,9 +119,7 @@ public class RangeSlider extends Widget {
      *                                  maximum
      */
     public final void setRange(float minimum, float maximum) {
-        SliderSupport.validateRange(minimum, maximum);
-        this.minimum = minimum;
-        this.maximum = maximum;
+        range.setRange(minimum, maximum);
         changeValues(lowValue, highValue);
     }
 
@@ -145,7 +141,7 @@ public class RangeSlider extends Widget {
      */
     public final void setLowValue(float lowValue) {
         SliderSupport.finite(lowValue, "Low value");
-        changeValues(Math.clamp(lowValue, minimum, highValue), highValue);
+        changeValues(Math.clamp(lowValue, range.minimum(), highValue), highValue);
     }
 
     /**
@@ -166,7 +162,7 @@ public class RangeSlider extends Widget {
      */
     public final void setHighValue(float highValue) {
         SliderSupport.finite(highValue, "High value");
-        changeValues(lowValue, Math.clamp(highValue, lowValue, maximum));
+        changeValues(lowValue, Math.clamp(highValue, lowValue, range.maximum()));
     }
 
     /**
@@ -181,8 +177,8 @@ public class RangeSlider extends Widget {
     public final void setValues(float lowValue, float highValue) {
         SliderSupport.finite(lowValue, "Low value");
         SliderSupport.finite(highValue, "High value");
-        float clampedLow = Math.clamp(lowValue, minimum, maximum);
-        float clampedHigh = Math.clamp(highValue, minimum, maximum);
+        float clampedLow = Math.clamp(lowValue, range.minimum(), range.maximum());
+        float clampedHigh = Math.clamp(highValue, range.minimum(), range.maximum());
         if (clampedLow > clampedHigh) {
             throw new IllegalArgumentException("Low value must not exceed the high value.");
         }
@@ -204,7 +200,7 @@ public class RangeSlider extends Widget {
      * @return the step size, or zero when the range is continuous
      */
     public final float step() {
-        return step;
+        return range.step();
     }
 
     /**
@@ -215,10 +211,7 @@ public class RangeSlider extends Widget {
      * @throws IllegalArgumentException if the step is negative or non-finite
      */
     public final void setStep(float step) {
-        if (!Float.isFinite(step) || step < 0) {
-            throw new IllegalArgumentException("Range slider step must be finite and non-negative.");
-        }
-        this.step = step;
+        range.setStep(step);
         changeValues(lowValue, highValue);
     }
 
@@ -348,8 +341,8 @@ public class RangeSlider extends Widget {
         float minLabelWidth = 0;
         float maxLabelWidth = 0;
         if (showRangeLabels && font != null) {
-            minLabelWidth = font.measure(SliderSupport.formatCompact(minimum)).width();
-            maxLabelWidth = font.measure(SliderSupport.formatCompact(maximum)).width();
+            minLabelWidth = font.measure(SliderSupport.formatCompact(range.minimum())).width();
+            maxLabelWidth = font.measure(SliderSupport.formatCompact(range.maximum())).width();
         }
         if (orientation == Orientation.HORIZONTAL) {
             float width = showRangeLabels && font != null
@@ -402,8 +395,8 @@ public class RangeSlider extends Widget {
         float track = Math.min(trackThickness, cross);
         SliderSupport.drawTicks(renderer, theme, vertical, isEnabled(),
                 center, start, length, track, tickCount);
-        float lowPosition = geometry.positionForValue(lowValue, minimum, maximum);
-        float highPosition = geometry.positionForValue(highValue, minimum, maximum);
+        float lowPosition = geometry.positionForValue(lowValue, range.minimum(), range.maximum());
+        float highPosition = geometry.positionForValue(highValue, range.minimum(), range.maximum());
         if (track > 0 && length > 0) {
             Color trackColor = SliderSupport.trackColor(theme, isEnabled());
             Color accentColor = SliderSupport.accentColor(theme, isEnabled());
@@ -439,8 +432,8 @@ public class RangeSlider extends Widget {
         drawThumb(renderer, theme, vertical, center, highPosition, thumb, highlightedThumb == 1);
         if (labels) {
             SliderSupport.drawLabels(renderer, font, theme, vertical, isEnabled(), bounds,
-                    SliderSupport.formatCompact(minimum),
-                    SliderSupport.formatCompact(maximum));
+                    SliderSupport.formatCompact(range.minimum()),
+                    SliderSupport.formatCompact(range.maximum()));
         }
         drawTooltips(renderer, theme, font, bounds, vertical, center, lowPosition, highPosition,
                 radius);
@@ -479,14 +472,14 @@ public class RangeSlider extends Widget {
         SliderSupport.Geometry geometry = geometry();
         float position = geometry.axisPosition(x, y);
         float thumb = geometry.effectiveThumbSize();
-        float lowPosition = geometry.positionForValue(lowValue, minimum, maximum);
-        float highPosition = geometry.positionForValue(highValue, minimum, maximum);
+        float lowPosition = geometry.positionForValue(lowValue, range.minimum(), range.maximum());
+        float highPosition = geometry.positionForValue(highValue, range.minimum(), range.maximum());
         float lowDistance = Math.abs(position - lowPosition);
         float highDistance = Math.abs(position - highPosition);
         if (lowValue == highValue) {
-            if (lowValue <= minimum) {
+            if (lowValue <= range.minimum()) {
                 activeThumb = 1;
-            } else if (highValue >= maximum) {
+            } else if (highValue >= range.maximum()) {
                 activeThumb = 0;
             } else {
                 activeThumb = position >= lowPosition ? 1 : 0;
@@ -498,7 +491,7 @@ public class RangeSlider extends Widget {
             dragOffset = (activeThumb == 0 ? lowPosition : highPosition) - position;
         } else {
             dragOffset = 0;
-            setActiveValue(geometry.valueAtPosition(position, minimum, maximum, step));
+            setActiveValue(geometry.valueAtPosition(position, range.minimum(), range.maximum(), range.step()));
         }
         return true;
     }
@@ -521,7 +514,7 @@ public class RangeSlider extends Widget {
         pointerY = y;
         SliderSupport.Geometry geometry = geometry();
         float target = geometry.valueAtPosition(geometry.axisPosition(x, y) + dragOffset,
-                minimum, maximum, step);
+                range.minimum(), range.maximum(), range.step());
         if (lowValue == highValue) {
             if (target > lowValue) {
                 activeThumb = 1;
@@ -566,7 +559,8 @@ public class RangeSlider extends Widget {
             return false;
         }
         activeThumb = nearestThumb(geometry().axisPosition(x, y));
-        setActiveValue(activeValue() + delta * SliderSupport.keyboardStep(minimum, maximum, step));
+        setActiveValue(activeValue() + delta
+                * SliderSupport.keyboardStep(range.minimum(), range.maximum(), range.step()));
         return true;
     }
 
@@ -580,8 +574,8 @@ public class RangeSlider extends Widget {
      */
     @Override
     protected boolean onKeyPressed(Key key, Modifiers modifiers, boolean repeat) {
-        float keyboardStep = SliderSupport.keyboardStep(minimum, maximum, step);
-        float pageStep = SliderSupport.pageStep(minimum, maximum);
+        float keyboardStep = SliderSupport.keyboardStep(range.minimum(), range.maximum(), range.step());
+        float pageStep = SliderSupport.pageStep(range.minimum(), range.maximum());
         float activeValue = activeValue();
         return switch (key) {
             case LEFT, DOWN -> {
@@ -616,14 +610,14 @@ public class RangeSlider extends Widget {
                 if (lowValue == highValue) {
                     activeThumb = 0;
                 }
-                setActiveValue(activeThumb == 0 ? minimum : lowValue);
+                setActiveValue(activeThumb == 0 ? range.minimum() : lowValue);
                 yield true;
             }
             case END -> {
                 if (lowValue == highValue) {
                     activeThumb = 1;
                 }
-                setActiveValue(activeThumb == 0 ? highValue : maximum);
+                setActiveValue(activeThumb == 0 ? highValue : range.maximum());
                 yield true;
             }
             default -> false;
@@ -668,8 +662,8 @@ public class RangeSlider extends Widget {
 
     private int nearestThumb(float position) {
         SliderSupport.Geometry geometry = geometry();
-        float lowPosition = geometry.positionForValue(lowValue, minimum, maximum);
-        float highPosition = geometry.positionForValue(highValue, minimum, maximum);
+        float lowPosition = geometry.positionForValue(lowValue, range.minimum(), range.maximum());
+        float highPosition = geometry.positionForValue(highValue, range.minimum(), range.maximum());
         return Math.abs(position - lowPosition) <= Math.abs(position - highPosition) ? 0 : 1;
     }
 
@@ -691,8 +685,8 @@ public class RangeSlider extends Widget {
     }
 
     private void changeValues(float nextLow, float nextHigh) {
-        float quantizedLow = SliderSupport.quantize(nextLow, minimum, maximum, step);
-        float quantizedHigh = SliderSupport.quantize(nextHigh, minimum, maximum, step);
+        float quantizedLow = range.quantize(nextLow);
+        float quantizedHigh = range.quantize(nextHigh);
         if (quantizedLow == lowValue && quantizedHigh == highValue) {
             return;
         }

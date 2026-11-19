@@ -36,10 +36,8 @@ public class KnobSlider extends Widget {
     private static final float START_ANGLE = (float) (Math.PI * 0.75);
     private static final float SWEEP_ANGLE = (float) (Math.PI * 1.5);
 
-    private float minimum;
-    private float maximum = 1;
+    private final RangeBounds range = new RangeBounds("Knob");
     private float value;
-    private float step;
     private float knobSize = DEFAULT_SIZE;
     private float trackThickness = DEFAULT_TRACK_THICKNESS;
     private boolean showRangeLabels = true;
@@ -60,7 +58,7 @@ public class KnobSlider extends Widget {
      * @return the minimum value
      */
     public final float minimum() {
-        return minimum;
+        return range.minimum();
     }
 
     /**
@@ -69,7 +67,7 @@ public class KnobSlider extends Widget {
      * @return the maximum value
      */
     public final float maximum() {
-        return maximum;
+        return range.maximum();
     }
 
     /**
@@ -81,9 +79,7 @@ public class KnobSlider extends Widget {
      *                                  maximum
      */
     public final void setRange(float minimum, float maximum) {
-        SliderSupport.validateRange(minimum, maximum);
-        this.minimum = minimum;
-        this.maximum = maximum;
+        range.setRange(minimum, maximum);
         changeValue(value);
     }
 
@@ -114,7 +110,7 @@ public class KnobSlider extends Widget {
      * @return the step size, or zero when the range is continuous
      */
     public final float step() {
-        return step;
+        return range.step();
     }
 
     /**
@@ -125,10 +121,7 @@ public class KnobSlider extends Widget {
      * @throws IllegalArgumentException if the step is negative or non-finite
      */
     public final void setStep(float step) {
-        if (!Float.isFinite(step) || step < 0) {
-            throw new IllegalArgumentException("Knob step must be finite and non-negative.");
-        }
-        this.step = step;
+        range.setStep(step);
         changeValue(value);
     }
 
@@ -264,7 +257,7 @@ public class KnobSlider extends Widget {
         }
         drawArc(renderer, center, radius, START_ANGLE, SWEEP_ANGLE, line,
                 SliderSupport.trackColor(theme, isEnabled()));
-        float fraction = SliderSupport.fraction(value, minimum, maximum);
+        float fraction = SliderSupport.fraction(value, range.minimum(), range.maximum());
         float activeSweep = SWEEP_ANGLE * fraction;
         if (activeSweep > 0.001f) {
             drawArc(renderer, center, radius, START_ANGLE, activeSweep, line,
@@ -321,9 +314,9 @@ public class KnobSlider extends Widget {
         if (button != MouseButton.LEFT) {
             return false;
         }
-        float range = maximum - minimum;
+        float span = range.maximum() - range.minimum();
         float sensitivity = Math.max(DRAG_MIN_RANGE, knobSize * 2);
-        setValue(dragStartValue + (dragStartY - y) / sensitivity * range);
+        setValue(dragStartValue + (dragStartY - y) / sensitivity * span);
         return true;
     }
 
@@ -356,7 +349,7 @@ public class KnobSlider extends Widget {
         if (deltaY == 0) {
             return false;
         }
-        setValue(value + deltaY * SliderSupport.keyboardStep(minimum, maximum, step));
+        setValue(value + deltaY * SliderSupport.keyboardStep(range.minimum(), range.maximum(), range.step()));
         return true;
     }
 
@@ -370,7 +363,7 @@ public class KnobSlider extends Widget {
      */
     @Override
     protected boolean onKeyPressed(Key key, Modifiers modifiers, boolean repeat) {
-        return SliderSupport.handleKey(key, minimum, maximum, step, value, this::setValue);
+        return SliderSupport.handleKey(key, range.minimum(), range.maximum(), range.step(), value, this::setValue);
     }
 
     private void drawArc(RenderManager renderer, Point center, float radius,
@@ -393,8 +386,8 @@ public class KnobSlider extends Widget {
             return;
         }
         Color color = isEnabled() ? theme.textMuted() : theme.textMuted().withAlpha(0.35f);
-        String minText = SliderSupport.formatCompact(minimum);
-        String maxText = SliderSupport.formatCompact(maximum);
+        String minText = SliderSupport.formatCompact(range.minimum());
+        String maxText = SliderSupport.formatCompact(range.maximum());
         float offset = radius * ARC_DIAGONAL;
         float y = localBounds().height() - font.lineHeight();
         float minWidth = font.measure(minText).width();
@@ -428,7 +421,7 @@ public class KnobSlider extends Widget {
     }
 
     private void changeValue(float next) {
-        float quantized = SliderSupport.quantize(next, minimum, maximum, step);
+        float quantized = range.quantize(next);
         if (quantized == value) {
             return;
         }
