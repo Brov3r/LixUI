@@ -60,7 +60,8 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
     private static final float DEFAULT_CORNER_RADIUS = 6;
     private static final float ICON_GAP = 8;
     private static final float SHORTCUT_GAP = 18;
-    private static final float RIGHT_PADDING = 10;
+    static final float LEFT_INSET = 4;
+    static final float RIGHT_PADDING = 10;
     private static final float SCROLLBAR_THICKNESS = 4;
     private static final float SCROLLBAR_GAP = 4;
 
@@ -561,7 +562,7 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
         if (!item.isEnabled()) {
             color = theme.textMuted().withAlpha(0.55f);
         }
-        float x = contentX + 4;
+        float x = contentX + LEFT_INSET;
         if (item.icon() != null) {
             renderer.icon(item.icon(), new Rect(x, y + (height - iconSize) / 2,
                     iconSize, iconSize), ImageStyle.ICON, color);
@@ -690,7 +691,7 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
     }
 
     private float itemWidth(Item item, Font font) {
-        float width = 0;
+        float width = LEFT_INSET;
         if (item.icon() != null) {
             width += iconSize + ICON_GAP;
         }

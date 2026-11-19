@@ -64,6 +64,17 @@ public class Panel extends Widget {
     }
 
     /**
+     * Resolves the style used to paint this panel surface.
+     * The default returns the inherited style. Controls that paint their own surface can force a
+     * preset unless a local style is assigned.
+     *
+     * @return the resolved surface style, or null when none is available
+     */
+    protected WidgetStyle surfaceStyle() {
+        return style();
+    }
+
+    /**
      * Paints the panel background and border in the current interaction state.
      * The border is drawn inside the panel bounds, so a clipping container does not cut it in half.
      *
@@ -72,7 +83,7 @@ public class Panel extends Widget {
      */
     @Override
     protected void onDraw(RenderManager renderer, FrameInfo frame) {
-        WidgetStyle style = style();
+        WidgetStyle style = surfaceStyle();
         if (style == null || localBounds().isEmpty()) {
             return;
         }

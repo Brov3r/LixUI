@@ -10,11 +10,16 @@ import com.lixui.input.event.PointerMoved;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.render.Viewport;
+import com.lixui.text.FontData;
+import com.lixui.text.SystemFonts;
 import com.lixui.widget.Panel;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.testsupport.TestViewports;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -51,6 +56,24 @@ class ContextMenuTest {
         click(manager, root.x() + 20, root.y() + PADDING + ITEM_HEIGHT / 2);
         assertFalse(menu.isOpen());
         assertEquals(1, actions[0]);
+    }
+
+    @Test
+    void measuresItemTextWithTheLeadingInset() {
+        Optional<FontData> data = SystemFonts.findDefault();
+        Assumptions.assumeTrue(data.isPresent(), "No readable system font is installed.");
+        WidgetManager manager = manager();
+        manager.setDefaultFont(manager.context().createFont(data.get(), 16));
+        ContextMenu menu = new ContextMenu();
+        menu.setMinimumMenuWidth(0);
+        menu.addItem("Save as", null);
+        menu.open(manager.context(), 100, 100);
+        manager.layout();
+
+        Rect root = menu.levelBounds(0);
+        float expected = menu.padding() * 2 + ContextMenu.LEFT_INSET
+                + menu.font().measure("Save as").width() + ContextMenu.RIGHT_PADDING;
+        assertEquals(expected, root.width(), 0.01f);
     }
 
     @Test

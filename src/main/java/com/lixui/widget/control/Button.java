@@ -236,6 +236,27 @@ public class Button extends Panel {
     }
 
     /**
+     * Uses the local style or the context control style instead of an inherited panel style.
+     *
+     * @return the resolved button surface style, or null when the button is not attached
+     */
+    @Override
+    protected WidgetStyle surfaceStyle() {
+        return hasLocalStyle() ? style() : defaultStyle();
+    }
+
+    /**
+     * Returns the horizontal space reserved to the right of the icon and label.
+     * The slot is excluded from content centering and added to the measured width.
+     * The default reserves no space.
+     *
+     * @return the trailing slot width in logical UI units
+     */
+    protected float trailingSlotWidth() {
+        return 0;
+    }
+
+    /**
      * Measures the icon and label with the active style padding.
      * An empty label still reserves the horizontal and vertical padding.
      *
@@ -244,7 +265,7 @@ public class Button extends Panel {
      */
     @Override
     protected Size onMeasure(LayoutConstraints constraints) {
-        WidgetStyle style = style();
+        WidgetStyle style = surfaceStyle();
         Font font = font();
         if (style == null) {
             return super.onMeasure(constraints);
@@ -261,7 +282,8 @@ public class Button extends Panel {
             contentHeight = Math.max(contentHeight, iconSize);
         }
         float padding = style.padding();
-        return new Size(contentWidth + padding * 2, contentHeight + padding * 2);
+        return new Size(contentWidth + padding * 2 + trailingSlotWidth(),
+                contentHeight + padding * 2);
     }
 
     /**
@@ -276,7 +298,7 @@ public class Button extends Panel {
             return;
         }
         super.onDraw(renderer, frame);
-        WidgetStyle style = style();
+        WidgetStyle style = surfaceStyle();
         if (style == null) {
             return;
         }
@@ -285,7 +307,7 @@ public class Button extends Panel {
         if (!hasText && icon == null) {
             return;
         }
-        float centerX = localBounds().width() / 2;
+        float centerX = (localBounds().width() - trailingSlotWidth()) / 2;
         float centerY = localBounds().height() / 2;
         if (icon == null) {
             renderer.text(font, text, centerX, centerY, style.text(state()), CENTERED);

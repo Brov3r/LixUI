@@ -24,6 +24,7 @@ import com.lixui.widget.control.Button;
 import com.lixui.widget.control.CheckBox;
 import com.lixui.widget.control.Dropdown;
 import com.lixui.widget.FrameInfo;
+import com.lixui.widget.control.Input;
 import com.lixui.widget.control.KnobSlider;
 import com.lixui.widget.control.Label;
 import com.lixui.widget.control.MultiSelect;
@@ -37,6 +38,7 @@ import com.lixui.widget.control.SelectOption;
 import com.lixui.widget.control.Separator;
 import com.lixui.widget.control.Slider;
 import com.lixui.widget.control.Spacer;
+import com.lixui.widget.control.SplitButton;
 import com.lixui.widget.container.Accordion;
 import com.lixui.widget.container.SplitPanel;
 import com.lixui.widget.container.Table;
@@ -134,6 +136,8 @@ final class DemoWidgetScene implements AutoCloseable {
         outerTabs = new TabPanel();
         bindIcon("progress.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Progress", createProgressPage())::setIcon);
+        bindIcon("keyboard.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Input", createInputPage())::setIcon);
         bindIcon("menu.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Popup", createPopupPage())::setIcon);
         bindIcon("text.svg", outerTabs.iconSize(), outerTabs.addTab("Labels", labelsPage)::setIcon);
@@ -587,6 +591,95 @@ final class DemoWidgetScene implements AutoCloseable {
         bar.setShape(shape);
         bar.setAnimationRate(9);
         return bar;
+    }
+
+    private Widget createInputPage() {
+        Label status = new Label("Focus a field and try selection, clipboard and undo shortcuts.");
+        status.setFontFamily(fontFamily);
+        status.setAutoSize(false);
+        status.setWrap(true);
+
+        Input name = new Input("LixUI");
+        name.setPlaceholder("Type your name...");
+        name.setOnChange(value -> status.setText("Name changed: \"" + value + "\""));
+        name.setOnSubmit(() -> status.setText("Submitted: \"" + name.text() + "\""));
+
+        Input limited = new Input();
+        limited.setPlaceholder("Up to 32 characters");
+        limited.setMaxLength(32);
+        limited.setOnChange(value -> status.setText("Length limit: "
+                + value.codePointCount(0, value.length()) + " / " + limited.maxLength()));
+
+        Input password = new Input("secret");
+        password.setSecret(true);
+        password.setPlaceholder("Password");
+        password.setOnChange(value -> {
+            String raw = password.rawText();
+            status.setText("Password length: " + raw.codePointCount(0, raw.length()));
+        });
+
+        Input phone = new Input();
+        phone.setMask("+7 (xxx) xxx-xx-xx");
+        phone.setAllowedCharacters(Input.CharacterKind.DIGITS);
+        phone.setPlaceholder("+7 (___) ___-__-__");
+        phone.setOnChange(value -> status.setText("Phone: " + value
+                + "    raw: " + phone.rawText()));
+
+        Input date = new Input();
+        date.setMask("99.99.9999");
+        date.setAllowedCharacters(Input.CharacterKind.DIGITS);
+        date.setPlaceholder("DD.MM.YYYY");
+        date.setOnChange(value -> status.setText("Date: " + value));
+
+        HBox shortFields = new HBox();
+        shortFields.setGap(8);
+        limited.setGrow(1);
+        password.setGrow(1);
+        shortFields.add(limited).add(password);
+
+        HBox maskedFields = new HBox();
+        maskedFields.setGap(8);
+        phone.setGrow(1);
+        date.setGrow(1);
+        maskedFields.add(phone).add(date);
+
+        Input readOnly = new Input("Read-only text can still be selected and copied");
+        readOnly.setReadOnly(true);
+
+        Label splitStatus = new Label("Split button: primary action or menu command.");
+        splitStatus.setFontFamily(fontFamily);
+        splitStatus.setAutoSize(false);
+        splitStatus.setWrap(true);
+
+        SplitButton split = new SplitButton("Save");
+        split.setTooltipText("The left part runs the primary action; the arrow opens a context menu.");
+        split.setOnAction(() -> splitStatus.setText("Primary action: saved."));
+        ContextMenu.Item saveAs = split.menu().addItem("Save as",
+                () -> splitStatus.setText("Menu command: save as."));
+        saveAs.setShortcut("Ctrl+Shift+S");
+        bindIcon("export.svg", split.menu().iconSize(), saveAs::setIcon);
+        ContextMenu.Item saveAll = split.menu().addItem("Save all",
+                () -> splitStatus.setText("Menu command: save all."));
+        saveAll.setShortcut("Ctrl+Shift+A");
+        bindIcon("save.svg", split.menu().iconSize(), saveAll::setIcon);
+        bindIcon("save.svg", split.iconSize(), split::setIcon);
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(8);
+        page.add(sliderCaption("Text input"))
+                .add(name)
+                .add(sliderCaption("Length limit and password"))
+                .add(shortFields)
+                .add(sliderCaption("Phone and date masks (digits only)"))
+                .add(maskedFields)
+                .add(sliderCaption("Read-only"))
+                .add(readOnly)
+                .add(sliderCaption("Split button"))
+                .add(split)
+                .add(splitStatus)
+                .add(status);
+        return page;
     }
 
     private Widget createPopupPage() {
