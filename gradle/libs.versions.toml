@@ -6,6 +6,7 @@ assertj = "3.27.7"
 checkstyle = "14.4.0"
 
 [libraries]
+jsvg = { module = "com.github.weisj:jsvg", version = "2.2.0" }
 lwjgl-bom = { module = "org.lwjgl:lwjgl-bom", version.ref = "lwjgl" }
 lwjgl = { module = "org.lwjgl:lwjgl" }
 lwjgl-glfw = { module = "org.lwjgl:lwjgl-glfw" }

@@ -1,6 +1,12 @@
 package com.lixui.render;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -8,6 +14,29 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ImageDataTest {
+    @Test
+    void rendersSvgResourceAtIntrinsicSizeWithStraightAlpha() {
+        ImageData image = ImageData.fromResource("/images/marker.svg");
+        assertEquals(4, image.width());
+        assertEquals(2, image.height());
+        assertEquals(0, image.pixels()[3]);
+        assertEquals(255, Byte.toUnsignedInt(image.pixels()[4]));
+        assertEquals(128, Byte.toUnsignedInt(image.pixels()[7]));
+    }
+
+    @Test
+    void rendersSvgFileIntoRequestedViewport(@TempDir Path directory) throws IOException {
+        Path path = directory.resolve("marker.SVG");
+        try (InputStream input = getClass().getResourceAsStream("/images/marker.svg")) {
+            Files.copy(input, path);
+        }
+        ImageData image = ImageData.fromFile(path, 20, 20);
+        assertEquals(20, image.width());
+        assertEquals(20, image.height());
+        assertEquals(0, image.pixels()[10 * 4 + 3]);
+        assertEquals(128, Byte.toUnsignedInt(image.pixels()[(10 * 20 + 10) * 4 + 3]));
+    }
+
     @Test
     void acceptsRgbaPayloadWithExactSize() {
         byte[] pixels = new byte[2 * 3 * 4];

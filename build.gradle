@@ -49,6 +49,7 @@ configurations {
 }
 
 dependencies {
+    implementation libs.jsvg
     api platform(libs.lwjgl.bom)
     api libs.lwjgl
     api libs.lwjgl.glfw
