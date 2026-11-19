@@ -32,6 +32,7 @@ import com.lixui.widget.control.RichLabel;
 import com.lixui.widget.control.SegmentedButton;
 import com.lixui.widget.control.Separator;
 import com.lixui.widget.control.Slider;
+import com.lixui.widget.container.Accordion;
 import com.lixui.widget.container.SplitPanel;
 import com.lixui.widget.container.Table;
 import com.lixui.widget.container.TabPanel;
@@ -129,6 +130,8 @@ final class DemoWidgetScene implements AutoCloseable {
         bindIcon("split.svg", outerTabs.iconSize(), outerTabs.addTab("Split", createSplitPage())::setIcon);
         bindIcon("slider.svg", outerTabs.iconSize(), outerTabs.addTab("Sliders", createSlidersPage())::setIcon);
         bindIcon("table.svg", outerTabs.iconSize(), outerTabs.addTab("Table", createTablePage())::setIcon);
+        bindIcon("menu-open.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Accordion", createAccordionPage())::setIcon);
         window = new Window();
         window.setTitle("LixUI - Demo Window");
         bindIcon("ui.svg", THEME_ICON_SIZE, window::setHeaderIcon);
@@ -376,6 +379,69 @@ final class DemoWidgetScene implements AutoCloseable {
         label.setFontStyle(FontStyle.BOLD);
         label.setAutoSize(false);
         label.setWrap(true);
+        return label;
+    }
+
+    private Widget createAccordionPage() {
+        Accordion multiple = new Accordion();
+        multiple.setExpansionDuration(0.25f);
+        Accordion.Section profile = multiple.addSection("Profile",
+                accordionLabel("Edit the display name, avatar and contact details."));
+        bindIcon("user.svg", multiple.iconSize(), profile::setIcon);
+        Accordion.Section notifications = multiple.addSection("Notifications",
+                accordionLabel("Choose which events should send a notification."));
+        bindIcon("notification.svg", multiple.iconSize(), notifications::setIcon);
+        Accordion.Section security = multiple.addSection("Security",
+                accordionLabel("Two-factor authentication, trusted devices and active sessions."));
+        bindIcon("shield.svg", multiple.iconSize(), security::setIcon);
+        security.setEnabled(false);
+        multiple.expand(profile);
+
+        Accordion exclusive = new Accordion();
+        exclusive.setExclusive(true);
+        exclusive.setExpansionDuration(0.3f);
+        Accordion.Section appearance = exclusive.addSection("Appearance",
+                accordionLabel("Pick a theme, accent color and text size for this workspace."));
+        bindIcon("palette.svg", exclusive.iconSize(), appearance::setIcon);
+        Accordion.Section language = exclusive.addSection("Language",
+                accordionLabel("Switch the interface language; translations load instantly."));
+        bindIcon("earth.svg", exclusive.iconSize(), language::setIcon);
+        Accordion.Section advanced = exclusive.addSection("Advanced",
+                accordionLabel("Developer options and experimental features are hidden here."));
+        bindIcon("settings.svg", exclusive.iconSize(), advanced::setIcon);
+        exclusive.expand(appearance);
+
+        Label status = accordionLabel("First list: Profile is open. Second list: Appearance is open.");
+        multiple.setOnExpandedChange(section -> status.setText("First list: " + section.title()
+                + (section.isExpanded() ? " opened." : " closed.")));
+        exclusive.setOnExpandedChange(section -> status.setText("Second list: " + section.title()
+                + (section.isExpanded() ? " opened." : " closed.")));
+
+        CheckBox oneAtATime = new CheckBox("First list: one open at a time");
+        oneAtATime.setOnChange(multiple::setExclusive);
+        CheckBox titleIcons = new CheckBox("Show title icons");
+        titleIcons.setChecked(true);
+        titleIcons.setOnChange(checked -> {
+            multiple.setShowIcons(checked);
+            exclusive.setShowIcons(checked);
+        });
+        CheckBox enableLocked = new CheckBox("Enable the locked section");
+        enableLocked.setOnChange(security::setEnabled);
+
+        HBox options = new HBox();
+        options.setGap(14);
+        options.add(oneAtATime).add(titleIcons).add(enableLocked);
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(10);
+        page.add(multiple).add(exclusive).add(options).add(status);
+        return page;
+    }
+
+    private Label accordionLabel(String text) {
+        Label label = new Label(text);
+        label.setFontFamily(fontFamily);
         return label;
     }
 

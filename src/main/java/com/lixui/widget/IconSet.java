@@ -1,7 +1,6 @@
-package com.lixui.widget.container;
+package com.lixui.widget;
 
 import com.lixui.render.Texture;
-import com.lixui.widget.UiContext;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -10,7 +9,7 @@ import java.util.List;
  * Owns a named set of shared bundled icons and reloads them when the pixel size or smoothing changes.
  * Acquisition is atomic: a failure releases the icons loaded so far and rethrows the original error.
  */
-final class IconSet {
+public final class IconSet {
     private final String[] names;
     private final List<Texture> textures = new ArrayList<>();
     private int pixelSize = -1;
@@ -21,7 +20,7 @@ final class IconSet {
      *
      * @param names bundled icon resource names in retrieval order
      */
-    IconSet(String... names) {
+    public IconSet(String... names) {
         this.names = names.clone();
     }
 
@@ -32,7 +31,7 @@ final class IconSet {
      * @param size requested icon edge length in physical pixels
      * @return true when no reload is needed
      */
-    boolean matches(UiContext context, int size) {
+    public boolean matches(UiContext context, int size) {
         return !textures.isEmpty() && pixelSize == size
                 && smoothed == context.iconSmoothing();
     }
@@ -43,7 +42,7 @@ final class IconSet {
      * @param context context that owns the icon cache
      * @param size icon edge length in physical pixels
      */
-    void reload(UiContext context, int size) {
+    public void reload(UiContext context, int size) {
         List<Texture> loaded = new ArrayList<>(names.length);
         try {
             for (String name : names) {
@@ -73,7 +72,7 @@ final class IconSet {
      * @param index zero-based icon index
      * @return the loaded icon texture, or null when the set is not loaded
      */
-    Texture get(int index) {
+    public Texture get(int index) {
         return index < textures.size() ? textures.get(index) : null;
     }
 
@@ -82,7 +81,7 @@ final class IconSet {
      *
      * @param context context that owns the icon cache, or null when the icons are already released
      */
-    void release(UiContext context) {
+    public void release(UiContext context) {
         List<Texture> previous = List.copyOf(textures);
         textures.clear();
         pixelSize = -1;
