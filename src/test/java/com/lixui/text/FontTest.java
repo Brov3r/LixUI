@@ -156,6 +156,24 @@ class FontTest {
     }
 
     @Test
+    void justifiesWrappedLinesExceptTheLastParagraphLine() {
+        Font font = testFont();
+        TextStyle style = new TextStyle(25, 0, 0, TextOverflow.CLIP,
+                HorizontalAlignment.JUSTIFY, VerticalAlignment.TOP);
+
+        TextLayout layout = font.layoutBlockRelative("A A A", style);
+
+        assertEquals(2, layout.lines().size());
+        assertEquals(25, layout.lines().get(0).width(), 0.0001f);
+        assertEquals(10, layout.lines().get(1).width(), 0.0001f);
+        assertEquals(25, layout.size().width(), 0.0001f);
+        assertEquals(15, layout.caretPosition(2).x(), 0.0001f);
+
+        TextLayout singleLine = font.layoutBlockRelative("A A", style);
+        assertEquals(24, singleLine.lines().get(0).width(), 0.0001f);
+    }
+
+    @Test
     void hardBreaksWordsThatExceedTheMaximumWidth() {
         Font font = testFont();
         TextStyle style = new TextStyle(12, 0, 0, TextOverflow.CLIP,

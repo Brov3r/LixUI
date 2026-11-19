@@ -632,18 +632,36 @@ public final class Font {
         float top = alignedTop(0, specs.size() * resolvedLineHeight, style.vertical());
         List<TextGlyph> quads = new ArrayList<>();
         List<TextLine> lines = new ArrayList<>(specs.size());
+        boolean justify = style.horizontal() == HorizontalAlignment.JUSTIFY;
         float maxWidth = 0;
         for (int index = 0; index < specs.size(); index++) {
             LineSpec spec = specs.get(index);
-            float width = walk(spec.text(), 0, 0, null).width();
-            float lineX = alignedX(0, width, style.horizontal());
+            String lineText = spec.text();
+            float width = walk(lineText, 0, 0, null).width();
+            int spaces = spaceCount(lineText);
+            boolean lastOfParagraph = spec.end() >= text.length() || text.charAt(spec.end()) == '\n';
+            float extraSpace = justify && !lastOfParagraph && spaces > 0 && style.maxWidth() > width
+                    ? (style.maxWidth() - width) / spaces : 0;
+            float lineX = justify ? 0 : alignedX(0, width, style.horizontal());
             float lineY = top + index * resolvedLineHeight;
-            walk(spec.text(), lineX, lineY, quads);
-            lines.add(new TextLine(spec.start(), spec.end(), lineX, lineY, width));
-            maxWidth = Math.max(maxWidth, width);
+            walk(lineText, lineX, lineY, quads, extraSpace);
+            float visibleWidth = width + extraSpace * spaces;
+            lines.add(new TextLine(spec.start(), spec.end(), lineX, lineY, visibleWidth));
+            maxWidth = Math.max(maxWidth, visibleWidth);
         }
         return new TextLayout(this, text, style, new Size(maxWidth, specs.size() * resolvedLineHeight),
                 resolvedLineHeight, quads, lines);
+    }
+
+    static int spaceCount(String text) {
+        int count = 0;
+        for (int index = 0; index < text.length(); index++) {
+            char character = text.charAt(index);
+            if (character == ' ' || character == '\t') {
+                count++;
+            }
+        }
+        return count;
     }
 
     private List<LineSpec> wrapLines(String text, TextStyle style) {
@@ -737,6 +755,10 @@ public final class Font {
     }
 
     private Size walk(String text, float x, float y, List<TextGlyph> quads) {
+        return walk(text, x, y, quads, 0);
+    }
+
+    private Size walk(String text, float x, float y, List<TextGlyph> quads, float extraSpace) {
         float penX = x;
         float baseline = y + ascent;
         float lineWidth = 0;
@@ -761,7 +783,7 @@ public final class Font {
             if (codepoint == '\t') {
                 Glyph space = glyphs.get((int) ' ');
                 if (space != null) {
-                    penX += (space.advance() + letterSpacing) * 4;
+                    penX += (space.advance() + letterSpacing) * 4 + extraSpace;
                     lineWidth = penX - x;
                 }
                 previous = -1;
@@ -784,6 +806,9 @@ public final class Font {
                         glyph.width(), glyph.height()), glyph.uv()));
             }
             penX += glyph.advance();
+            if (codepoint == ' ') {
+                penX += extraSpace;
+            }
             lineWidth = penX - x;
             previous = codepoint;
         }
@@ -799,7 +824,7 @@ public final class Font {
 
     private static float alignedX(float anchorX, float lineWidth, HorizontalAlignment alignment) {
         return switch (alignment) {
-            case LEFT -> anchorX;
+            case LEFT, JUSTIFY -> anchorX;
             case CENTER -> anchorX - lineWidth / 2;
             case RIGHT -> anchorX - lineWidth;
             default -> throw new IllegalStateException("Unknown horizontal alignment.");

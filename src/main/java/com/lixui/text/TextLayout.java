@@ -115,8 +115,7 @@ public final class TextLayout {
         while (index < line.end()) {
             int codepoint = text.codePointAt(index);
             index += Character.charCount(codepoint);
-            float distance = Math.abs(x - (line.x() + font.measure(text.substring(
-                    line.start(), index)).width()));
+            float distance = Math.abs(x - (line.x() + caretX(line, index)));
             if (distance < bestDistance) {
                 bestDistance = distance;
                 bestIndex = index;
@@ -178,6 +177,23 @@ public final class TextLayout {
 
     private float caretX(TextLine line, int index) {
         int clamped = Math.max(line.start(), Math.min(index, line.end()));
-        return font.measure(text.substring(line.start(), clamped)).width();
+        String prefix = text.substring(line.start(), clamped);
+        return font.measure(prefix).width() + extraSpacing(line) * Font.spaceCount(prefix);
+    }
+
+    private float extraSpacing(TextLine line) {
+        if (style.horizontal() != HorizontalAlignment.JUSTIFY || style.maxWidth() <= 0) {
+            return 0;
+        }
+        if (line.end() >= text.length() || text.charAt(line.end()) == '\n') {
+            return 0;
+        }
+        String content = text.substring(line.start(), line.end());
+        int spaces = Font.spaceCount(content);
+        if (spaces == 0) {
+            return 0;
+        }
+        float natural = font.measure(content).width();
+        return natural < style.maxWidth() ? (style.maxWidth() - natural) / spaces : 0;
     }
 }

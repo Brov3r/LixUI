@@ -10,5 +10,11 @@ public enum HorizontalAlignment {
     /** The anchor point is the horizontal center of the text. */
     CENTER,
     /** The anchor point is the right edge of the text. */
-    RIGHT
+    RIGHT,
+    /**
+     * Lines are stretched to the wrapping width by distributing extra space between words.
+     * The last line of each paragraph stays left-aligned, matching word processors. Justification
+     * requires a positive wrapping width; without one the text behaves like {@link #LEFT}.
+     */
+    JUSTIFY
 }
