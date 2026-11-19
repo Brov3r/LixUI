@@ -28,6 +28,7 @@ import com.lixui.widget.control.KnobSlider;
 import com.lixui.widget.control.Label;
 import com.lixui.widget.control.MultiSelect;
 import com.lixui.widget.Panel;
+import com.lixui.widget.control.ProgressBar;
 import com.lixui.widget.control.RadioBox;
 import com.lixui.widget.control.RangeSlider;
 import com.lixui.widget.control.RichLabel;
@@ -35,6 +36,7 @@ import com.lixui.widget.control.SegmentedButton;
 import com.lixui.widget.control.SelectOption;
 import com.lixui.widget.control.Separator;
 import com.lixui.widget.control.Slider;
+import com.lixui.widget.control.Spacer;
 import com.lixui.widget.container.Accordion;
 import com.lixui.widget.container.SplitPanel;
 import com.lixui.widget.container.Table;
@@ -50,6 +52,7 @@ import com.lixui.widget.overlay.ContextMenu;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 
 /**
@@ -83,6 +86,7 @@ final class DemoWidgetScene implements AutoCloseable {
     private final Label justifiedLabel;
     private final RichLabel richLabel;
     private final DemoStatsPanel statsPanel;
+    private Button randomizeProgressButton;
     private final List<IconSlot> iconSlots = new ArrayList<>();
     private Texture lightThemeIcon;
     private Texture darkThemeIcon;
@@ -128,6 +132,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(decoratedLabel).add(justifiedLabel).add(richLabel);
         innerTabs = createInnerTabs();
         outerTabs = new TabPanel();
+        bindIcon("progress.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Progress", createProgressPage())::setIcon);
         bindIcon("menu.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Popup", createPopupPage())::setIcon);
         bindIcon("text.svg", outerTabs.iconSize(), outerTabs.addTab("Labels", labelsPage)::setIcon);
@@ -451,6 +457,138 @@ final class DemoWidgetScene implements AutoCloseable {
         return label;
     }
 
+    private Widget createProgressPage() {
+        List<ProgressBar> bars = new ArrayList<>();
+        ProgressBar rounded = progressBar(ProgressBar.Shape.ROUNDED, 0.68f);
+        rounded.setBounds(new Rect(0, 0, 190, 16));
+        rounded.setCornerRadius(8);
+        ProgressBar sharp = progressBar(ProgressBar.Shape.RECTANGLE, 0.34f);
+        sharp.setBounds(new Rect(0, 0, 190, 16));
+        ProgressBar pill = progressBar(ProgressBar.Shape.PILL, 0.52f);
+        pill.setBounds(new Rect(0, 0, 190, 18));
+        ProgressBar outline = progressBar(ProgressBar.Shape.ROUNDED, 0.77f);
+        outline.setBounds(new Rect(0, 0, 190, 18));
+        outline.setAppearance(ProgressBar.Appearance.OUTLINE);
+        outline.setThickness(2);
+        ProgressBar perimeterRounded = progressBar(ProgressBar.Shape.ROUNDED, 0.64f);
+        perimeterRounded.setBounds(new Rect(0, 0, 190, 52));
+        perimeterRounded.setCornerRadius(14);
+        perimeterRounded.setAppearance(ProgressBar.Appearance.PERIMETER);
+        perimeterRounded.setThickness(5);
+        ProgressBar perimeterSharp = progressBar(ProgressBar.Shape.RECTANGLE, 0.39f);
+        perimeterSharp.setBounds(new Rect(0, 0, 190, 52));
+        perimeterSharp.setAppearance(ProgressBar.Appearance.PERIMETER);
+        perimeterSharp.setThickness(5);
+        ProgressBar circle = progressBar(ProgressBar.Shape.CIRCLE, 0.61f);
+        circle.setBounds(new Rect(0, 0, 64, 64));
+        circle.setAppearance(ProgressBar.Appearance.FILLED);
+        circle.setThickness(8);
+        circle.setShowText(true);
+        ProgressBar circleOutline = progressBar(ProgressBar.Shape.CIRCLE, 0.31f);
+        circleOutline.setBounds(new Rect(0, 0, 64, 64));
+        circleOutline.setAppearance(ProgressBar.Appearance.OUTLINE);
+        circleOutline.setThickness(8);
+        circleOutline.setFillColor(BLUE);
+        circleOutline.setShowText(true);
+        ProgressBar circleRadial = progressBar(ProgressBar.Shape.CIRCLE, 0.74f);
+        circleRadial.setBounds(new Rect(0, 0, 64, 64));
+        circleRadial.setAppearance(ProgressBar.Appearance.RADIAL);
+        circleRadial.setFillColor(ORANGE);
+        circleRadial.setShowText(true);
+        ProgressBar polygon = progressBar(ProgressBar.Shape.POLYGON, 0.57f);
+        polygon.setBounds(new Rect(0, 0, 64, 64));
+        polygon.setPolygon(ProgressBar.regularPolygon(6));
+        polygon.setAppearance(ProgressBar.Appearance.PERIMETER);
+        polygon.setThickness(6);
+        polygon.setShowText(true);
+        ProgressBar polygonFill = progressBar(ProgressBar.Shape.POLYGON, 0.57f);
+        polygonFill.setBounds(new Rect(0, 0, 64, 64));
+        polygonFill.setPolygon(ProgressBar.regularPolygon(6));
+        polygonFill.setAppearance(ProgressBar.Appearance.FILLED);
+        polygonFill.setFillColor(GREEN);
+        polygonFill.setShowText(true);
+        ProgressBar polygonRadial = progressBar(ProgressBar.Shape.POLYGON, 0.68f);
+        polygonRadial.setBounds(new Rect(0, 0, 64, 64));
+        polygonRadial.setPolygon(ProgressBar.regularPolygon(6));
+        polygonRadial.setAppearance(ProgressBar.Appearance.RADIAL);
+        polygonRadial.setFillColor(PURPLE);
+        polygonRadial.setShowText(true);
+
+        bars.add(rounded);
+        bars.add(sharp);
+        bars.add(pill);
+        bars.add(outline);
+        bars.add(perimeterRounded);
+        bars.add(perimeterSharp);
+        bars.add(circle);
+        bars.add(circleOutline);
+        bars.add(circleRadial);
+        bars.add(polygon);
+        bars.add(polygonFill);
+        bars.add(polygonRadial);
+
+        HBox filledRow = progressRow(rounded, sharp);
+        HBox outlineRow = progressRow(pill, outline);
+        HBox perimeterRow = progressRow(perimeterRounded, perimeterSharp);
+        HBox shapesTop = shapeRow(circle, circleOutline, circleRadial);
+        HBox shapesBottom = shapeRow(polygon, polygonFill, polygonRadial);
+
+        randomizeProgressButton = new Button("Randomize values");
+        randomizeProgressButton.setBounds(new Rect(0, 0, 200, 38));
+        randomizeProgressButton.setIconSize(16);
+        bindIcon("refresh.svg", 16, randomizeProgressButton::setIcon);
+        randomizeProgressButton.setOnAction(() -> {
+            for (ProgressBar bar : bars) {
+                bar.setValue((float) ThreadLocalRandom.current().nextDouble(bar.minimum(),
+                        bar.maximum()));
+            }
+        });
+        HBox actions = new HBox();
+        actions.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        actions.add(new Spacer()).add(randomizeProgressButton).add(new Spacer());
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(8);
+        page.add(sliderCaption("Filled bars"))
+                .add(filledRow)
+                .add(sliderCaption("Outline bar"))
+                .add(outlineRow)
+                .add(sliderCaption("Perimeter edge"))
+                .add(perimeterRow)
+                .add(sliderCaption("Circular and polygon"))
+                .add(shapesTop)
+                .add(shapesBottom)
+                .add(actions);
+        return page;
+    }
+
+    private HBox shapeRow(ProgressBar... bars) {
+        HBox row = new HBox();
+        row.setGap(14);
+        row.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        for (ProgressBar bar : bars) {
+            row.add(bar);
+        }
+        return row;
+    }
+
+    private HBox progressRow(ProgressBar first, ProgressBar second) {
+        first.setGrow(1);
+        second.setGrow(1);
+        HBox row = new HBox();
+        row.setGap(12);
+        row.add(first).add(second);
+        return row;
+    }
+
+    private ProgressBar progressBar(ProgressBar.Shape shape, float value) {
+        ProgressBar bar = new ProgressBar(value);
+        bar.setShape(shape);
+        bar.setAnimationRate(9);
+        return bar;
+    }
+
     private Widget createPopupPage() {
         Dropdown dropdown = new Dropdown();
         dropdown.setMinimumSize(320, 40);
@@ -764,6 +902,10 @@ final class DemoWidgetScene implements AutoCloseable {
         statsPanel.setStyle(withRadius(theme.panelStyle(), 8));
         outerTabs.setStyle(transparentPanelStyle(theme));
         innerTabs.setStyle(withRadius(theme.panelStyle(), 8));
+        if (randomizeProgressButton != null) {
+            randomizeProgressButton.setStyle(withRadius(theme.primaryStyle(), 8));
+            randomizeProgressButton.setIconTint(theme.onPrimary());
+        }
         titleLabel.setFontFamily(fontFamily);
         titleLabel.setFontStyle(FontStyle.BOLD);
         titleLabel.setDecoration(TextDecoration.UNDERLINE);
