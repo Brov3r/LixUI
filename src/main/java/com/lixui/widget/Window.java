@@ -51,6 +51,7 @@ public class Window extends ScrollPanel {
     private final Button closeButton = new Button();
     private final List<Texture> ownedTextures = new ArrayList<>();
     private int iconPixelSize;
+    private boolean iconsSmoothed;
 
     private String title = "";
     private Texture headerIcon;
@@ -652,15 +653,14 @@ public class Window extends ScrollPanel {
         if (context == null) {
             return;
         }
-        int size = Math.max(1, (int) Math.ceil(Math.min(128,
-                ICON_SIZE * Math.max(context.scaleX(), context.scaleY()))));
-        if (iconPixelSize == size) {
+        int size = Math.max(1, Math.round(ICON_SIZE * Math.max(context.scaleX(), context.scaleY())));
+        if (iconPixelSize == size && iconsSmoothed == context.iconSmoothing()) {
             return;
         }
         List<Texture> loaded = new ArrayList<>();
         try {
-            for (String name : List.of("pushpin.png", "unlock.png", "minus.png",
-                    "plus.png", "cross.png", "cursor-diagonal-resize.png")) {
+            for (String name : List.of("pushpin.svg", "unlock.svg", "minus.svg",
+                    "plus.svg", "cross.svg", "cursor-diagonal-resize.svg")) {
                 loaded.add(context.acquireIcon(name, size));
             }
         } catch (RuntimeException | Error exception) {
@@ -683,6 +683,7 @@ public class Window extends ScrollPanel {
         closeIcon = loaded.get(4);
         resizeIcon = loaded.get(5);
         iconPixelSize = size;
+        iconsSmoothed = context.iconSmoothing();
         updateButtonIcons();
         releaseIcons(previous);
     }

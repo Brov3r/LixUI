@@ -50,6 +50,7 @@ public final class UiContext implements AutoCloseable {
     private Font defaultFont;
     private Cursor cursor = Cursor.DEFAULT;
     private boolean closed;
+    private boolean iconSmoothing = true;
 
     UiContext(RenderManager renderer, UiPlatform platform) {
         this(renderer, platform, null);
@@ -350,10 +351,10 @@ public final class UiContext implements AutoCloseable {
     }
 
     /**
-     * Loads a bundled icon at the requested physical size, capped at the 128-pixel source.
-     * Enables mipmapping on backends supporting custom sampling.
+     * Rasterizes a bundled monochrome vector icon at the requested physical size for tinting.
+     * Uses the current icon smoothing setting for SVG edges and texture sampling.
      *
-     * @param name PNG file name in the bundled icon set
+     * @param name SVG file name in the bundled icon set; legacy PNG names are also accepted
      * @param size requested edge length in physical pixels
      * @return a texture tracked by this context
      * @throws NullPointerException if the name is null
@@ -363,26 +364,38 @@ public final class UiContext implements AutoCloseable {
     public Texture createBundledIcon(String name, int size) {
         ensureOpen();
         Objects.requireNonNull(name, "name");
-        int resolution = iconResolution(size);
-        int pixels = Math.min(size, 128);
-        ImageData image = ImageData.fromResource("assets/icons-" + resolution + "/" + name, pixels, pixels);
+        String svg = name.endsWith(".png") ? name.substring(0, name.length() - 4) + ".svg" : name;
+        ImageData image = ImageData.fromResource("/assets/icons/" + svg, size, size, iconSmoothing);
+        byte[] pixels = image.pixels();
+        // With straight alpha, linear sampling must interpolate coverage without fading the tint.
+        for (int i = 0; i < pixels.length; i += 4) {
+            pixels[i] = (byte) 255;
+            pixels[i + 1] = (byte) 255;
+            pixels[i + 2] = (byte) 255;
+        }
         try {
-            return createTexture(image, TextureOptions.MIPMAPPED);
+            return createTexture(image, iconSmoothing ? TextureOptions.DEFAULT : TextureOptions.PIXEL_ART);
         } catch (UnsupportedOperationException unsupportedSampling) {
             return createTexture(image);
         }
     }
 
-    private static int iconResolution(int size) {
-        if (size <= 0) {
-            throw new IllegalArgumentException("Icon size must be positive.");
-        }
-        return Integer.highestOneBit(Math.clamp(size, 16, 128) * 2 - 1);
+    /**
+     * Reports whether bundled icons use antialiased edges and linear sampling.
+     *
+     * @return true if smoothing is enabled (the default)
+     */
+    public boolean iconSmoothing() {
+        return iconSmoothing;
+    }
+
+    void setIconSmoothing(boolean enabled) {
+        iconSmoothing = enabled;
     }
 
     Texture acquireIcon(String name, int size) {
         ensureOpen();
-        IconKey key = new IconKey(name, Math.min(size, 128));
+        IconKey key = new IconKey(name, size, iconSmoothing);
         SharedIcon icon = icons.get(key);
         if (icon == null) {
             icon = new SharedIcon(createBundledIcon(name, size));
@@ -500,7 +513,7 @@ public final class UiContext implements AutoCloseable {
         return Collections.newSetFromMap(new IdentityHashMap<>());
     }
 
-    private record IconKey(String resource, int size) {
+    private record IconKey(String resource, int size, boolean smooth) {
     }
 
     private static final class SharedIcon {

@@ -243,7 +243,14 @@ public final class RenderManager {
     public void icon(Texture texture, Rect bounds, ImageStyle style, Color tint) {
         DrawList target = list();
         Transform transform = currentTransform();
-        target.image(texture, snapToPixel(bounds, transform), 0, FULL_UV, applyOpacity(tint), transform, style);
+        Rect slot = snapToPixel(bounds, transform);
+        if (isTranslation(transform) && texture.width() == Math.round(slot.width() * viewport.scaleX())
+                && texture.height() == Math.round(slot.height() * viewport.scaleY())) {
+            // A native-size icon must span whole texels even when the display scale is fractional.
+            slot = new Rect(slot.x(), slot.y(), texture.width() / viewport.scaleX(),
+                    texture.height() / viewport.scaleY());
+        }
+        target.image(texture, slot, 0, FULL_UV, applyOpacity(tint), transform, style);
     }
 
     /**
@@ -728,7 +735,7 @@ public final class RenderManager {
     }
 
     private Rect snapToPixel(Rect bounds, Transform transform) {
-        if (transform.m00() != 1 || transform.m11() != 1 || transform.m01() != 0 || transform.m10() != 0) {
+        if (!isTranslation(transform)) {
             return bounds;
         }
         float x = Math.round((bounds.x() + transform.m02()) * viewport.scaleX()) / viewport.scaleX()

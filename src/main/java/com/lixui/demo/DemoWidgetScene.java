@@ -86,8 +86,8 @@ final class DemoWidgetScene implements AutoCloseable {
         background = new Background();
         themeButton = new Button();
         themeButton.setIconSize(THEME_ICON_SIZE);
-        bindIcon("light-mode.png", THEME_ICON_SIZE, icon -> lightThemeIcon = icon);
-        bindIcon("dark-mode.png", THEME_ICON_SIZE, icon -> darkThemeIcon = icon);
+        bindIcon("light-mode.svg", THEME_ICON_SIZE, icon -> lightThemeIcon = icon);
+        bindIcon("dark-mode.svg", THEME_ICON_SIZE, icon -> darkThemeIcon = icon);
         themeButton.setOnAction(this::toggleTheme);
         titleLabel = new Label("Labels and rich text");
         bodyLabel = new Label("A wrapped label reflows at the window width and aligns its text "
@@ -115,12 +115,12 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(decoratedLabel).add(justifiedLabel).add(richLabel);
         innerTabs = createInnerTabs();
         outerTabs = new TabPanel();
-        bindIcon("text.png", outerTabs.iconSize(), outerTabs.addTab("Labels", labelsPage)::setIcon);
-        bindIcon("ui.png", outerTabs.iconSize(), outerTabs.addTab("Tabs", innerTabs)::setIcon);
-        bindIcon("adjustment.png", outerTabs.iconSize(), outerTabs.addTab("Controls", createControlsPage())::setIcon);
+        bindIcon("text.svg", outerTabs.iconSize(), outerTabs.addTab("Labels", labelsPage)::setIcon);
+        bindIcon("ui.svg", outerTabs.iconSize(), outerTabs.addTab("Tabs", innerTabs)::setIcon);
+        bindIcon("adjustment.svg", outerTabs.iconSize(), outerTabs.addTab("Controls", createControlsPage())::setIcon);
         window = new Window();
         window.setTitle("LixUI - Demo Window");
-        bindIcon("ui.png", THEME_ICON_SIZE, window::setHeaderIcon);
+        bindIcon("ui.svg", THEME_ICON_SIZE, window::setHeaderIcon);
         window.setHeaderIconSize(THEME_ICON_SIZE);
         window.setContent(outerTabs);
         statsPanel = new DemoStatsPanel();
@@ -163,13 +163,13 @@ final class DemoWidgetScene implements AutoCloseable {
             tabs.addTab("Tab " + index, page);
         }
         List<TabPanel.Tab> tabList = tabs.tabs();
-        bindIcon("light-mode.png", tabs.iconSize(), tabList.get(0)::setIcon);
-        bindIcon("dark-mode.png", tabs.iconSize(), tabList.get(1)::setIcon);
+        bindIcon("light-mode.svg", tabs.iconSize(), tabList.get(0)::setIcon);
+        bindIcon("dark-mode.svg", tabs.iconSize(), tabList.get(1)::setIcon);
         tabList.get(2).setTitle("Locked");
         tabList.get(2).setLocked(true);
         tabList.get(3).setTitle("A very long tab title that is truncated");
         tabList.get(4).setTitle("");
-        bindIcon("ui.png", tabs.iconSize(), tabList.get(4)::setIcon);
+        bindIcon("ui.svg", tabs.iconSize(), tabList.get(4)::setIcon);
         tabs.setTabClosable(tabList.get(0), false);
         tabs.setTabMovable(tabList.get(11), false);
         return tabs;
@@ -217,17 +217,17 @@ final class DemoWidgetScene implements AutoCloseable {
 
         SegmentedButton actions = new SegmentedButton();
         actions.setTooltipText("Each segment runs its own action.");
-        addIconSegment(actions, "Cut", "scissors.png").setOnAction(() -> status.setText("Cut segment clicked"));
-        addIconSegment(actions, "Copy", "copy.png").setOnAction(() -> status.setText("Copy segment clicked"));
-        addIconSegment(actions, "Paste", "paste.png").setOnAction(() -> status.setText("Paste segment clicked"));
-        addIconSegment(actions, "Delete", "trash.png").setEnabled(false);
+        addIconSegment(actions, "Cut", "scissors.svg").setOnAction(() -> status.setText("Cut segment clicked"));
+        addIconSegment(actions, "Copy", "copy.svg").setOnAction(() -> status.setText("Copy segment clicked"));
+        addIconSegment(actions, "Paste", "paste.svg").setOnAction(() -> status.setText("Paste segment clicked"));
+        addIconSegment(actions, "Delete", "trash.svg").setEnabled(false);
 
         SegmentedButton alignment = new SegmentedButton();
         alignment.setSelectionMode(SegmentedButton.SelectionMode.SINGLE);
         alignment.setTooltipText("Radio-like selection; icons can be hidden above.");
-        addIconSegment(alignment, "Left", "align-left-02.png");
-        addIconSegment(alignment, "Center", "align-horizontal-centers-02.png");
-        addIconSegment(alignment, "Right", "align-right-02.png");
+        addIconSegment(alignment, "Left", "align-left-02.svg");
+        addIconSegment(alignment, "Center", "align-horizontal-centers-02.svg");
+        addIconSegment(alignment, "Right", "align-right-02.svg");
         alignment.setSelectedIndex(1);
         alignment.setOnSelectionChange(index ->
                 status.setText("Alignment segment " + index + " selected"));
@@ -288,7 +288,7 @@ final class DemoWidgetScene implements AutoCloseable {
         }
 
         private void resize(float density) {
-            int pixels = Math.clamp(Math.round(size * density), 1, 128);
+            int pixels = Math.max(1, Math.round(size * density));
             if (texture != null && texture.width() == pixels) {
                 return;
             }

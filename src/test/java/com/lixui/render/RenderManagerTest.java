@@ -542,6 +542,18 @@ class RenderManagerTest {
     }
 
     @Test
+    void drawsNativeSizeIconWithoutResamplingAtFractionalDensity() {
+        RecordingBackend backend = new RecordingBackend();
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(new Viewport(1000, 750, 800, 600));
+        manager.begin();
+        manager.icon(new TestTexture(18, 18), new Rect(3, 3, 14, 14), ImageStyle.ICON, Color.WHITE);
+        manager.end();
+        ImageCommand icon = (ImageCommand) backend.lastDrawList.commands().getFirst();
+        assertEquals(new Rect(3.2f, 3.2f, 14.4f, 14.4f), icon.bounds());
+    }
+
+    @Test
     void createsFontsDrawsTextAndReleasesTheirAtlases() {
         FontData data = SystemFonts.findDefault().orElse(null);
         Assumptions.assumeTrue(data != null, "No readable system font is installed.");

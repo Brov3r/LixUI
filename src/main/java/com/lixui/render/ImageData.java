@@ -19,7 +19,7 @@ import java.util.Objects;
 
 /**
  * An RGBA8 image in row-major order, starting at the top-left pixel.
- * Pixel data is straight-alpha and not premultiplied.
+ * Pixel data is straight-alpha and not premultiplied. SVG edges are antialiased by default.
  * The pixel array is shared with the caller and must not be modified during texture upload.
  *
  * @param width image width in pixels
@@ -59,8 +59,22 @@ public record ImageData(int width, int height, byte[] pixels) {
      * @throws UncheckedIOException if the resource cannot be read
      */
     public static ImageData fromResource(String resource) {
+        return fromResource(resource, true);
+    }
+
+    /**
+     * Loads an image at its intrinsic size with optional SVG edge smoothing.
+     *
+     * @param resource classpath image path
+     * @param smooth whether to antialias SVG edges; ignored for raster images
+     * @return decoded straight-alpha pixels
+     * @throws NullPointerException if the resource path is null
+     * @throws IllegalArgumentException if the resource is missing or unsupported
+     * @throws UncheckedIOException if the resource cannot be read
+     */
+    public static ImageData fromResource(String resource, boolean smooth) {
         Objects.requireNonNull(resource, "resource");
-        return readResource(resource, 0, 0);
+        return readResource(resource, 0, 0, smooth);
     }
 
     /**
@@ -77,9 +91,25 @@ public record ImageData(int width, int height, byte[] pixels) {
      * @throws UncheckedIOException if the resource cannot be read
      */
     public static ImageData fromResource(String resource, int width, int height) {
+        return fromResource(resource, width, height, true);
+    }
+
+    /**
+     * Loads a classpath image at the requested size with optional SVG edge smoothing.
+     *
+     * @param resource classpath image path
+     * @param width target width in pixels
+     * @param height target height in pixels
+     * @param smooth whether to antialias SVG edges; ignored for raster images
+     * @return decoded straight-alpha pixels
+     * @throws NullPointerException if the resource path is null
+     * @throws IllegalArgumentException if the size is invalid or the resource is missing or unsupported
+     * @throws UncheckedIOException if the resource cannot be read
+     */
+    public static ImageData fromResource(String resource, int width, int height, boolean smooth) {
         Objects.requireNonNull(resource, "resource");
         payloadSize(width, height);
-        return readResource(resource, width, height);
+        return readResource(resource, width, height, smooth);
     }
 
     /**
@@ -92,7 +122,21 @@ public record ImageData(int width, int height, byte[] pixels) {
      * @throws UncheckedIOException if the file cannot be read
      */
     public static ImageData fromFile(Path path) {
-        return readFile(path, 0, 0);
+        return fromFile(path, true);
+    }
+
+    /**
+     * Loads an image file at its intrinsic size with optional SVG edge smoothing.
+     *
+     * @param path source image file
+     * @param smooth whether to antialias SVG edges; ignored for raster images
+     * @return decoded straight-alpha pixels
+     * @throws NullPointerException if the path is null
+     * @throws IllegalArgumentException if the format or dimensions are unsupported
+     * @throws UncheckedIOException if the file cannot be read
+     */
+    public static ImageData fromFile(Path path, boolean smooth) {
+        return readFile(path, 0, 0, smooth);
     }
 
     /**
@@ -107,19 +151,36 @@ public record ImageData(int width, int height, byte[] pixels) {
      * @throws UncheckedIOException if the file cannot be read
      */
     public static ImageData fromFile(Path path, int width, int height) {
-        payloadSize(width, height);
-        return readFile(path, width, height);
+        return fromFile(path, width, height, true);
     }
 
-    private static ImageData readFile(Path path, int width, int height) {
+    /**
+     * Loads an image file at the requested size with optional SVG edge smoothing.
+     *
+     * @param path source image file
+     * @param width target width in pixels
+     * @param height target height in pixels
+     * @param smooth whether to antialias SVG edges; ignored for raster images
+     * @return decoded straight-alpha pixels
+     * @throws NullPointerException if the path is null
+     * @throws IllegalArgumentException if the format or dimensions are unsupported
+     * @throws UncheckedIOException if the file cannot be read
+     */
+    public static ImageData fromFile(Path path, int width, int height, boolean smooth) {
+        payloadSize(width, height);
+        return readFile(path, width, height, smooth);
+    }
+
+    private static ImageData readFile(Path path, int width, int height, boolean smooth) {
         try (InputStream input = Files.newInputStream(path)) {
-            return decode(input, path.toString(), width, height);
+            return decode(input, path.toString(), width, height, smooth);
         } catch (IOException exception) {
             throw new UncheckedIOException("Failed to read image file: " + path, exception);
         }
     }
 
-    private static ImageData decode(InputStream input, String name, int width, int height) throws IOException {
+    private static ImageData decode(InputStream input, String name, int width, int height, boolean smooth)
+            throws IOException {
         if (name.toLowerCase(Locale.ROOT).endsWith(".svg")) {
             SVGDocument document = new SVGLoader().load(input, null, LoaderContext.createDefault());
             if (document == null) {
@@ -133,7 +194,8 @@ public record ImageData(int width, int height, byte[] pixels) {
             BufferedImage target = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
             Graphics2D graphics = target.createGraphics();
             try {
-                graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                        smooth ? RenderingHints.VALUE_ANTIALIAS_ON : RenderingHints.VALUE_ANTIALIAS_OFF);
                 document.render(null, graphics, new ViewBox(0, 0, width, height));
             } finally {
                 graphics.dispose();
@@ -161,13 +223,13 @@ public record ImageData(int width, int height, byte[] pixels) {
         return toImageData(scaled);
     }
 
-    private static ImageData readResource(String resource, int width, int height) {
+    private static ImageData readResource(String resource, int width, int height, boolean smooth) {
         String path = resource.startsWith("/") ? resource : "/" + resource;
         try (InputStream input = ImageData.class.getResourceAsStream(path)) {
             if (input == null) {
                 throw new IllegalArgumentException("Image resource not found: " + resource);
             }
-            return decode(input, resource, width, height);
+            return decode(input, resource, width, height, smooth);
         } catch (IOException exception) {
             throw new UncheckedIOException("Failed to read image resource: " + resource, exception);
         }

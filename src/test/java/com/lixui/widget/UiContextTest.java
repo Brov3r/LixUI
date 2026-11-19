@@ -66,6 +66,23 @@ class UiContextTest {
     }
 
     @Test
+    void bundledIconPreservesOriginalCoverageAndTintAcrossTransparentEdges() {
+        RecordingBackend backend = new RecordingBackend();
+        try (UiContext context = new UiContext(new RenderManager(backend), UiPlatform.NONE)) {
+            context.createBundledIcon("copy.svg", 16);
+            byte[] source = ImageData.fromResource("assets/icons/copy.svg", 16, 16).pixels();
+            byte[] uploaded = backend.lastImage.pixels();
+            assertEquals(source.length, uploaded.length);
+            for (int i = 0; i < source.length; i += 4) {
+                assertEquals(source[i + 3], uploaded[i + 3]);
+                for (int channel = 0; channel < 3; channel++) {
+                    assertEquals(255, Byte.toUnsignedInt(uploaded[i + channel]));
+                }
+            }
+        }
+    }
+
+    @Test
     void treatsMissingPlatformClipboardAsEmpty() {
         RecordingPlatform platform = new RecordingPlatform();
         platform.clipboard = null;
@@ -146,6 +163,7 @@ class UiContextTest {
 
     private static final class RecordingBackend implements RenderBackend {
         private final List<Texture> destroyed = new ArrayList<>();
+        private ImageData lastImage;
 
         @Override
         public void resize(Viewport viewport) {
@@ -157,6 +175,7 @@ class UiContextTest {
 
         @Override
         public Texture createTexture(ImageData image) {
+            lastImage = image;
             return new RecordedTexture(image.width(), image.height());
         }
 

@@ -128,6 +128,21 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     /**
+     * Selects smoothing for bundled icons and refreshes icons managed by attached widgets.
+     * Caller-owned textures keep the settings they were created with.
+     *
+     * @param enabled true for antialiased edges and linear sampling (the default)
+     * @throws IllegalStateException if the manager is closed
+     */
+    public void setIconSmoothing(boolean enabled) {
+        ensureOpen();
+        if (context.iconSmoothing() != enabled) {
+            context.setIconSmoothing(enabled);
+            notifyContextChanged();
+        }
+    }
+
+    /**
      * Returns the animator that advances with every {@link #update(float)} call.
      *
      * @return the shared animator

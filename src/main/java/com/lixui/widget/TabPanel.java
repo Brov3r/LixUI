@@ -786,15 +786,15 @@ public class TabPanel extends Panel {
         if (context == null) {
             return;
         }
-        int size = Math.max(1, Math.min(128, (int) Math.ceil(ARROW_ICON * context.density())));
+        int size = Math.max(1, Math.round(ARROW_ICON * context.density()));
         if (arrowLeft != null && arrowPixelSize == size) {
             return;
         }
         Texture left = null;
         Texture right = null;
         try {
-            left = context.acquireIcon("arrow-left-04.png", size);
-            right = context.acquireIcon("arrow-right-04.png", size);
+            left = context.acquireIcon("arrow-left-04.svg", size);
+            right = context.acquireIcon("arrow-right-04.svg", size);
         } catch (RuntimeException | Error exception) {
             releaseIcon(left);
             releaseIcon(right);

@@ -15,6 +15,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ImageDataTest {
     @Test
+    void smoothsOpaqueSvgEdgesUnlessDisabled() {
+        String icon = "assets/icons/arrow-right-04.svg";
+        ImageData sharp = ImageData.fromResource(icon, 18, 18, false);
+        ImageData smooth = ImageData.fromResource(icon, 18, 18);
+        boolean foundSoftEdge = false;
+        for (int index = 3; index < sharp.pixels().length; index += 4) {
+            int alpha = Byte.toUnsignedInt(sharp.pixels()[index]);
+            assertTrue(alpha == 0 || alpha == 255);
+            int smoothAlpha = Byte.toUnsignedInt(smooth.pixels()[index]);
+            foundSoftEdge |= smoothAlpha > 0 && smoothAlpha < 255;
+        }
+        assertTrue(foundSoftEdge);
+    }
+
+    @Test
     void rendersSvgResourceAtIntrinsicSizeWithStraightAlpha() {
         ImageData image = ImageData.fromResource("/images/marker.svg");
         assertEquals(4, image.width());
@@ -67,7 +82,7 @@ class ImageDataTest {
 
     @Test
     void loadsAndScalesClasspathImages() {
-        ImageData icon = ImageData.fromResource("assets/icons-128/light-mode.png", 16, 16);
+        ImageData icon = ImageData.fromResource("images/light-mode.png", 16, 16);
 
         assertEquals(16, icon.width());
         assertEquals(16, icon.height());
@@ -87,7 +102,7 @@ class ImageDataTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new ImageData(Integer.MAX_VALUE, Integer.MAX_VALUE, new byte[0]));
         assertThrows(IllegalArgumentException.class,
-                () -> ImageData.fromResource("assets/icons-128/light-mode.png", 65536, 65536));
+                () -> ImageData.fromResource("images/light-mode.png", 65536, 65536));
     }
 
     @Test
@@ -95,8 +110,8 @@ class ImageDataTest {
         assertThrows(NullPointerException.class, () -> ImageData.fromResource(null));
         assertThrows(IllegalArgumentException.class, () -> ImageData.fromResource("missing.png"));
         assertThrows(IllegalArgumentException.class,
-                () -> ImageData.fromResource("assets/icons-128/light-mode.png", 0, 16));
+                () -> ImageData.fromResource("images/light-mode.png", 0, 16));
         assertThrows(IllegalArgumentException.class,
-                () -> ImageData.fromResource("assets/icons-128/light-mode.png", 16, -1));
+                () -> ImageData.fromResource("images/light-mode.png", 16, -1));
     }
 }
