@@ -33,6 +33,7 @@ import com.lixui.widget.control.SegmentedButton;
 import com.lixui.widget.control.Separator;
 import com.lixui.widget.control.Slider;
 import com.lixui.widget.container.SplitPanel;
+import com.lixui.widget.container.Table;
 import com.lixui.widget.container.TabPanel;
 import com.lixui.widget.control.ToggleGroup;
 import com.lixui.widget.Widget;
@@ -127,6 +128,7 @@ final class DemoWidgetScene implements AutoCloseable {
         bindIcon("adjustment.svg", outerTabs.iconSize(), outerTabs.addTab("Controls", createControlsPage())::setIcon);
         bindIcon("split.svg", outerTabs.iconSize(), outerTabs.addTab("Split", createSplitPage())::setIcon);
         bindIcon("slider.svg", outerTabs.iconSize(), outerTabs.addTab("Sliders", createSlidersPage())::setIcon);
+        bindIcon("table.svg", outerTabs.iconSize(), outerTabs.addTab("Table", createTablePage())::setIcon);
         window = new Window();
         window.setTitle("LixUI - Demo Window");
         bindIcon("ui.svg", THEME_ICON_SIZE, window::setHeaderIcon);
@@ -375,6 +377,128 @@ final class DemoWidgetScene implements AutoCloseable {
         label.setAutoSize(false);
         label.setWrap(true);
         return label;
+    }
+
+    private Widget createTablePage() {
+        SplitPanel stacked = new SplitPanel(SplitPanel.Orientation.VERTICAL);
+        stacked.setDividerThickness(8);
+        stacked.setDividerPosition(0.5f);
+        stacked.setMinimumPaneSize(90);
+        stacked.setFirst(createPartyTable());
+        stacked.setSecond(createInventoryTable());
+
+        SplitPanel page = new SplitPanel();
+        page.setDividerThickness(8);
+        page.setDividerPosition(0.5f);
+        page.setMinimumPaneSize(140);
+        page.setFirst(stacked);
+        page.setSecond(createMarketTable());
+        return page;
+    }
+
+    private Table createPartyTable() {
+        Table table = new Table();
+        Table.Column hero = table.addColumn("Hero", 100);
+        bindIcon("user.svg", table.iconSize(), hero::setIcon);
+        table.addColumn("Class", 80);
+        Table.Column level = table.addColumn("Level", 60);
+        bindIcon("level.svg", table.iconSize(), level::setIcon);
+
+        addPartyRow(table, "Aria", "Ranger", 12, "bow.svg");
+        addPartyRow(table, "Bran", "Knight", 9, "sword.svg");
+        addPartyRow(table, "Cyra", "Mage", 15, "potion.svg");
+        addPartyRow(table, "Dain", "Guardian", 7, "shield.svg");
+        addPartyRow(table, "Elara", "Healer", 11, "potion.svg");
+        addPartyRow(table, "Fen", "Rogue", 14, "sword.svg");
+        return table;
+    }
+
+    private void addPartyRow(Table table, String hero, String role, int level, String icon) {
+        Table.Cell heroCell = Table.Cell.of(hero, null, level);
+        bindIcon(icon, table.iconSize(), heroCell::setIcon);
+        table.addRow(new Table.Row(heroCell, Table.Cell.of(role),
+                Table.Cell.of(Integer.toString(level), null, level)));
+    }
+
+    private Table createInventoryTable() {
+        Table table = new Table();
+        table.setColumnResizingEnabled(false);
+        table.setSelectionMode(Table.SelectionMode.MULTIPLE);
+        table.setDragSelectionEnabled(false);
+        Table.Column item = table.addColumn("Item", 110);
+        bindIcon("chest.svg", table.iconSize(), item::setIcon);
+        table.addColumn("Type", 90);
+        table.addColumn("Value", 60);
+
+        addInventoryRow(table, "Iron Sword", "Weapon", 120, "sword.svg");
+        addInventoryRow(table, "Oak Bow", "Weapon", 95, "bow.svg");
+        addInventoryRow(table, "Round Shield", "Armor", 140, "shield.svg");
+        addInventoryRow(table, "Healing Potion", "Consumable", 45, "potion.svg");
+        addInventoryRow(table, "Mana Potion", "Consumable", 60, "potion.svg");
+        addInventoryRow(table, "Steel Helmet", "Armor", 180, "shield.svg");
+        addInventoryRow(table, "Short Dagger", "Weapon", 80, "sword.svg");
+        addInventoryRow(table, "Travel Cloak", "Armor", 55, "shirt.svg");
+        addInventoryRow(table, "Ancient Ring", "Trinket", 320, "ring.svg");
+        addInventoryRow(table, "Lucky Coin", "Trinket", 90, "star-coin.svg");
+        addInventoryRow(table, "Torch", "Tool", 15, "torch.svg");
+        addInventoryRow(table, "Repair Kit", "Tool", 75, "tool-kit.svg");
+        addInventoryRow(table, "Bread", "Food", 10, "bread.svg");
+        addInventoryRow(table, "Water Flask", "Food", 12, "water.svg");
+        return table;
+    }
+
+    private void addInventoryRow(Table table, String name, String type, int value, String icon) {
+        Table.Cell itemCell = Table.Cell.of(name, null, value);
+        bindIcon(icon, table.iconSize(), itemCell::setIcon);
+        table.addRow(new Table.Row(itemCell, Table.Cell.of(type),
+                Table.Cell.of(Integer.toString(value), null, value)));
+    }
+
+    private Table createMarketTable() {
+        Table table = new Table();
+        table.setColumnPadding(6);
+        table.setSelectionMode(Table.SelectionMode.MULTIPLE);
+        table.setDragSelectionEnabled(true);
+        table.addColumn("ID", 45);
+        Table.Column item = table.addColumn("Item", 120);
+        bindIcon("chest.svg", table.iconSize(), item::setIcon);
+        table.addColumn("Rarity", 85);
+        table.addColumn("Weight", 70);
+        table.addColumn("Value", 70);
+        table.addColumn("Stock", 65);
+        table.addColumn("Seller", 105);
+
+        addMarketRow(table, 1, "Runed Sword", "Rare", "3.2", 850, 4, "Aria", "sword.svg");
+        addMarketRow(table, 2, "Elven Bow", "Epic", "1.4", 1240, 2, "Bran", "bow.svg");
+        addMarketRow(table, 3, "Tower Shield", "Uncommon", "8.0", 420, 9, "Cyra", "shield.svg");
+        addMarketRow(table, 4, "Healing Draught", "Common", "0.3", 55, 24, "Dain", "potion.svg");
+        addMarketRow(table, 5, "Mana Draught", "Common", "0.3", 70, 18, "Elara", "potion.svg");
+        addMarketRow(table, 6, "Silver Ring", "Rare", "0.1", 610, 6, "Fen", "ring.svg");
+        addMarketRow(table, 7, "Chest Key", "Common", "0.1", 25, 40, "Aria", "key.svg");
+        addMarketRow(table, 8, "Lucky Coin", "Uncommon", "0.1", 180, 12, "Bran", "star-coin.svg");
+        addMarketRow(table, 9, "Torch", "Common", "0.5", 18, 50, "Cyra", "torch.svg");
+        addMarketRow(table, 10, "Repair Kit", "Uncommon", "1.0", 95, 15, "Dain", "tool-kit.svg");
+        addMarketRow(table, 11, "Travel Cloak", "Common", "1.2", 65, 8, "Elara", "shirt.svg");
+        addMarketRow(table, 12, "Steel Helmet", "Uncommon", "4.5", 240, 5, "Fen", "shield.svg");
+        addMarketRow(table, 13, "Ancient Tome", "Epic", "2.0", 1580, 1, "Aria", "book.svg");
+        addMarketRow(table, 14, "Short Dagger", "Common", "0.8", 85, 20, "Bran", "sword.svg");
+        addMarketRow(table, 15, "Bread", "Common", "0.2", 12, 60, "Cyra", "bread.svg");
+        addMarketRow(table, 16, "Water Flask", "Common", "0.4", 14, 45, "Dain", "water.svg");
+        return table;
+    }
+
+    private void addMarketRow(Table table, int id, String name, String rarity, String weight,
+                              int value, int stock, String seller, String icon) {
+        Table.Cell itemCell = Table.Cell.of(name, null, value);
+        bindIcon(icon, table.iconSize(), itemCell::setIcon);
+        table.addRow(new Table.Row(
+                Table.Cell.of(Integer.toString(id), null, id),
+                itemCell,
+                Table.Cell.of(rarity),
+                Table.Cell.of(weight, null, Float.parseFloat(weight)),
+                Table.Cell.of(Integer.toString(value), null, value),
+                Table.Cell.of(Integer.toString(stock), null, stock),
+                Table.Cell.of(seller)));
     }
 
     private FontFamily createFontFamily() {
