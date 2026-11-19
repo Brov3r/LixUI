@@ -601,20 +601,19 @@ public abstract class Widget {
      */
     public final boolean remove(Widget child) {
         Objects.requireNonNull(child, "child");
-        for (int index = 0; index < children.size(); index++) {
-            if (children.get(index) == child) {
-                children.remove(index);
-                childSnapshot = null;
-                try {
-                    child.detach();
-                } finally {
-                    child.setParent(null);
-                    notifyStateChanged();
-                }
-                return true;
-            }
+        int index = indexOfIdentity(children, child);
+        if (index < 0) {
+            return false;
         }
-        return false;
+        children.remove(index);
+        childSnapshot = null;
+        try {
+            child.detach();
+        } finally {
+            child.setParent(null);
+            notifyStateChanged();
+        }
+        return true;
     }
 
     /**
@@ -1435,6 +1434,22 @@ public abstract class Widget {
         if (widget.isVisible() != visible) {
             widget.setVisible(visible);
         }
+    }
+
+    /**
+     * Finds a widget by reference identity.
+     *
+     * @param widgets widgets to search
+     * @param widget widget to find
+     * @return the zero-based index, or -1 when the list does not contain the widget
+     */
+    protected static int indexOfIdentity(List<Widget> widgets, Widget widget) {
+        for (int index = 0; index < widgets.size(); index++) {
+            if (widgets.get(index) == widget) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     /**

@@ -279,7 +279,7 @@ public final class WidgetManager implements AutoCloseable {
         if (widget.parent() != null) {
             throw new IllegalArgumentException("Only widgets without a parent can be added.");
         }
-        if (widget.context() != null || containsIdentity(widgets, widget)) {
+        if (widget.context() != null || Widget.indexOfIdentity(widgets, widget) >= 0) {
             throw new IllegalArgumentException("Widget is already registered.");
         }
         widgets.add(widget);
@@ -547,7 +547,7 @@ public final class WidgetManager implements AutoCloseable {
         Objects.requireNonNull(widget, "widget");
         ensureOpen();
         Widget top = topLevel(widget);
-        if (top.context() != context || indexOfIdentity(widgets, top) < 0) {
+        if (top.context() != context || Widget.indexOfIdentity(widgets, top) < 0) {
             throw new IllegalArgumentException("Widget is not registered with this manager.");
         }
         moveToFront(top);
@@ -628,7 +628,7 @@ public final class WidgetManager implements AutoCloseable {
             focus(null);
             return;
         }
-        int current = indexOfIdentity(order, focused);
+        int current = Widget.indexOfIdentity(order, focused);
         int next;
         if (current < 0) {
             next = forward ? 0 : order.size() - 1;
@@ -1209,20 +1209,7 @@ public final class WidgetManager implements AutoCloseable {
         if (widget.context() != context) {
             return false;
         }
-        return containsIdentity(widgets, topLevel(widget));
-    }
-
-    private static boolean containsIdentity(List<Widget> list, Widget widget) {
-        return indexOfIdentity(list, widget) >= 0;
-    }
-
-    private static int indexOfIdentity(List<Widget> list, Widget widget) {
-        for (int index = 0; index < list.size(); index++) {
-            if (list.get(index) == widget) {
-                return index;
-            }
-        }
-        return -1;
+        return Widget.indexOfIdentity(widgets, topLevel(widget)) >= 0;
     }
 
     private void raiseIfEnabled(Widget widget) {
@@ -1233,7 +1220,7 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     private void moveToFront(Widget top) {
-        int index = indexOfIdentity(widgets, top);
+        int index = Widget.indexOfIdentity(widgets, top);
         if (index >= 0 && index != widgets.size() - 1) {
             widgets.remove(index);
             widgets.add(top);
