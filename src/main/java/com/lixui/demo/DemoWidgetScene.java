@@ -24,10 +24,12 @@ import com.lixui.widget.Button;
 import com.lixui.widget.CheckBox;
 import com.lixui.widget.FrameInfo;
 import com.lixui.widget.Label;
+import com.lixui.widget.Panel;
 import com.lixui.widget.RadioBox;
 import com.lixui.widget.RichLabel;
 import com.lixui.widget.SegmentedButton;
 import com.lixui.widget.Separator;
+import com.lixui.widget.SplitPanel;
 import com.lixui.widget.TabPanel;
 import com.lixui.widget.ToggleGroup;
 import com.lixui.widget.Widget;
@@ -119,6 +121,7 @@ final class DemoWidgetScene implements AutoCloseable {
         bindIcon("text.svg", outerTabs.iconSize(), outerTabs.addTab("Labels", labelsPage)::setIcon);
         bindIcon("ui.svg", outerTabs.iconSize(), outerTabs.addTab("Tabs", innerTabs)::setIcon);
         bindIcon("adjustment.svg", outerTabs.iconSize(), outerTabs.addTab("Controls", createControlsPage())::setIcon);
+        bindIcon("split.svg", outerTabs.iconSize(), outerTabs.addTab("Split", createSplitPage())::setIcon);
         window = new Window();
         window.setTitle("LixUI - Demo Window");
         bindIcon("ui.svg", THEME_ICON_SIZE, window::setHeaderIcon);
@@ -256,6 +259,27 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(small).add(medium).add(large).add(segmentsSeparator)
                 .add(icons).add(actions).add(alignment).add(multiple).add(status);
         return page;
+    }
+
+    private SplitPanel createSplitPage() {
+        SplitPanel outer = new SplitPanel();
+        outer.setDividerThickness(8);
+        outer.setDividerPosition(0.45f);
+        outer.setMinimumPaneSize(90);
+
+        SplitPanel inner = new SplitPanel(SplitPanel.Orientation.VERTICAL);
+        inner.setDividerThickness(8);
+        inner.setDividerPosition(0.5f);
+        inner.setMinimumPaneSize(60);
+        inner.setFirst(new SplitDemoPane("Vertical split\nDrag the horizontal divider below "
+                + "to resize the top and bottom panes."));
+        inner.setSecond(new SplitDemoPane("Vertical split\nThis pane is nested inside the "
+                + "horizontal split on the left."));
+
+        outer.setFirst(inner);
+        outer.setSecond(new SplitDemoPane("Horizontal split\nDrag the vertical divider on the "
+                + "left to resize the right pane."));
+        return outer;
     }
 
     private FontFamily createFontFamily() {
@@ -450,6 +474,30 @@ final class DemoWidgetScene implements AutoCloseable {
         return new WidgetStyle(style.background(), style.hoverBackground(), style.pressedBackground(),
                 style.disabledBackground(), style.text(), style.disabledText(), style.border(),
                 style.focusBorder(), radius, style.padding(), style.borderWidth());
+    }
+
+    private final class SplitDemoPane extends Panel {
+        private static final float INSET = 14;
+        private final Label label;
+
+        private SplitDemoPane(String text) {
+            label = new Label(text);
+            label.setFontFamily(fontFamily);
+            label.setAutoSize(false);
+            label.setWrap(true);
+            label.setVerticalAlignment(VerticalAlignment.CENTER);
+            add(label);
+        }
+
+        /**
+         * Places the pane description inside the pane inset.
+         */
+        @Override
+        protected void onLayout() {
+            label.layout(new Rect(INSET, INSET,
+                    Math.max(0, bounds().width() - INSET * 2),
+                    Math.max(0, bounds().height() - INSET * 2)));
+        }
     }
 
     private static final class Background extends Widget {
