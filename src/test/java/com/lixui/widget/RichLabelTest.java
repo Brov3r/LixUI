@@ -155,7 +155,8 @@ class RichLabelTest {
 
             manager.render();
 
-            float expected = 100 - font.measure("A").width();
+            float penX = 100 - font.measure("A").width();
+            float expected = font.layout("A", penX, 0).getFirst().bounds().x();
             assertEquals(expected, assertInstanceOf(TextCommand.class,
                     backend.lastDrawList().commands().getFirst()).glyphs().getFirst().bounds().x(),
                     1.0f);

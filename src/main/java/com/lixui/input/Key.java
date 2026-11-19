@@ -1,5 +1,7 @@
 package com.lixui.input;
 
+import com.lixui.input.event.CharTyped;
+
 /**
  * A backend-independent keyboard key.
  * Printable characters arrive separately through {@link CharTyped}, so key
