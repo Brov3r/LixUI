@@ -52,22 +52,26 @@ public class ScrollPanel extends Panel {
      */
     public ScrollPanel() {
         setClipToBounds(true);
-        verticalBar.setValueListener(value -> {
+        verticalBar.setValueListener(value -> onScrollBarValue(true, value));
+        horizontalBar.setValueListener(value -> onScrollBarValue(false, value));
+    }
+
+    private void onScrollBarValue(boolean vertical, float value) {
+        if (vertical) {
             float target = value * maxScrollY();
             if (verticalBar.isPressed()) {
                 setScroll(scrollX, target);
             } else {
                 animateScrollTo(scrollX, target);
             }
-        });
-        horizontalBar.setValueListener(value -> {
-            float target = value * maxScrollX();
-            if (horizontalBar.isPressed()) {
-                setScroll(target, scrollY);
-            } else {
-                animateScrollTo(target, scrollY);
-            }
-        });
+            return;
+        }
+        float target = value * maxScrollX();
+        if (horizontalBar.isPressed()) {
+            setScroll(target, scrollY);
+        } else {
+            animateScrollTo(target, scrollY);
+        }
     }
 
     /**
@@ -98,12 +102,8 @@ public class ScrollPanel extends Panel {
         if (this.content != null) {
             remove(this.content);
         }
-        cancelScrollAnimations();
+        resetScrollState();
         this.content = content;
-        scrollX = 0;
-        scrollY = 0;
-        targetScrollX = 0;
-        targetScrollY = 0;
         add(verticalBar);
         add(horizontalBar);
     }
@@ -112,17 +112,13 @@ public class ScrollPanel extends Panel {
      * Removes the content widget and hides the scrollbars.
      */
     public void clearContent() {
-        cancelScrollAnimations();
+        resetScrollState();
         remove(verticalBar);
         remove(horizontalBar);
         if (content != null) {
             remove(content);
             content = null;
         }
-        scrollX = 0;
-        scrollY = 0;
-        targetScrollX = 0;
-        targetScrollY = 0;
     }
 
     /**
@@ -513,6 +509,14 @@ public class ScrollPanel extends Panel {
         verticalAnimation.cancel();
     }
 
+    private void resetScrollState() {
+        cancelScrollAnimations();
+        scrollX = 0;
+        scrollY = 0;
+        targetScrollX = 0;
+        targetScrollY = 0;
+    }
+
     private void updateScrollbars() {
         float width = contentAreaWidth();
         float height = contentAreaHeight();
@@ -526,8 +530,7 @@ public class ScrollPanel extends Panel {
                 && scrollEnabled && verticalScrollBarVisible && maxY > 0;
         setVisibleIfChanged(horizontalBar, horizontal);
         setVisibleIfChanged(verticalBar, vertical);
-        horizontalBar.setValue(maxX > 0 ? scrollX / maxX : 0);
-        verticalBar.setValue(maxY > 0 ? scrollY / maxY : 0);
+        syncScrollbars();
         horizontalBar.setVisibleFraction(contentWidth > 0 ? width / contentWidth : 1);
         verticalBar.setVisibleFraction(contentHeight > 0 ? height / contentHeight : 1);
         float verticalHeight = Math.max(0, height - scrollBarInsetTop - scrollBarInsetBottom
