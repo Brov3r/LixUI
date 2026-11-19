@@ -80,8 +80,8 @@ public final class DockPanel extends LayoutContainer {
      */
     @Override
     protected Size onMeasure(LayoutConstraints constraints) {
-        float availableWidth = Math.max(0, constraints.maxWidth() - padding() * 2);
-        float availableHeight = Math.max(0, constraints.maxHeight() - padding() * 2);
+        float availableWidth = availableWidth(constraints);
+        float availableHeight = availableHeight(constraints);
         float width = 0;
         float height = 0;
         for (Widget child : children()) {
@@ -104,8 +104,8 @@ public final class DockPanel extends LayoutContainer {
         pruneDocks();
         float left = padding();
         float top = padding();
-        float right = Math.max(left, bounds().width() - padding());
-        float bottom = Math.max(top, bounds().height() - padding());
+        float right = left + contentWidth();
+        float bottom = top + contentHeight();
         List<Widget> fills = new ArrayList<>();
         for (Widget child : children()) {
             if (!child.isVisible()) {

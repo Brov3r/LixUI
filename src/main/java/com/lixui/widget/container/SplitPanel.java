@@ -242,8 +242,8 @@ public class SplitPanel extends LayoutContainer {
      */
     @Override
     protected Size onMeasure(LayoutConstraints constraints) {
-        float availableWidth = Math.max(0, constraints.maxWidth() - padding() * 2);
-        float availableHeight = Math.max(0, constraints.maxHeight() - padding() * 2);
+        float availableWidth = availableWidth(constraints);
+        float availableHeight = availableHeight(constraints);
         Size firstSize = measurePane(first, availableWidth, availableHeight);
         Size secondSize = measurePane(second, availableWidth, availableHeight);
         float dividerSize = showsDivider() ? dividerThickness : 0;
@@ -261,8 +261,8 @@ public class SplitPanel extends LayoutContainer {
     @Override
     protected void onLayout() {
         float inset = padding();
-        float width = Math.max(0, localBounds().width() - inset * 2);
-        float height = Math.max(0, localBounds().height() - inset * 2);
+        float width = contentWidth();
+        float height = contentHeight();
         Rect content = new Rect(inset, inset, width, height);
         boolean firstVisible = first != null && first.isVisible();
         boolean secondVisible = second != null && second.isVisible();
@@ -318,9 +318,7 @@ public class SplitPanel extends LayoutContainer {
     }
 
     private float availableLength() {
-        float length = orientation == Orientation.HORIZONTAL
-                ? Math.max(0, localBounds().width() - padding() * 2)
-                : Math.max(0, localBounds().height() - padding() * 2);
+        float length = orientation == Orientation.HORIZONTAL ? contentWidth() : contentHeight();
         return showsDivider() ? Math.max(0, length - Math.min(dividerThickness, length)) : length;
     }
 

@@ -1,5 +1,6 @@
 package com.lixui.widget.layout;
 
+import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 
@@ -38,6 +39,44 @@ public abstract class LayoutContainer extends Widget {
             throw new IllegalArgumentException("Layout padding must be finite and non-negative.");
         }
         this.padding = padding;
+    }
+
+    /**
+     * Returns the width available to children after subtracting padding from a measurement limit.
+     *
+     * @param constraints measurement constraints
+     * @return the non-negative content width
+     */
+    protected final float availableWidth(LayoutConstraints constraints) {
+        return Math.max(0, constraints.maxWidth() - padding * 2);
+    }
+
+    /**
+     * Returns the height available to children after subtracting padding from a measurement limit.
+     *
+     * @param constraints measurement constraints
+     * @return the non-negative content height
+     */
+    protected final float availableHeight(LayoutConstraints constraints) {
+        return Math.max(0, constraints.maxHeight() - padding * 2);
+    }
+
+    /**
+     * Returns the padded content width of the current bounds.
+     *
+     * @return the non-negative content width
+     */
+    protected final float contentWidth() {
+        return Math.max(0, bounds().width() - padding * 2);
+    }
+
+    /**
+     * Returns the padded content height of the current bounds.
+     *
+     * @return the non-negative content height
+     */
+    protected final float contentHeight() {
+        return Math.max(0, bounds().height() - padding * 2);
     }
 
     /**

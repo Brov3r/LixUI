@@ -97,8 +97,8 @@ public abstract class Box extends LayoutContainer {
      */
     @Override
     protected Size onMeasure(LayoutConstraints constraints) {
-        float availableWidth = Math.max(0, constraints.maxWidth() - padding() * 2);
-        float availableHeight = Math.max(0, constraints.maxHeight() - padding() * 2);
+        float availableWidth = availableWidth(constraints);
+        float availableHeight = availableHeight(constraints);
         float main = 0;
         float cross = 0;
         int visible = 0;
@@ -127,8 +127,8 @@ public abstract class Box extends LayoutContainer {
     @Override
     protected void onLayout() {
         float padding = padding();
-        float contentWidth = Math.max(0, bounds().width() - padding * 2);
-        float contentHeight = Math.max(0, bounds().height() - padding * 2);
+        float contentWidth = contentWidth();
+        float contentHeight = contentHeight();
         List<Widget> visible = new ArrayList<>();
         List<Size> preferred = new ArrayList<>();
         float mainSize = 0;
