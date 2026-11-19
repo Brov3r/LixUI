@@ -1,6 +1,6 @@
 package com.lixui.demo;
 
-import com.lixui.backend.opengl.OpenGlBackend;
+import com.lixui.backend.opengl.OpenGlLayer;
 import com.lixui.glfw.GlfwPlatform;
 import com.lixui.input.InputState;
 import com.lixui.render.Viewport;
@@ -37,7 +37,7 @@ public final class OpenGlDemo {
                 GL.createCapabilities();
                 GLFW.glfwSwapInterval(1);
                 GL11.glClearColor(0.102f, 0.102f, 0.102f, 1.0f);
-                try (OpenGlBackend backend = new OpenGlBackend();
+                try (OpenGlLayer backend = new OpenGlLayer();
                         DemoWidgetScene scene = new DemoWidgetScene(input, backend, platform)) {
                     window.show();
                     double previousTime = GLFW.glfwGetTime();

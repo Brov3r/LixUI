@@ -44,6 +44,7 @@ import java.util.Objects;
  * The backend batches consecutive commands that share a clip rectangle and texture, applies the clip
  * with a scissor test, and blends straight-alpha colors and textures with premultiplied output.
  * The caller must make the target framebuffer current before {@link #draw(DrawList)}.
+ * Use {@link OpenGlLayer} to isolate UI attachments and preserve the host application's GL state.
  */
 public final class OpenGlBackend implements RenderBackend {
     private static final Rect FULL_UV = new Rect(0, 0, 1, 1);
@@ -620,10 +621,14 @@ public final class OpenGlBackend implements RenderBackend {
     }
 
     private static int createProgram() {
-        int vertexShader = createShader(GL20.GL_VERTEX_SHADER, loadShader("rounded_rect.vert"));
+        return createProgram("rounded_rect.vert", "rounded_rect.frag");
+    }
+
+    static int createProgram(String vertexResource, String fragmentResource) {
+        int vertexShader = createShader(GL20.GL_VERTEX_SHADER, loadShader(vertexResource));
         int fragmentShader;
         try {
-            fragmentShader = createShader(GL20.GL_FRAGMENT_SHADER, loadShader("rounded_rect.frag"));
+            fragmentShader = createShader(GL20.GL_FRAGMENT_SHADER, loadShader(fragmentResource));
         } catch (RuntimeException | Error exception) {
             GL20.glDeleteShader(vertexShader);
             throw exception;
