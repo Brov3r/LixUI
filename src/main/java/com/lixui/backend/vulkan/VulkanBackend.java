@@ -1,5 +1,7 @@
 package com.lixui.backend.vulkan;
 
+import com.lixui.backend.CommandClassifier;
+import com.lixui.backend.MaskAction;
 import com.lixui.backend.ShaderPaint;
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
@@ -98,7 +100,6 @@ import java.util.Objects;
 public final class VulkanBackend implements RenderBackend {
     private static final Rect FULL_UV = new Rect(0, 0, 1, 1);
     private static final int FLOATS_PER_VERTEX = 13;
-    private static final int VERTICES_PER_QUAD = 6;
     private static final float MESH_HALF_SIZE = 1_000_000f;
     private static final int VERTEX_STRIDE = FLOATS_PER_VERTEX * Float.BYTES;
     private static final int INITIAL_VERTEX_BYTES = 4096;
@@ -1169,11 +1170,11 @@ public final class VulkanBackend implements RenderBackend {
         int batchVertexCount = 0;
         int vertexIndex = 0;
         for (DrawCommand command : commands) {
-            MaskAction action = maskAction(command);
+            MaskAction action = CommandClassifier.maskAction(command);
             int stencilRef = stencilDepth;
-            VulkanTexture texture = asVulkanTexture(textureOf(command));
+            VulkanTexture texture = asVulkanTexture(CommandClassifier.textureOf(command, whiteTexture));
             Paint paint = ShaderPaint.gradient(command);
-            int commandVertices = vertexCount(command);
+            int commandVertices = CommandClassifier.vertexCount(command);
             if (!command.clip().equals(currentClip) || texture != currentTexture
                     || stencilRef != currentStencilRef || action != currentAction
                     || !Objects.equals(paint, currentPaint)) {
@@ -1218,31 +1219,7 @@ public final class VulkanBackend implements RenderBackend {
         }
     }
 
-    private static MaskAction maskAction(DrawCommand command) {
-        if (command instanceof MaskBeginCommand || command instanceof MaskTextureBeginCommand) {
-            return MaskAction.PUSH;
-        }
-        if (command instanceof MaskEndCommand || command instanceof MaskTextureEndCommand) {
-            return MaskAction.POP;
-        }
-        return MaskAction.DRAW;
-    }
 
-    private Texture textureOf(DrawCommand command) {
-        if (command instanceof ImageCommand image) {
-            return image.texture();
-        }
-        if (command instanceof TextCommand text) {
-            return text.texture();
-        }
-        if (command instanceof MaskTextureBeginCommand mask) {
-            return mask.texture();
-        }
-        if (command instanceof MaskTextureEndCommand mask) {
-            return mask.texture();
-        }
-        return whiteTexture;
-    }
 
     private void appendQuad(DrawCommand command) {
         if (command instanceof ImageCommand image) {
@@ -1342,26 +1319,11 @@ public final class VulkanBackend implements RenderBackend {
     private static int totalVertexFloats(List<DrawCommand> commands) {
         int total = 0;
         for (DrawCommand command : commands) {
-            total += vertexCount(command) * FLOATS_PER_VERTEX;
+            total += CommandClassifier.vertexCount(command) * FLOATS_PER_VERTEX;
         }
         return total;
     }
 
-    private static int vertexCount(DrawCommand command) {
-        if (command instanceof TextCommand text) {
-            return text.glyphs().size() * VERTICES_PER_QUAD;
-        }
-        if (command instanceof MeshCommand mesh) {
-            return mesh.vertices().size();
-        }
-        if (command instanceof MaskBeginCommand mask) {
-            return mask.vertices().size();
-        }
-        if (command instanceof MaskEndCommand mask) {
-            return mask.vertices().size();
-        }
-        return VERTICES_PER_QUAD;
-    }
 
     private void putVertex(float x, float y, float localX, float localY,
                           float halfWidth, float halfHeight, float radius,
@@ -1476,14 +1438,6 @@ public final class VulkanBackend implements RenderBackend {
                          int stencilRef, MaskAction action, Paint paint) {
     }
 
-    private enum MaskAction {
-        /** Draws content using the current stencil reference. */
-        DRAW,
-        /** Increments the stencil buffer without writing color. */
-        PUSH,
-        /** Decrements the stencil buffer without writing color. */
-        POP
-    }
 
     private record BufferResource(long buffer, long memory) {
     }

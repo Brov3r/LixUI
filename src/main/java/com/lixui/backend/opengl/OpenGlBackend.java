@@ -1,5 +1,7 @@
 package com.lixui.backend.opengl;
 
+import com.lixui.backend.CommandClassifier;
+import com.lixui.backend.MaskAction;
 import com.lixui.backend.ShaderPaint;
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
@@ -399,9 +401,9 @@ public final class OpenGlBackend implements RenderBackend {
         int batchStartVertex = 0;
         int batchVertexCount = 0;
         for (DrawCommand command : drawList.commands()) {
-            MaskAction action = maskAction(command);
+            MaskAction action = CommandClassifier.maskAction(command);
             int stencilRef = stencilDepth;
-            GlTexture texture = asGlTexture(textureOf(command));
+            GlTexture texture = asGlTexture(CommandClassifier.textureOf(command, whiteTexture));
             Paint paint = ShaderPaint.gradient(command);
             if (!command.clip().equals(currentClip) || texture != currentTexture
                     || stencilRef != currentStencilRef || action != currentAction
@@ -418,7 +420,7 @@ public final class OpenGlBackend implements RenderBackend {
                 batchStartVertex = floatCount / FLOATS_PER_VERTEX;
                 batchVertexCount = 0;
             }
-            int commandVertices = vertexCount(command);
+            int commandVertices = CommandClassifier.vertexCount(command);
             ensureCapacity(commandVertices * FLOATS_PER_VERTEX);
             if (command instanceof MaskBeginCommand mask) {
                 appendMask(mask.vertices());
@@ -448,31 +450,7 @@ public final class OpenGlBackend implements RenderBackend {
         }
     }
 
-    private static MaskAction maskAction(DrawCommand command) {
-        if (command instanceof MaskBeginCommand || command instanceof MaskTextureBeginCommand) {
-            return MaskAction.PUSH;
-        }
-        if (command instanceof MaskEndCommand || command instanceof MaskTextureEndCommand) {
-            return MaskAction.POP;
-        }
-        return MaskAction.DRAW;
-    }
 
-    private Texture textureOf(DrawCommand command) {
-        if (command instanceof ImageCommand image) {
-            return image.texture();
-        }
-        if (command instanceof TextCommand text) {
-            return text.texture();
-        }
-        if (command instanceof MaskTextureBeginCommand mask) {
-            return mask.texture();
-        }
-        if (command instanceof MaskTextureEndCommand mask) {
-            return mask.texture();
-        }
-        return whiteTexture;
-    }
 
     private void applyStencil(Batch batch) {
         GL11.glStencilMask(0xFF);
@@ -593,21 +571,6 @@ public final class OpenGlBackend implements RenderBackend {
         }
     }
 
-    private static int vertexCount(DrawCommand command) {
-        if (command instanceof TextCommand text) {
-            return text.glyphs().size() * VERTICES_PER_QUAD;
-        }
-        if (command instanceof MeshCommand mesh) {
-            return mesh.vertices().size();
-        }
-        if (command instanceof MaskBeginCommand mask) {
-            return mask.vertices().size();
-        }
-        if (command instanceof MaskEndCommand mask) {
-            return mask.vertices().size();
-        }
-        return VERTICES_PER_QUAD;
-    }
 
     private void putVertex(float x, float y, float localX, float localY,
                            float halfWidth, float halfHeight, float radius, Color color,
@@ -750,12 +713,4 @@ public final class OpenGlBackend implements RenderBackend {
                          int stencilRef, MaskAction action, Paint paint) {
     }
 
-    private enum MaskAction {
-        /** Draws content using the current stencil reference. */
-        DRAW,
-        /** Increments the stencil buffer without writing color. */
-        PUSH,
-        /** Decrements the stencil buffer without writing color. */
-        POP
-    }
 }
