@@ -17,6 +17,12 @@ public final class Animator {
     private boolean updating;
 
     /**
+     * Creates an empty animator with no running animations.
+     */
+    public Animator() {
+    }
+
+    /**
      * Creates and starts an animation.
      *
      * @param from start value

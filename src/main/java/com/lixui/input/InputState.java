@@ -24,6 +24,12 @@ public final class InputState {
     private final Deque<InputEvent> events = new ArrayDeque<>();
 
     /**
+     * Creates an empty input queue.
+     */
+    public InputState() {
+    }
+
+    /**
      * Appends an event to the queue.
      *
      * @param event event to append

@@ -18,6 +18,12 @@ public final class ToggleGroup {
     private int maximumSelected = Integer.MAX_VALUE;
 
     /**
+     * Creates an empty non-exclusive group without selection limits.
+     */
+    public ToggleGroup() {
+    }
+
+    /**
      * Returns the group members in insertion order.
      *
      * @return an immutable snapshot of the members
