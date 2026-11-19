@@ -1003,7 +1003,7 @@ public class TabPanel extends Panel {
             float width = bounds().width();
             float height = bounds().height();
             renderer.rect(new Rect(0, height - 1, width, 1), theme.border());
-            float areaStart = overflow ? ARROW_WIDTH : 0;
+            float areaStart = tabAreaStart();
             float areaWidth = Math.max(0, width - areaStart * 2);
             Point origin = absolutePosition();
             renderer.withClip(new Rect(origin.x() + areaStart, origin.y(), areaWidth, height),
@@ -1024,8 +1024,8 @@ public class TabPanel extends Panel {
             float cellHeight = Math.max(0, height - TAB_INSET * 2);
             for (int index = 0; index < tabs.size(); index++) {
                 Tab tab = tabs.get(index);
-                float cellX = areaStart + tabStarts[index] - scrollX + TAB_INSET;
-                float cellWidth = Math.max(0, tabWidths[index] - TAB_INSET * 2);
+                float cellX = tabCellX(index);
+                float cellWidth = tabCellWidth(index);
                 if (cellX + cellWidth <= areaStart || cellX >= areaStart + areaWidth) {
                     continue;
                 }
@@ -1151,9 +1151,20 @@ public class TabPanel extends Panel {
             }
         }
 
+        private float tabAreaStart() {
+            return overflow ? ARROW_WIDTH : 0;
+        }
+
+        private float tabCellX(int index) {
+            return tabAreaStart() + tabStarts[index] - scrollX + TAB_INSET;
+        }
+
+        private float tabCellWidth(int index) {
+            return Math.max(0, tabWidths[index] - TAB_INSET * 2);
+        }
+
         private Rect tabBounds(int index) {
-            float areaStart = overflow ? ARROW_WIDTH : 0;
-            return new Rect(areaStart + tabStarts[index] - scrollX, 0,
+            return new Rect(tabAreaStart() + tabStarts[index] - scrollX, 0,
                     tabWidths[index], bounds().height());
         }
 
@@ -1191,7 +1202,7 @@ public class TabPanel extends Panel {
             if (index < 0 || index >= tabWidths.length || font == null || tab.title().isEmpty()) {
                 return false;
             }
-            float cellWidth = Math.max(0, tabWidths[index] - TAB_INSET * 2);
+            float cellWidth = tabCellWidth(index);
             float maxText = textLimit(tab, cellWidth, isTabClosable(tab));
             return font.measure(tab.title()).width() > maxText + 0.01f;
         }
@@ -1227,7 +1238,7 @@ public class TabPanel extends Panel {
             if (y < 0 || y >= bounds().height()) {
                 return null;
             }
-            float areaStart = overflow ? ARROW_WIDTH : 0;
+            float areaStart = tabAreaStart();
             if (x < areaStart || x >= bounds().width() - areaStart) {
                 return null;
             }
@@ -1259,8 +1270,8 @@ public class TabPanel extends Panel {
                 return null;
             }
             int index = indexOf(tab);
-            float cellX = (overflow ? ARROW_WIDTH : 0) + tabStarts[index] - scrollX + TAB_INSET;
-            float cellWidth = Math.max(0, tabWidths[index] - TAB_INSET * 2);
+            float cellX = tabCellX(index);
+            float cellWidth = tabCellWidth(index);
             Rect close = closeBounds(cellX, cellWidth, Math.max(0, bounds().height() - TAB_INSET * 2));
             return close != null && close.contains(x, y) ? tab : null;
         }
@@ -1487,8 +1498,7 @@ public class TabPanel extends Panel {
             if (from < 0) {
                 return;
             }
-            float areaStart = overflow ? ARROW_WIDTH : 0;
-            float pointer = dragPointerX - areaStart + scrollX;
+            float pointer = dragPointerX - tabAreaStart() + scrollX;
             while (from + 1 < tabs.size()
                     && pointer >= tabStarts[from + 1] + tabWidths[from + 1] / 2) {
                 moveTab(from, from + 1, false);
