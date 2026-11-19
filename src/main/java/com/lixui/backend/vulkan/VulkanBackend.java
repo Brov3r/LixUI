@@ -43,7 +43,6 @@ import org.lwjgl.vulkan.VkImageCreateInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier;
 import org.lwjgl.vulkan.VkImageViewCreateInfo;
 import org.lwjgl.vulkan.VkMemoryAllocateInfo;
-import org.lwjgl.vulkan.VkMemoryBarrier;
 import org.lwjgl.vulkan.VkMemoryRequirements;
 import org.lwjgl.vulkan.VkPhysicalDevice;
 import org.lwjgl.vulkan.VkPhysicalDeviceMemoryProperties;
@@ -86,6 +85,7 @@ import java.util.Objects;
  * then end the render pass. Commands sharing a clip rectangle and texture are batched into one draw call.
  * The vertex buffer is host-visible and overwritten by each draw, so the caller must not record a
  * frame while a previous submission still uses the backend.
+ * Use {@link VulkanLayer} for a private UI color/stencil pass followed by host-frame composition.
  * SPIR-V binaries are generated from the adjacent GLSL sources, for example:
  * {@code glslc --target-env=vulkan1.0 rounded_rect.vert -o rounded_rect.vert.spv}.
  */
@@ -418,13 +418,7 @@ public final class VulkanBackend implements RenderBackend {
         }
 
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkMemoryBarrier.Buffer barrier = VkMemoryBarrier.calloc(1, stack)
-                    .sType$Default()
-                    .srcAccessMask(VK10.VK_ACCESS_HOST_WRITE_BIT)
-                    .dstAccessMask(VK10.VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT);
-            VK10.vkCmdPipelineBarrier(commandBuffer, VK10.VK_PIPELINE_STAGE_HOST_BIT,
-                    VK10.VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, barrier, null, null);
-
+            // Queue submission makes coherent host writes available; HOST barriers are invalid inside this pass.
             VkViewport.Buffer commandViewport = VkViewport.calloc(1, stack);
             commandViewport.get(0)
                     .x(0)
@@ -579,11 +573,36 @@ public final class VulkanBackend implements RenderBackend {
     }
 
     private long createPipeline(long renderPass, int sampleCount, MaskAction action) {
+        return createPipeline(renderPass, sampleCount, action, false);
+    }
+
+    long createCompositePipeline(long renderPass, int sampleCount) {
+        return createPipeline(renderPass, sampleCount, MaskAction.DRAW, true);
+    }
+
+    void composite(VkCommandBuffer command, long compositePipeline, Texture texture, Viewport target) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            long vertexModule = createShaderModule(loadShader("rounded_rect.vert.spv", stack));
+            VkViewport.Buffer commandViewport = VkViewport.calloc(1, stack);
+            commandViewport.get(0).width(target.framebufferWidth()).height(target.framebufferHeight())
+                    .minDepth(0).maxDepth(1);
+            VkRect2D.Buffer scissor = VkRect2D.calloc(1, stack);
+            scissor.get(0).extent().set(target.framebufferWidth(), target.framebufferHeight());
+            VK10.vkCmdSetViewport(command, 0, commandViewport);
+            VK10.vkCmdSetScissor(command, 0, scissor);
+            VK10.vkCmdBindPipeline(command, VK10.VK_PIPELINE_BIND_POINT_GRAPHICS, compositePipeline);
+            VK10.vkCmdBindDescriptorSets(command, VK10.VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
+                    0, stack.longs(asVulkanTexture(texture).descriptorSet()), null);
+            VK10.vkCmdDraw(command, 3, 1, 0, 0);
+        }
+    }
+
+    private long createPipeline(long renderPass, int sampleCount, MaskAction action, boolean composite) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            String shader = composite ? "layer" : "rounded_rect";
+            long vertexModule = createShaderModule(loadShader(shader + ".vert.spv", stack));
             long fragmentModule;
             try {
-                fragmentModule = createShaderModule(loadShader("rounded_rect.frag.spv", stack));
+                fragmentModule = createShaderModule(loadShader(shader + ".frag.spv", stack));
             } catch (RuntimeException | Error exception) {
                 VK10.vkDestroyShaderModule(device, vertexModule, null);
                 throw exception;
@@ -643,8 +662,8 @@ public final class VulkanBackend implements RenderBackend {
 
                 VkPipelineVertexInputStateCreateInfo vertexInput = VkPipelineVertexInputStateCreateInfo.calloc(stack)
                         .sType$Default()
-                        .pVertexBindingDescriptions(binding)
-                        .pVertexAttributeDescriptions(attributes);
+                        .pVertexBindingDescriptions(composite ? null : binding)
+                        .pVertexAttributeDescriptions(composite ? null : attributes);
 
                 VkPipelineInputAssemblyStateCreateInfo inputAssembly =
                         VkPipelineInputAssemblyStateCreateInfo.calloc(stack)
@@ -711,7 +730,7 @@ public final class VulkanBackend implements RenderBackend {
                                 .depthWriteEnable(false)
                                 .depthCompareOp(VK10.VK_COMPARE_OP_ALWAYS)
                                 .depthBoundsTestEnable(false)
-                                .stencilTestEnable(true);
+                                .stencilTestEnable(!composite);
                 depthStencil.front()
                         .failOp(VK10.VK_STENCIL_OP_KEEP)
                         .passOp(stencilPass)
@@ -729,7 +748,9 @@ public final class VulkanBackend implements RenderBackend {
                         .writeMask(0xFF)
                         .reference(0);
 
-                IntBuffer dynamicStates = stack.ints(
+                IntBuffer dynamicStates = composite
+                        ? stack.ints(VK10.VK_DYNAMIC_STATE_VIEWPORT, VK10.VK_DYNAMIC_STATE_SCISSOR)
+                        : stack.ints(
                         VK10.VK_DYNAMIC_STATE_VIEWPORT,
                         VK10.VK_DYNAMIC_STATE_SCISSOR,
                         VK10.VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK,
@@ -989,7 +1010,7 @@ public final class VulkanBackend implements RenderBackend {
         }
     }
 
-    private int findMemoryType(int typeFilter, int properties) {
+    int findMemoryType(int typeFilter, int properties) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkPhysicalDeviceMemoryProperties memoryProperties =
                     VkPhysicalDeviceMemoryProperties.malloc(stack);

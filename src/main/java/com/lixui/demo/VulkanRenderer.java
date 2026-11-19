@@ -1,6 +1,7 @@
 package com.lixui.demo;
 
 import com.lixui.backend.vulkan.VulkanBackend;
+import com.lixui.backend.vulkan.VulkanLayer;
 import com.lixui.input.InputState;
 import com.lixui.platform.UiPlatform;
 import com.lixui.render.Viewport;
@@ -80,6 +81,7 @@ final class VulkanRenderer implements AutoCloseable {
     private long[] renderFinished;
     private long frameFence;
     private VulkanBackend backend;
+    private VulkanLayer layer;
     private DemoWidgetScene scene;
     private long previousFrameNanos;
     private int framebufferWidth;
@@ -106,8 +108,9 @@ final class VulkanRenderer implements AutoCloseable {
             chooseSurfaceFormat();
             depthStencilFormat = chooseDepthStencilFormat();
             createRenderPass();
-            backend = new VulkanBackend(physicalDevice, device, queue, queueFamily, renderPass, SAMPLE_COUNT);
-            scene = new DemoWidgetScene(input, backend, platform);
+            layer = new VulkanLayer(physicalDevice, device, queue, queueFamily, renderPass, SAMPLE_COUNT);
+            backend = layer.backend();
+            scene = new DemoWidgetScene(input, layer, platform);
             createFrameSynchronization();
         } catch (RuntimeException | Error exception) {
             close();
@@ -140,11 +143,11 @@ final class VulkanRenderer implements AutoCloseable {
                     ? 0
                     : (now - previousFrameNanos) / 1_000_000_000f;
             previousFrameNanos = now;
+            check(VK10.vkWaitForFences(device, frameFence, true, -1L), "Wait for frame");
             scene.resize(new Viewport(framebufferWidth, framebufferHeight,
                     logicalWidth, logicalHeight));
             scene.update(deltaSeconds);
 
-            check(VK10.vkWaitForFences(device, frameFence, true, -1L), "Wait for frame");
             IntBuffer imageIndex = stack.mallocInt(1);
             int acquired = KHRSwapchain.vkAcquireNextImageKHR(
                     device, swapchain, -1L, imageAvailable, VK10.VK_NULL_HANDLE, imageIndex);
@@ -201,8 +204,9 @@ final class VulkanRenderer implements AutoCloseable {
                 scene.close();
                 scene = null;
             }
-            if (backend != null) {
-                backend.close();
+            if (layer != null) {
+                layer.close();
+                layer = null;
                 backend = null;
             }
             destroySwapchain();
@@ -737,6 +741,13 @@ final class VulkanRenderer implements AutoCloseable {
             VkCommandBufferBeginInfo begin = VkCommandBufferBeginInfo.calloc(stack).sType$Default();
             check(VK10.vkBeginCommandBuffer(command, begin), "Begin command buffer");
 
+            layer.beginFrame(command);
+            try {
+                scene.render();
+            } finally {
+                layer.endFrame();
+            }
+
             VkClearValue.Buffer clearValues = VkClearValue.calloc(3, stack);
             clearValues.get(0).color()
                     .float32(0, 0.102f)
@@ -760,9 +771,7 @@ final class VulkanRenderer implements AutoCloseable {
             renderPassBegin.renderArea().extent().set(framebufferWidth, framebufferHeight);
 
             VK10.vkCmdBeginRenderPass(command, renderPassBegin, VK10.VK_SUBPASS_CONTENTS_INLINE);
-            backend.beginFrame(command);
-            scene.render();
-            backend.endFrame();
+            layer.composite(command);
             VK10.vkCmdEndRenderPass(command);
             check(VK10.vkEndCommandBuffer(command), "End command buffer");
         }
