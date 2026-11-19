@@ -63,6 +63,39 @@ class AnimationTest {
     }
 
     @Test
+    void interpolatesLargeFiniteValuesWithoutOverflow() {
+        Animation animation = new Animation(-Float.MAX_VALUE, Float.MAX_VALUE, 1,
+                Easing.LINEAR, value -> { });
+
+        animation.update(0.5f);
+        assertEquals(0, animation.value());
+        animation.update(0.5f);
+        assertEquals(Float.MAX_VALUE, animation.value());
+    }
+
+    @Test
+    void completesAtExactTargetDespiteCancellationAndEasingRounding() {
+        Animation animation = new Animation(Float.MAX_VALUE, 1, 1,
+                Easing.BACK_IN, value -> { });
+
+        animation.update(1);
+
+        assertEquals(1, animation.value());
+    }
+
+    @Test
+    void accumulatesTimeWithoutFloatOverflow() {
+        Animation animation = new Animation(0, 1, Float.MAX_VALUE, Easing.LINEAR, value -> { })
+                .setDelay(Float.MAX_VALUE);
+
+        animation.update(Float.MAX_VALUE);
+        animation.update(Float.MAX_VALUE / 2);
+
+        assertEquals(0.5f, animation.progress());
+        assertFalse(animation.isFinished());
+    }
+
+    @Test
     void rejectsInvalidArguments() {
         assertThrows(IllegalArgumentException.class,
                 () -> new Animation(Float.NaN, 1, 1, Easing.LINEAR, value -> { }));

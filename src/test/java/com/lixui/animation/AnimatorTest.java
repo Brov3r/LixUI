@@ -62,6 +62,37 @@ class AnimatorTest {
     }
 
     @Test
+    void callbacksCanCancelRemainingAnimationsAndDeferNewOnes() {
+        Animator animator = new Animator();
+        List<Float> values = new ArrayList<>();
+        Animation next = new Animation(0, 1, 1, Easing.LINEAR, values::add);
+        animator.animate(0, 1, 1, Easing.LINEAR, value -> {
+            animator.clear();
+            animator.play(next);
+        });
+        Animation cancelled = animator.animate(0, 1, 1, Easing.LINEAR, values::add);
+
+        animator.update(0.5f);
+        assertTrue(values.isEmpty());
+        assertEquals(0, cancelled.progress());
+        animator.update(0.5f);
+        assertEquals(List.of(0.5f), values);
+    }
+
+    @Test
+    void recoversAfterCallbackFailureAndRejectsRecursiveUpdates() {
+        Animator animator = new Animator();
+        animator.animate(0, 1, 0, Easing.LINEAR, value -> animator.update(0));
+
+        assertThrows(IllegalStateException.class, () -> animator.update(0));
+        assertTrue(animator.isEmpty());
+
+        Animation next = animator.animate(0, 1, 1, Easing.LINEAR, value -> { });
+        animator.update(0.5f);
+        assertEquals(0.5f, next.progress());
+    }
+
+    @Test
     void rejectsInvalidUpdatesAndDuplicates() {
         Animator animator = new Animator();
         Animation animation = animator.animate(0, 1, 1, Easing.LINEAR, value -> { });

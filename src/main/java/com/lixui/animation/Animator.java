@@ -1,8 +1,10 @@
 package com.lixui.animation;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -10,7 +12,9 @@ import java.util.function.Consumer;
  * Instances are single-threaded and are intended to be updated once per frame.
  */
 public final class Animator {
-    private final List<Animation> animations = new ArrayList<>();
+    private final Set<Animation> animations = new LinkedHashSet<>();
+    private final List<Animation> frameAnimations = new ArrayList<>();
+    private boolean updating;
 
     /**
      * Creates and starts an animation.
@@ -22,6 +26,7 @@ public final class Animator {
      * @param onUpdate callback receiving the interpolated value
      * @return the started animation
      * @throws NullPointerException if {@code easing} or {@code onUpdate} is null
+     * @throws IllegalArgumentException if a value is non-finite or the duration is non-finite or negative
      */
     public Animation animate(float from, float to, float duration, Easing easing,
                              Consumer<Float> onUpdate) {
@@ -31,34 +36,48 @@ public final class Animator {
     }
 
     /**
-     * Starts an existing animation.
+     * Starts an existing animation unless it is already running or finished.
      *
      * @param animation animation to start
      * @throws NullPointerException if {@code animation} is null
      */
     public void play(Animation animation) {
         Objects.requireNonNull(animation, "animation");
-        if (!animations.contains(animation)) {
+        if (!animation.isFinished()) {
             animations.add(animation);
         }
     }
 
     /**
      * Advances every running animation and drops finished ones.
+     * New animations added by callbacks are advanced on the next update.
      *
      * @param deltaSeconds elapsed time in seconds
      * @throws IllegalArgumentException if the delta is negative or non-finite
+     * @throws IllegalStateException if called recursively from an animation callback
      */
     public void update(float deltaSeconds) {
         if (!Float.isFinite(deltaSeconds) || deltaSeconds < 0) {
             throw new IllegalArgumentException("Animation delta must be finite and non-negative.");
         }
-        for (Animation animation : List.copyOf(animations)) {
-            if (animations.contains(animation)) {
-                animation.update(deltaSeconds);
-            }
+        if (updating) {
+            throw new IllegalStateException("Animator updates must not be recursive.");
         }
-        animations.removeIf(Animation::isFinished);
+        updating = true;
+        try {
+            for (Animation animation : animations) {
+                frameAnimations.add(animation);
+            }
+            for (Animation animation : frameAnimations) {
+                if (animations.contains(animation)) {
+                    animation.update(deltaSeconds);
+                }
+            }
+        } finally {
+            animations.removeIf(Animation::isFinished);
+            frameAnimations.clear();
+            updating = false;
+        }
     }
 
     /**

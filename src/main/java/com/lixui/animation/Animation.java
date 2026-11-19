@@ -16,7 +16,7 @@ public final class Animation {
     private final Consumer<Float> onUpdate;
     private Runnable onComplete;
     private float delay;
-    private float elapsed;
+    private double elapsed;
     private float progress;
     private float value;
     private boolean finished;
@@ -30,7 +30,7 @@ public final class Animation {
      * @param easing timing curve
      * @param onUpdate callback receiving the interpolated value
      * @throws NullPointerException if {@code easing} or {@code onUpdate} is null
-     * @throws IllegalArgumentException if a value or the duration is non-finite or negative
+     * @throws IllegalArgumentException if a value is non-finite or the duration is non-finite or negative
      */
     public Animation(float from, float to, float duration, Easing easing,
                      Consumer<Float> onUpdate) {
@@ -164,8 +164,9 @@ public final class Animation {
         if (elapsed < delay) {
             return;
         }
-        progress = duration <= 0 ? 1 : Math.min(1, (elapsed - delay) / duration);
-        value = from + (to - from) * easing.apply(progress);
+        progress = duration <= 0 ? 1 : (float) Math.min(1, (elapsed - delay) / duration);
+        value = progress >= 1 ? to
+                : (float) (from + ((double) to - from) * easing.apply(progress));
         boolean complete = progress >= 1;
         if (complete) {
             finished = true;
