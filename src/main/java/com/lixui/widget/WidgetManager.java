@@ -62,6 +62,7 @@ public final class WidgetManager implements AutoCloseable {
     private List<Widget> widgetSnapshot = List.of();
     private final EnumMap<MouseButton, Widget> captures = new EnumMap<>(MouseButton.class);
     private final EnumMap<MouseButton, PressState> presses = new EnumMap<>(MouseButton.class);
+    private final TooltipOverlay tooltips = new TooltipOverlay();
     private Widget hovered;
     private Widget focused;
     private Widget lastClickTarget;
@@ -73,6 +74,8 @@ public final class WidgetManager implements AutoCloseable {
     private float lastClickY;
     private double eventTime;
     private double lastClickTime = Double.NEGATIVE_INFINITY;
+    private TooltipSettings tooltipSettings = TooltipSettings.defaults();
+    private boolean tooltipsEnabled = true;
     private boolean pointerInside;
     private boolean windowFocused = true;
     private long focusRevision;
@@ -177,6 +180,52 @@ public final class WidgetManager implements AutoCloseable {
      */
     public Antialiasing antialiasing() {
         return renderer.antialiasing();
+    }
+
+    /**
+     * Reports whether tooltips are shown for hovered widgets.
+     *
+     * @return true when tooltips are enabled
+     */
+    public boolean areTooltipsEnabled() {
+        return tooltipsEnabled;
+    }
+
+    /**
+     * Enables or disables tooltips for every widget.
+     * Disabling hides a visible tooltip immediately; assignments and per-widget settings are kept.
+     *
+     * @param enabled true to show tooltips
+     * @throws IllegalStateException if the manager is closed
+     */
+    public void setTooltipsEnabled(boolean enabled) {
+        ensureOpen();
+        tooltipsEnabled = enabled;
+        if (!enabled) {
+            tooltips.hide();
+        }
+    }
+
+    /**
+     * Returns the manager tooltip defaults used when a widget has no local override.
+     *
+     * @return the current tooltip settings
+     */
+    public TooltipSettings tooltipSettings() {
+        return tooltipSettings;
+    }
+
+    /**
+     * Replaces the manager tooltip defaults.
+     *
+     * @param settings new tooltip settings
+     * @throws NullPointerException if {@code settings} is null
+     * @throws IllegalStateException if the manager is closed
+     */
+    public void setTooltipSettings(TooltipSettings settings) {
+        Objects.requireNonNull(settings, "settings");
+        ensureOpen();
+        tooltipSettings = settings;
     }
 
     /**
@@ -343,6 +392,9 @@ public final class WidgetManager implements AutoCloseable {
             }
         }
         updateHover();
+        if (tooltipsEnabled) {
+            tooltips.update(hovered, frame, pointerX, pointerY, tooltipSettings);
+        }
         refreshCursor();
     }
 
@@ -373,10 +425,10 @@ public final class WidgetManager implements AutoCloseable {
         layout();
         renderer.begin();
         try {
-            for (Widget widget : widgetSnapshot()) {
-                if (widget.context() == context) {
-                    widget.draw(renderer, frame);
-                }
+            drawLayer(renderer, frame, false);
+            drawLayer(renderer, frame, true);
+            if (tooltipsEnabled) {
+                tooltips.draw(renderer, frame, pointerX, pointerY);
             }
             renderer.end();
         } catch (RuntimeException | Error exception) {
@@ -400,6 +452,11 @@ public final class WidgetManager implements AutoCloseable {
         closed = true;
         clearCaptures();
         RuntimeException failure = null;
+        try {
+            tooltips.hide();
+        } catch (RuntimeException exception) {
+            failure = Widget.recordFailure(failure, exception);
+        }
         try {
             clearHover();
         } catch (RuntimeException exception) {
@@ -458,16 +515,28 @@ public final class WidgetManager implements AutoCloseable {
         if (closed) {
             return false;
         }
-        if (!captures.isEmpty()) {
-            return true;
+        return !captures.isEmpty() || hitTest(x, y) != null;
+    }
+
+    /**
+     * Moves the top-level ancestor of a widget to the top of its stacking layer.
+     * Always-on-top widgets stay above regular widgets regardless of this call.
+     *
+     * @param widget registered widget
+     * @return this manager for chaining
+     * @throws NullPointerException if {@code widget} is null
+     * @throws IllegalArgumentException if the widget does not belong to this manager
+     * @throws IllegalStateException if the manager is closed
+     */
+    public WidgetManager bringToFront(Widget widget) {
+        Objects.requireNonNull(widget, "widget");
+        ensureOpen();
+        Widget top = topLevel(widget);
+        if (top.context() != context || indexOfIdentity(widgets, top) < 0) {
+            throw new IllegalArgumentException("Widget is not registered with this manager.");
         }
-        for (int index = widgets.size() - 1; index >= 0; index--) {
-            Widget widget = widgets.get(index);
-            if (widget.hitTest(x - widget.bounds().x(), y - widget.bounds().y()) != null) {
-                return true;
-            }
-        }
-        return false;
+        moveToFront(top);
+        return this;
     }
 
     /**
@@ -519,6 +588,7 @@ public final class WidgetManager implements AutoCloseable {
         if (widget != null) {
             widget.setFocused(true);
             widget.onFocusChanged(true);
+            raiseIfEnabled(widget);
         }
     }
 
@@ -697,6 +767,7 @@ public final class WidgetManager implements AutoCloseable {
         pointerX = pressed.x();
         pointerY = pressed.y();
         Widget target = updateHover();
+        tooltips.hide();
         if (target == null) {
             resetClickSequence();
             focus(null);
@@ -706,6 +777,7 @@ public final class WidgetManager implements AutoCloseable {
         if (!isAttached(target) || !isInteractive(target)) {
             return;
         }
+        raiseIfEnabled(target);
         Widget previous = captures.put(pressed.button(), target);
         if (previous != null && previous != target) {
             presses.remove(pressed.button());
@@ -833,6 +905,7 @@ public final class WidgetManager implements AutoCloseable {
             previous.onPointerExit();
         }
         if (revision != hoverRevision) {
+            tooltips.hoverChanged(hovered);
             return hovered;
         }
         hit = pointerInside ? hitTest(pointerX, pointerY) : null;
@@ -841,6 +914,7 @@ public final class WidgetManager implements AutoCloseable {
             hit.setHovered(true);
             hit.onPointerEnter();
         }
+        tooltips.hoverChanged(hovered);
         refreshCursor();
         return hovered;
     }
@@ -1047,9 +1121,25 @@ public final class WidgetManager implements AutoCloseable {
         return false;
     }
 
+    private void drawLayer(RenderManager renderer, FrameInfo frame, boolean alwaysOnTop) {
+        for (Widget widget : widgetSnapshot()) {
+            if (widget.isAlwaysOnTop() == alwaysOnTop && widget.context() == context) {
+                widget.draw(renderer, frame);
+            }
+        }
+    }
+
     private Widget hitTest(float x, float y) {
+        Widget hit = hitTestLayer(x, y, true);
+        return hit != null ? hit : hitTestLayer(x, y, false);
+    }
+
+    private Widget hitTestLayer(float x, float y, boolean alwaysOnTop) {
         for (int index = widgets.size() - 1; index >= 0; index--) {
             Widget widget = widgets.get(index);
+            if (widget.isAlwaysOnTop() != alwaysOnTop) {
+                continue;
+            }
             Widget hit = widget.hitTest(x - widget.bounds().x(), y - widget.bounds().y());
             if (hit != null) {
                 return hit;
@@ -1090,6 +1180,7 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     private void clearHover() {
+        tooltips.hide();
         if (hovered == null) {
             return;
         }
@@ -1167,6 +1258,30 @@ public final class WidgetManager implements AutoCloseable {
             }
         }
         return -1;
+    }
+
+    private void raiseIfEnabled(Widget widget) {
+        Widget top = topLevel(widget);
+        if (top.context() == context && top.isRaiseOnFocus()) {
+            moveToFront(top);
+        }
+    }
+
+    private void moveToFront(Widget top) {
+        int index = indexOfIdentity(widgets, top);
+        if (index >= 0 && index != widgets.size() - 1) {
+            widgets.remove(index);
+            widgets.add(top);
+            widgetSnapshot = null;
+        }
+    }
+
+    private static Widget topLevel(Widget widget) {
+        Widget top = widget;
+        while (top.parent() != null) {
+            top = top.parent();
+        }
+        return top;
     }
 
     private static final class PressState {

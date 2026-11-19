@@ -86,6 +86,7 @@ public class Window extends ScrollPanel {
      */
     public Window() {
         setMinimumSize(DEFAULT_MINIMUM_WIDTH, DEFAULT_MINIMUM_HEIGHT);
+        setRaiseOnFocus(true);
         header = new Header();
         resizeHandle = new ResizeHandle();
         header.add(pinButton).add(collapseButton).add(closeButton);

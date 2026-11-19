@@ -51,6 +51,11 @@ public abstract class Widget {
     private boolean focusOutlineEnabled = true;
     private boolean autoSize;
     private boolean fillViewport;
+    private Widget tooltip;
+    private TooltipSettings tooltipSettings;
+    private boolean tooltipEnabled = true;
+    private boolean alwaysOnTop;
+    private boolean raiseOnFocus;
     private boolean hovered;
     private boolean pressed;
     private boolean focused;
@@ -256,6 +261,112 @@ public abstract class Widget {
         Objects.requireNonNull(constraints, "constraints");
         Size measured = Objects.requireNonNull(onMeasure(constraints), "onMeasure result");
         return constraints.constrain(measured);
+    }
+
+    /**
+     * Returns the tooltip widget shown while the pointer rests on this widget or its descendants.
+     *
+     * @return the tooltip widget, or null when none is assigned
+     */
+    public final Widget tooltip() {
+        return tooltip;
+    }
+
+    /**
+     * Assigns a tooltip widget shown after the pointer rests on this widget or its descendants.
+     * Any widget can serve as a tooltip; it is attached to the manager context while visible,
+     * positioned next to the pointer and drawn above the widget tree. The nearest ancestor with a
+     * tooltip wins. Use {@link TextTooltip} for a ready-made text tooltip.
+     *
+     * @param tooltip tooltip widget without a parent, or null to clear the tooltip
+     * @throws IllegalArgumentException if the tooltip is this widget or already has a parent
+     */
+    public final void setTooltip(Widget tooltip) {
+        if (tooltip == this) {
+            throw new IllegalArgumentException("A widget cannot use itself as a tooltip.");
+        }
+        if (tooltip != null && tooltip.parent() != null) {
+            throw new IllegalArgumentException("A tooltip widget must not have a parent.");
+        }
+        this.tooltip = tooltip;
+    }
+
+    /**
+     * Reports whether tooltips are enabled for this widget and its descendants.
+     *
+     * @return true when tooltips may be shown for this subtree
+     */
+    public final boolean isTooltipEnabled() {
+        return tooltipEnabled;
+    }
+
+    /**
+     * Enables or disables tooltips for this widget and its descendants.
+     * Disabling suppresses inherited tooltips too, so a whole panel can opt out without clearing
+     * every assignment.
+     *
+     * @param tooltipEnabled true to allow tooltips in this subtree
+     */
+    public final void setTooltipEnabled(boolean tooltipEnabled) {
+        this.tooltipEnabled = tooltipEnabled;
+    }
+
+    /**
+     * Returns the tooltip settings that override the manager defaults for this widget.
+     *
+     * @return the local settings, or null when the manager defaults apply
+     */
+    public final TooltipSettings tooltipSettings() {
+        return tooltipSettings;
+    }
+
+    /**
+     * Overrides the manager tooltip settings while this widget is the tooltip owner.
+     * Pass null to inherit the manager settings again.
+     *
+     * @param tooltipSettings local tooltip settings, or null to inherit
+     */
+    public final void setTooltipSettings(TooltipSettings tooltipSettings) {
+        this.tooltipSettings = tooltipSettings;
+    }
+
+    /**
+     * Reports whether this widget is kept above other top-level widgets.
+     *
+     * @return true when the widget is always drawn and hit-tested above regular widgets
+     */
+    public final boolean isAlwaysOnTop() {
+        return alwaysOnTop;
+    }
+
+    /**
+     * Keeps this widget above other top-level widgets regardless of insertion and focus order.
+     * The flag applies to top-level widgets; nested widgets follow their top-level ancestor.
+     *
+     * @param alwaysOnTop true to keep the widget above regular top-level widgets
+     */
+    public final void setAlwaysOnTop(boolean alwaysOnTop) {
+        this.alwaysOnTop = alwaysOnTop;
+    }
+
+    /**
+     * Reports whether this widget is raised above its peers when it gains pointer or keyboard focus.
+     *
+     * @return true when focus raises the widget's top-level ancestor
+     */
+    public final boolean isRaiseOnFocus() {
+        return raiseOnFocus;
+    }
+
+    /**
+     * Enables or disables raising this widget when it gains pointer or keyboard focus.
+     * The flag applies to top-level widgets; focusing a nested widget raises its top-level ancestor.
+     * Disabled by default except for {@link Window}, so most widgets keep their stacking order.
+     *
+     * @param raiseOnFocus true to raise the top-level ancestor on focus or pointer press
+     */
+    public final void setRaiseOnFocus(boolean raiseOnFocus) {
+        this.raiseOnFocus = raiseOnFocus;
     }
 
     /**
