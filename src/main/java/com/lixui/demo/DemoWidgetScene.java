@@ -23,18 +23,22 @@ import com.lixui.theme.WidgetStyle;
 import com.lixui.widget.Button;
 import com.lixui.widget.CheckBox;
 import com.lixui.widget.FrameInfo;
+import com.lixui.widget.KnobSlider;
 import com.lixui.widget.Label;
 import com.lixui.widget.Panel;
 import com.lixui.widget.RadioBox;
+import com.lixui.widget.RangeSlider;
 import com.lixui.widget.RichLabel;
 import com.lixui.widget.SegmentedButton;
 import com.lixui.widget.Separator;
+import com.lixui.widget.Slider;
 import com.lixui.widget.SplitPanel;
 import com.lixui.widget.TabPanel;
 import com.lixui.widget.ToggleGroup;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.Window;
+import com.lixui.widget.layout.HBox;
 import com.lixui.widget.layout.VBox;
 
 import java.util.ArrayList;
@@ -122,6 +126,7 @@ final class DemoWidgetScene implements AutoCloseable {
         bindIcon("ui.svg", outerTabs.iconSize(), outerTabs.addTab("Tabs", innerTabs)::setIcon);
         bindIcon("adjustment.svg", outerTabs.iconSize(), outerTabs.addTab("Controls", createControlsPage())::setIcon);
         bindIcon("split.svg", outerTabs.iconSize(), outerTabs.addTab("Split", createSplitPage())::setIcon);
+        bindIcon("slider.svg", outerTabs.iconSize(), outerTabs.addTab("Sliders", createSlidersPage())::setIcon);
         window = new Window();
         window.setTitle("LixUI - Demo Window");
         bindIcon("ui.svg", THEME_ICON_SIZE, window::setHeaderIcon);
@@ -280,6 +285,96 @@ final class DemoWidgetScene implements AutoCloseable {
         outer.setSecond(new SplitDemoPane("Horizontal split\nDrag the vertical divider on the "
                 + "left to resize the right pane."));
         return outer;
+    }
+
+    private VBox createSlidersPage() {
+        Slider slider = new Slider();
+        slider.setRange(0, 100);
+        slider.setStep(1);
+        slider.setValue(40);
+        slider.setTickCount(10);
+        slider.setTooltipText("Drag the thumb, use the wheel or press the arrow keys.");
+
+        RangeSlider range = new RangeSlider();
+        range.setRange(0, 100);
+        range.setStep(1);
+        range.setValues(20, 80);
+        range.setTickCount(5);
+        range.setTooltipText("Drag either thumb to adjust the selected range.");
+
+        Slider vertical = new Slider(Slider.Orientation.VERTICAL);
+        vertical.setRange(0, 1000);
+        vertical.setStep(10);
+        vertical.setValue(250);
+        vertical.setTickCount(10);
+        vertical.setTooltipText("A vertical slider with compact range labels.");
+
+        RangeSlider verticalRange = new RangeSlider(RangeSlider.Orientation.VERTICAL);
+        verticalRange.setRange(0, 100_000);
+        verticalRange.setStep(1_000);
+        verticalRange.setValues(20_000, 80_000);
+        verticalRange.setTickCount(5);
+        verticalRange.setTooltipText("Large ranges are shortened to 100k, 1m and so on.");
+
+        KnobSlider knob = new KnobSlider();
+        knob.setRange(0, 100);
+        knob.setStep(1);
+        knob.setValue(60);
+        knob.setKnobSize(96);
+        knob.setTooltipText("Drag vertically to change the value.");
+
+        Label status = new Label();
+        status.setFontFamily(fontFamily);
+        status.setAutoSize(false);
+        status.setWrap(true);
+        Runnable updateStatus = () -> status.setText("Slider: " + Math.round(slider.value())
+                + "    Range: " + Math.round(range.lowValue())
+                + " - " + Math.round(range.highValue())
+                + "\nVertical: " + Math.round(vertical.value())
+                + "    Vertical range: " + Math.round(verticalRange.lowValue())
+                + " - " + Math.round(verticalRange.highValue())
+                + "    Knob: " + Math.round(knob.value()));
+        slider.setOnChange(value -> updateStatus.run());
+        range.setOnChange(value -> updateStatus.run());
+        vertical.setOnChange(value -> updateStatus.run());
+        verticalRange.setOnChange(value -> updateStatus.run());
+        knob.setOnChange(value -> updateStatus.run());
+        updateStatus.run();
+
+        CheckBox enabled = new CheckBox("Enable sliders");
+        enabled.setChecked(true);
+        enabled.setOnChange(checked -> {
+            slider.setEnabled(checked);
+            range.setEnabled(checked);
+            vertical.setEnabled(checked);
+            verticalRange.setEnabled(checked);
+            knob.setEnabled(checked);
+        });
+
+        HBox verticalRow = new HBox();
+        verticalRow.setGap(24);
+        verticalRow.setCrossAlignment(HBox.CrossAlignment.START);
+        verticalRow.add(vertical).add(verticalRange).add(knob);
+        HBox enabledRow = new HBox();
+        enabledRow.add(enabled);
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(10);
+        page.add(sliderCaption("Slider")).add(slider)
+                .add(sliderCaption("Range slider")).add(range)
+                .add(sliderCaption("Vertical sliders and knob")).add(verticalRow)
+                .add(enabledRow).add(status);
+        return page;
+    }
+
+    private Label sliderCaption(String text) {
+        Label label = new Label(text);
+        label.setFontFamily(fontFamily);
+        label.setFontStyle(FontStyle.BOLD);
+        label.setAutoSize(false);
+        label.setWrap(true);
+        return label;
     }
 
     private FontFamily createFontFamily() {
