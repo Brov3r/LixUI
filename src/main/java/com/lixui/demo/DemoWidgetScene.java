@@ -27,6 +27,7 @@ import com.lixui.widget.Label;
 import com.lixui.widget.RadioBox;
 import com.lixui.widget.RichLabel;
 import com.lixui.widget.SegmentedButton;
+import com.lixui.widget.Separator;
 import com.lixui.widget.TabPanel;
 import com.lixui.widget.ToggleGroup;
 import com.lixui.widget.Widget;
@@ -246,8 +247,13 @@ final class DemoWidgetScene implements AutoCloseable {
                 ? SegmentedButton.SelectionMode.MULTIPLE
                 : SegmentedButton.SelectionMode.SINGLE));
 
-        page.add(sound).add(grid).add(bold).add(italic).add(underline)
-                .add(small).add(medium).add(large)
+        Separator togglesSeparator = new Separator();
+        togglesSeparator.setTooltipText("Separates option groups.");
+        Separator segmentsSeparator = new Separator();
+
+        page.add(sound).add(grid).add(togglesSeparator)
+                .add(bold).add(italic).add(underline)
+                .add(small).add(medium).add(large).add(segmentsSeparator)
                 .add(icons).add(actions).add(alignment).add(multiple).add(status);
         return page;
     }
