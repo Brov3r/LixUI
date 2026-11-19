@@ -169,27 +169,6 @@ public class Panel extends Widget {
     }
 
     /**
-     * Resolves the interaction state used to pick surface colors.
-     *
-     * @return the most specific active state
-     */
-    protected WidgetState state() {
-        if (!isEnabled()) {
-            return WidgetState.DISABLED;
-        }
-        if (isPressed()) {
-            return WidgetState.PRESSED;
-        }
-        if (isHovered()) {
-            return WidgetState.HOVERED;
-        }
-        if (isFocused()) {
-            return WidgetState.FOCUSED;
-        }
-        return WidgetState.NORMAL;
-    }
-
-    /**
      * Individual corner radii in logical UI units.
      * Zero keeps a square corner; adjacent radii are clamped to half of the panel size when drawn.
      *

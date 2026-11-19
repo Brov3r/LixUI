@@ -10,6 +10,7 @@ import com.lixui.input.MouseButton;
 import com.lixui.platform.Cursor;
 import com.lixui.render.RenderManager;
 import com.lixui.text.Font;
+import com.lixui.theme.WidgetState;
 import com.lixui.theme.WidgetStyle;
 import com.lixui.widget.tooltip.TextTooltip;
 import com.lixui.widget.tooltip.TooltipSettings;
@@ -369,6 +370,27 @@ public abstract class Widget {
      */
     public final void setRaiseOnFocus(boolean raiseOnFocus) {
         this.raiseOnFocus = raiseOnFocus;
+    }
+
+    /**
+     * Resolves the interaction state used to pick state-aware colors.
+     *
+     * @return the most specific active state
+     */
+    protected WidgetState state() {
+        if (!isEnabled()) {
+            return WidgetState.DISABLED;
+        }
+        if (isPressed()) {
+            return WidgetState.PRESSED;
+        }
+        if (isHovered()) {
+            return WidgetState.HOVERED;
+        }
+        if (isFocused()) {
+            return WidgetState.FOCUSED;
+        }
+        return WidgetState.NORMAL;
     }
 
     /**

@@ -7,9 +7,20 @@ import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
 
 /**
- * A render backend that accepts frames without allocating resources.
+ * A render backend that records the last frame and hands out lightweight texture handles.
  */
 public final class TestBackend implements RenderBackend {
+    private DrawList lastDrawList;
+
+    /**
+     * Returns the last submitted draw list.
+     *
+     * @return the last draw list, or null before the first frame
+     */
+    public DrawList lastDrawList() {
+        return lastDrawList;
+    }
+
     /**
      * Accepts the viewport without using it.
      *
@@ -20,35 +31,33 @@ public final class TestBackend implements RenderBackend {
     }
 
     /**
-     * Accepts a submitted frame without drawing it.
+     * Records a submitted frame.
      *
      * @param drawList submitted commands
      */
     @Override
     public void draw(DrawList drawList) {
+        lastDrawList = drawList;
     }
 
     /**
-     * Reports that test widgets must not create textures.
+     * Creates a texture handle with the source dimensions.
      *
      * @param image source pixels
-     * @return never
-     * @throws UnsupportedOperationException always
+     * @return a lightweight texture handle
      */
     @Override
     public Texture createTexture(ImageData image) {
-        throw new UnsupportedOperationException();
+        return new TextureHandle(image.width(), image.height());
     }
 
     /**
-     * Reports that test widgets must not own textures.
+     * Ignores texture disposal.
      *
      * @param texture released texture
-     * @throws UnsupportedOperationException always
      */
     @Override
     public void destroyTexture(Texture texture) {
-        throw new UnsupportedOperationException();
     }
 
     /**
@@ -56,5 +65,8 @@ public final class TestBackend implements RenderBackend {
      */
     @Override
     public void close() {
+    }
+
+    private record TextureHandle(int width, int height) implements Texture {
     }
 }
