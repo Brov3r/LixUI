@@ -1,4 +1,4 @@
-package com.lixui.widget;
+package com.lixui.widget.overlay;
 
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
@@ -10,6 +10,11 @@ import com.lixui.platform.Cursor;
 import com.lixui.render.RenderManager;
 import com.lixui.theme.WidgetState;
 import com.lixui.theme.WidgetStyle;
+import com.lixui.widget.FrameInfo;
+import com.lixui.widget.LayoutConstraints;
+import com.lixui.widget.Panel;
+import com.lixui.widget.UiContext;
+import com.lixui.widget.Widget;
 
 import java.util.Objects;
 

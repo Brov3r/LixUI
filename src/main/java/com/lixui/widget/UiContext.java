@@ -16,6 +16,8 @@ import com.lixui.text.Font;
 import com.lixui.text.FontData;
 import com.lixui.text.FontStyle;
 import com.lixui.theme.Theme;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -26,7 +28,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Consumer;
 
 /**
@@ -37,6 +41,8 @@ import java.util.function.Consumer;
  * Resources created directly through {@link RenderManager} are owned by the caller instead.
  */
 public final class UiContext implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(UiContext.class);
+
     private final RenderManager renderer;
     private final UiPlatform platform;
     private final WidgetManager manager;
@@ -44,6 +50,7 @@ public final class UiContext implements AutoCloseable {
     private final Set<Texture> textures = identitySet();
     private final Set<Font> fonts = identitySet();
     private final Map<IconKey, SharedIcon> icons = new HashMap<>();
+    private final Queue<Runnable> tasks = new ConcurrentLinkedQueue<>();
     private Rect viewport = Rect.EMPTY;
     private float scaleX = 1;
     private float scaleY = 1;
@@ -166,6 +173,33 @@ public final class UiContext implements AutoCloseable {
 
     void updateAnimations(float deltaSeconds) {
         animator.update(deltaSeconds);
+    }
+
+    /**
+     * Schedules a task to run on the render thread during the next manager update.
+     * Tasks posted while the queue is being drained run in the same update.
+     *
+     * @param task task to run
+     * @throws NullPointerException if {@code task} is null
+     * @throws IllegalStateException if the context is closed
+     */
+    public void post(Runnable task) {
+        ensureOpen();
+        tasks.add(Objects.requireNonNull(task, "task"));
+    }
+
+    void runTasks() {
+        if (closed) {
+            return;
+        }
+        Runnable task;
+        while ((task = tasks.poll()) != null) {
+            try {
+                task.run();
+            } catch (RuntimeException exception) {
+                LOGGER.error("Queued UI task failed.", exception);
+            }
+        }
     }
 
     /**
@@ -517,6 +551,7 @@ public final class UiContext implements AutoCloseable {
         }
         closed = true;
         animator.clear();
+        tasks.clear();
         RuntimeException failure = null;
         for (Font font : List.copyOf(fonts)) {
             try {

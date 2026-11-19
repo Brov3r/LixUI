@@ -1,4 +1,4 @@
-package com.lixui.widget;
+package com.lixui.widget.overlay;
 
 import com.lixui.geometry.Rect;
 import com.lixui.input.InputState;
@@ -8,6 +8,8 @@ import com.lixui.input.MouseButton;
 import com.lixui.input.event.KeyPressed;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.render.Viewport;
+import com.lixui.widget.Widget;
+import com.lixui.widget.WidgetManager;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.testsupport.TestViewports;
 import org.junit.jupiter.api.Test;

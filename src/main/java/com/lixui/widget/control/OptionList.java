@@ -22,11 +22,12 @@ import com.lixui.widget.IconSet;
 import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.Widget;
 import com.lixui.widget.container.ScrollBar;
+import com.lixui.widget.overlay.Popup;
 
 import java.util.List;
 
 /**
- * A scrollable option list hosted inside a {@link com.lixui.widget.Popup}.
+ * A scrollable option list hosted inside a {@link Popup}.
  * The list owns pointer highlighting, keyboard navigation and scrolling; the owning select widget
  * supplies the selection model and activation behavior.
  */

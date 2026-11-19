@@ -400,6 +400,7 @@ public final class WidgetManager implements AutoCloseable {
             dispatch(event);
         }
         context.updateAnimations(deltaSeconds);
+        context.runTasks();
         updatePresses();
         for (Widget widget : widgetSnapshot()) {
             if (widget.context() == context) {
@@ -786,6 +787,10 @@ public final class WidgetManager implements AutoCloseable {
         if (target == null) {
             resetClickSequence();
             focus(null);
+            return;
+        }
+        if (pressed.button() == MouseButton.RIGHT
+                && target.openContextMenu(context, pointerX, pointerY)) {
             return;
         }
         focus(focusTarget(target));

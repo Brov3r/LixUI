@@ -1,6 +1,5 @@
 package com.lixui.widget;
 
-import com.lixui.widget.container.Window;
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
@@ -59,6 +58,7 @@ public abstract class Widget {
     private float grow;
     private Widget tooltip;
     private TooltipSettings tooltipSettings;
+    private ContextMenuProvider contextMenuProvider;
     private boolean tooltipEnabled = true;
     private Runnable soundPlayer;
     private boolean alwaysOnTop;
@@ -348,6 +348,42 @@ public abstract class Widget {
     }
 
     /**
+     * Returns the context menu provider used for right-button presses.
+     *
+     * @return the provider, or null when this widget has no context menu
+     */
+    public final ContextMenuProvider contextMenuProvider() {
+        return contextMenuProvider;
+    }
+
+    /**
+     * Assigns a context menu provider for right-button presses.
+     * The nearest widget in the hit subtree with a non-null provider wins; the provider may return
+     * null to let the search continue with its parent.
+     *
+     * @param contextMenuProvider provider, or null to remove the context menu
+     */
+    public final void setContextMenuProvider(ContextMenuProvider contextMenuProvider) {
+        this.contextMenuProvider = contextMenuProvider;
+    }
+
+    final boolean openContextMenu(UiContext owner, float x, float y) {
+        for (Widget widget = this; widget != null; widget = widget.parent) {
+            if (widget.contextMenuProvider == null) {
+                continue;
+            }
+            Point origin = widget.absolutePosition();
+            ContextMenuHandle menu = widget.contextMenuProvider.menuFor(
+                    widget, x - origin.x(), y - origin.y());
+            if (menu != null) {
+                menu.open(owner, x, y);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Returns the callback invoked to play a sound when this widget activates.
      *
      * @return the sound callback, or null when none is assigned
@@ -406,7 +442,7 @@ public abstract class Widget {
     /**
      * Enables or disables raising this widget when it gains pointer or keyboard focus.
      * The flag applies to top-level widgets; focusing a nested widget raises its top-level ancestor.
-     * Disabled by default except for {@link Window}, so most widgets keep their stacking order.
+     * Disabled by default, so most widgets keep their stacking order.
      *
      * @param raiseOnFocus true to raise the top-level ancestor on focus or pointer press
      */

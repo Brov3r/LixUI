@@ -1223,7 +1223,8 @@ public final class VulkanBackend implements RenderBackend {
 
     private void appendQuad(DrawCommand command) {
         if (command instanceof ImageCommand image) {
-            appendQuad(image.bounds(), image.radius(), image.color(), image.uv(), image.transform());
+            appendQuad(image.bounds(), image.radius(), image.color(), image.uv(), image.transform(),
+                    image.radius() > 0);
         } else if (command instanceof ShapeCommand shape) {
             appendQuad(shape.bounds(), shape.ellipse() ? -1 : shape.radius(), shape.color(),
                     shape.bounds(), shape.transform(), true);

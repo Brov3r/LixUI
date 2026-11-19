@@ -9,6 +9,7 @@ import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.render.command.ImageCommand;
 import com.lixui.render.command.RoundedRectCommand;
+import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.testsupport.TestTexture;
@@ -244,6 +245,30 @@ class TableTest {
         table.setSelectionMode(Table.SelectionMode.NONE);
         click(manager, 50, rowCenter(1));
         assertTrue(table.selectedRows().isEmpty());
+    }
+
+    @Test
+    void fillsTheAvailableWidthWhenEnabled() {
+        Table table = tableWithRows(Table.SelectionMode.NONE);
+        assertEquals(150, table.measure(LayoutConstraints.loose(300, 300)).width(), 0.001f);
+
+        table.setFillWidth(true);
+
+        assertEquals(300, table.measure(LayoutConstraints.loose(300, 300)).width(), 0.001f);
+        assertEquals(152, table.measure(LayoutConstraints.loose(300, 300)).height(), 0.001f);
+    }
+
+    @Test
+    void exposesRowsForContextMenus() {
+        WidgetManager manager = manager();
+        Table table = tableWithRows(Table.SelectionMode.NONE);
+        manager.add(table);
+        manager.render();
+
+        assertEquals(0, table.rowAt(rowCenter(0)));
+        assertEquals(2, table.rowAt(rowCenter(2)));
+        assertEquals(-1, table.rowAt(5));
+        assertEquals(-1, table.rowAt(400));
     }
 
     @Test

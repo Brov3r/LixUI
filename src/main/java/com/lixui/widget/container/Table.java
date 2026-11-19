@@ -93,6 +93,7 @@ public class Table extends Panel {
     private float scrollBarMargin = DEFAULT_BAR_MARGIN;
     private boolean columnResizingEnabled = true;
     private boolean sortingEnabled = true;
+    private boolean fillWidth;
     private SortOrder sortOrder = SortOrder.NONE;
     private int sortColumn = -1;
     private SelectionMode selectionMode = SelectionMode.NONE;
@@ -286,6 +287,25 @@ public class Table extends Panel {
      */
     public final void setColumnResizingEnabled(boolean columnResizingEnabled) {
         this.columnResizingEnabled = columnResizingEnabled;
+    }
+
+    /**
+     * Reports whether the table expands to the full width offered by its measurement constraints.
+     *
+     * @return true when the table fills the available width
+     */
+    public final boolean isFillWidth() {
+        return fillWidth;
+    }
+
+    /**
+     * Enables or disables filling the available width during measurement.
+     * Height still follows the header and row count.
+     *
+     * @param fillWidth true to stretch the table to the available width
+     */
+    public final void setFillWidth(boolean fillWidth) {
+        this.fillWidth = fillWidth;
     }
 
     /**
@@ -607,6 +627,17 @@ public class Table extends Panel {
     }
 
     /**
+     * Returns the displayed row under a local vertical position.
+     *
+     * @param localY vertical pointer position relative to the table
+     * @return the zero-based display row index, or -1 outside the row viewport
+     */
+    public final int rowAt(float localY) {
+        computeLayout();
+        return rowIndexAt(localY);
+    }
+
+    /**
      * Appends a column with the default width.
      *
      * @param title column title
@@ -727,10 +758,7 @@ public class Table extends Panel {
      */
     @Override
     protected Size onMeasure(LayoutConstraints constraints) {
-        float width = 0;
-        for (Column column : columns) {
-            width += column.width();
-        }
+        float width = fillWidth ? constraints.maxWidth() : configuredWidth();
         float height = headerHeight + rows.size() * rowHeight;
         return new Size(Math.min(width, constraints.maxWidth()),
                 Math.min(height, constraints.maxHeight()));
@@ -773,17 +801,18 @@ public class Table extends Panel {
      */
     @Override
     protected void onDraw(RenderManager renderer, FrameInfo frame) {
-        super.onDraw(renderer, frame);
-        computeLayout();
-        if (localBounds().isEmpty() || viewportWidth <= 0) {
-            return;
-        }
-        Theme theme = context().theme();
-        WidgetStyle style = style();
+        WidgetStyle style = resolvedStyle();
         if (style == null) {
             return;
         }
         WidgetState state = isEnabled() ? WidgetState.NORMAL : WidgetState.DISABLED;
+        renderer.roundedRect(localBounds(), style.cornerRadius(), style.background(state));
+        computeLayout();
+        if (localBounds().isEmpty() || viewportWidth <= 0) {
+            drawBorder(renderer, style, state);
+            return;
+        }
+        Theme theme = context().theme();
         Color textColor = style.text(state);
         Color headerBackground = Color.mix(style.background(state), theme.primary(), 0.08f);
         Color gridColor = theme.border().withAlpha(0.55f);
@@ -804,6 +833,13 @@ public class Table extends Panel {
         }
         renderer.rect(marquee, theme.primary().withAlpha(0.16f));
         renderer.strokeRect(marquee, 1, Paint.solid(theme.primary().withAlpha(0.9f)));
+    }
+
+    private WidgetStyle resolvedStyle() {
+        if (hasLocalStyle()) {
+            return style();
+        }
+        return context() == null ? null : context().theme().panelStyle();
     }
 
     private void drawBorder(RenderManager renderer, WidgetStyle style, WidgetState state) {
@@ -896,7 +932,7 @@ public class Table extends Panel {
         if (viewportHeight <= 0 || rows.isEmpty()) {
             return;
         }
-        WidgetStyle style = style();
+        WidgetStyle style = resolvedStyle();
         Color background = style.background(isEnabled() ? WidgetState.NORMAL : WidgetState.DISABLED);
         Color alternate = Color.mix(background, theme.background(), 0.18f);
         Color hoverBackground = Color.mix(background, theme.primary(), 0.24f);

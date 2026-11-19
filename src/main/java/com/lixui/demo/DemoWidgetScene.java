@@ -45,6 +45,7 @@ import com.lixui.widget.WidgetManager;
 import com.lixui.widget.container.Window;
 import com.lixui.widget.layout.HBox;
 import com.lixui.widget.layout.VBox;
+import com.lixui.widget.overlay.ContextMenu;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -479,6 +480,11 @@ final class DemoWidgetScene implements AutoCloseable {
         multiselect.setSelected(0, true);
         multiselect.setSelected(2, true);
 
+        Label contextStatus = new Label("Right-click a table row to open its context menu.");
+        contextStatus.setFontFamily(fontFamily);
+        contextStatus.setAutoSize(false);
+        contextStatus.setWrap(true);
+
         VBox page = new VBox();
         page.setPadding(CONTENT_PADDING);
         page.setGap(10);
@@ -486,8 +492,79 @@ final class DemoWidgetScene implements AutoCloseable {
         page.add(sliderCaption("Dropdown"))
                 .add(dropdown)
                 .add(sliderCaption("Multi-select"))
-                .add(multiselect);
+                .add(multiselect)
+                .add(sliderCaption("Context menu table"))
+                .add(createContextMenuTable(contextStatus))
+                .add(contextStatus);
         return page;
+    }
+
+    private Table createContextMenuTable(Label status) {
+        Table table = new Table();
+        table.setFillWidth(true);
+        table.setSelectionMode(Table.SelectionMode.SINGLE);
+        table.addColumn("Item", 160);
+        table.addColumn("Type", 130);
+        table.addColumn("Value", 100);
+        List<ContextMenu> menus = new ArrayList<>();
+        menus.add(addContextMenuRow(table, "Iron Sword", "Weapon", "120", status));
+        menus.add(addContextMenuRow(table, "Oak Bow", "Weapon", "95", status));
+        menus.add(addContextMenuRow(table, "Healing Potion", "Consumable", "45", status));
+        menus.add(addContextMenuRow(table, "Steel Helmet", "Armor", "180", status));
+        menus.add(addContextMenuRow(table, "Ancient Ring", "Trinket", "320", status));
+        table.setContextMenuProvider((widget, x, y) -> {
+            int index = table.rowAt(y);
+            return index >= 0 && index < menus.size() ? menus.get(index) : null;
+        });
+        return table;
+    }
+
+    private ContextMenu addContextMenuRow(Table table, String name, String type, String value,
+                                          Label status) {
+        Table.Row row = table.addRow(name, type, value);
+        ContextMenu menu = new ContextMenu();
+        menu.setSubmenuGap(5);
+
+        ContextMenu.Item open = menu.addItem("Open", () -> status.setText("Opened: " + name));
+        bindIcon("open-the-door.svg", menu.iconSize(), open::setIcon);
+        ContextMenu.Item inspect = menu.addItem("Inspect",
+                () -> status.setText("Inspecting: " + name));
+        inspect.setShortcut("Enter");
+        bindIcon("search.svg", menu.iconSize(), inspect::setIcon);
+
+        ContextMenu.Item move = menu.addItem("Move to", null);
+        bindIcon("chest.svg", menu.iconSize(), move::setIcon);
+        ContextMenu.Item inventory = move.addChild(new ContextMenu.Item("Inventory",
+                () -> status.setText("Moved to inventory: " + name)));
+        bindIcon("chest.svg", menu.iconSize(), inventory::setIcon);
+        ContextMenu.Item vault = move.addChild(new ContextMenu.Item("Vault",
+                () -> status.setText("Moved to vault: " + name)));
+        bindIcon("lock.svg", menu.iconSize(), vault::setIcon);
+        ContextMenu.Item archive = new ContextMenu.Item("Archive", null);
+        bindIcon("book.svg", menu.iconSize(), archive::setIcon);
+        ContextMenu.Item common = archive.addChild(new ContextMenu.Item("Common shelf",
+                () -> status.setText("Archived to common shelf: " + name)));
+        ContextMenu.Item rare = archive.addChild(new ContextMenu.Item("Rare shelf",
+                () -> status.setText("Archived to rare shelf: " + name)));
+        rare.setTone(ContextMenu.Tone.ACCENT);
+        bindIcon("star.svg", menu.iconSize(), rare::setIcon);
+        move.addChild(archive);
+
+        menu.addSeparator();
+        ContextMenu.Item duplicate = menu.addItem("Duplicate", null);
+        duplicate.setShortcut("Ctrl+D");
+        duplicate.setEnabled(false);
+        bindIcon("copy.svg", menu.iconSize(), duplicate::setIcon);
+
+        ContextMenu.Item select = menu.addItem("Select row",
+                () -> table.setSelectedRows(List.of(row)));
+        bindIcon("tick.svg", menu.iconSize(), select::setIcon);
+        ContextMenu.Item remove = menu.addItem("Delete",
+                () -> status.setText("Delete requested: " + name));
+        remove.setShortcut("Del");
+        remove.setTone(ContextMenu.Tone.DANGER);
+        bindIcon("trash.svg", menu.iconSize(), remove::setIcon);
+        return menu;
     }
 
     private void addClassOption(Dropdown dropdown, String label, String icon) {

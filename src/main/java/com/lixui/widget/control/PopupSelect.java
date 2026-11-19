@@ -17,8 +17,8 @@ import com.lixui.widget.FrameInfo;
 import com.lixui.widget.IconSet;
 import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.Panel;
-import com.lixui.widget.Popup;
 import com.lixui.widget.UiContext;
+import com.lixui.widget.overlay.Popup;
 
 import java.util.ArrayList;
 import java.util.List;

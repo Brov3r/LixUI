@@ -171,6 +171,19 @@ public record ImageData(int width, int height, byte[] pixels) {
         return readFile(path, width, height, smooth);
     }
 
+    /**
+     * Converts a decoded raster image to RGBA8 pixels with straight alpha.
+     * The source image is copied; later changes to it do not affect the returned data.
+     *
+     * @param image decoded image with a top-left origin
+     * @return the converted image data
+     * @throws NullPointerException if {@code image} is null
+     */
+    public static ImageData fromBufferedImage(BufferedImage image) {
+        Objects.requireNonNull(image, "image");
+        return toImageData(image);
+    }
+
     private static ImageData readFile(Path path, int width, int height, boolean smooth) {
         try (InputStream input = Files.newInputStream(path)) {
             return decode(input, path.toString(), width, height, smooth);
