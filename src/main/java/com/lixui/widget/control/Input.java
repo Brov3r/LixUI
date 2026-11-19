@@ -1514,6 +1514,21 @@ public class Input extends Panel {
         }
     }
 
+    /**
+     * Replaces the stored value and selection while recording an undo step.
+     * Subclasses can use this for structural edits such as line indentation.
+     *
+     * @param value new stored value
+     * @param newCaret new caret index
+     * @param newAnchor new selection anchor
+     */
+    protected final void replaceValue(String value, int newCaret, int newAnchor) {
+        if (!isEnabled() || readOnly) {
+            return;
+        }
+        applyEdit(value, newCaret, newAnchor);
+    }
+
     private void applyEdit(String updated, int newCaret, int newAnchor) {
         int nextCaret = clampIndex(updated, newCaret);
         int nextAnchor = clampIndex(updated, newAnchor);

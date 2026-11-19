@@ -78,6 +78,34 @@ public class InputArea extends Input {
     }
 
     /**
+     * Returns the rectangle used for editable text, excluding any subclass gutter.
+     *
+     * @param widgetStyle resolved style used for the field
+     * @return the text rectangle in widget-local coordinates
+     */
+    protected Rect textRect(WidgetStyle widgetStyle) {
+        return contentRect(widgetStyle);
+    }
+
+    /**
+     * Returns the current vertical scroll offset.
+     *
+     * @return the non-negative vertical scroll in logical UI units
+     */
+    protected final float verticalScrollOffset() {
+        return verticalScroll;
+    }
+
+    /**
+     * Returns the current horizontal scroll offset.
+     *
+     * @return the non-negative horizontal scroll in logical UI units
+     */
+    protected final float horizontalScrollOffset() {
+        return horizontalScroll;
+    }
+
+    /**
      * Normalizes entered text while preserving explicit line breaks and tabs.
      * Carriage returns and carriage-return/line-feed pairs become a single newline. Other control
      * characters are removed.
@@ -174,7 +202,7 @@ public class InputArea extends Input {
         if (font == null) {
             return;
         }
-        Rect content = contentRect(widgetStyle);
+        Rect content = textRect(widgetStyle);
         if (content.isEmpty()) {
             return;
         }
@@ -188,7 +216,7 @@ public class InputArea extends Input {
         Rect contentClip = new Rect(origin.x() + content.x(), origin.y() + content.y(),
                 content.width(), content.height());
         renderer.withClip(contentClip, () -> drawContent(renderer, frame, layout, font, widgetStyle,
-                textStyle, displayCaret, textLeft, textTop));
+                textStyle, content, displayCaret, textLeft, textTop));
     }
 
     /**
@@ -205,7 +233,7 @@ public class InputArea extends Input {
         if (font == null || widgetStyle == null) {
             return caretIndex();
         }
-        Rect content = contentRect(widgetStyle);
+        Rect content = textRect(widgetStyle);
         if (content.isEmpty()) {
             return caretIndex();
         }
@@ -310,7 +338,7 @@ public class InputArea extends Input {
         if (font == null || widgetStyle == null) {
             return false;
         }
-        Rect content = contentRect(widgetStyle);
+        Rect content = textRect(widgetStyle);
         if (content.isEmpty()) {
             return false;
         }
@@ -330,9 +358,10 @@ public class InputArea extends Input {
     }
 
     private void drawContent(RenderManager renderer, FrameInfo frame, TextLayout layout,
-                             Font font, WidgetStyle widgetStyle, TextStyle textStyle,
+                             Font font, WidgetStyle widgetStyle, TextStyle textStyle, Rect content,
                              int displayCaret, float textLeft, float textTop) {
         Color textColor = widgetStyle.text(state());
+        drawTextBackground(renderer, layout, widgetStyle, content, textLeft, textTop);
         drawSelection(renderer, layout, widgetStyle,
                 displayIndexForRaw(selectionStart()), displayIndexForRaw(selectionEnd()),
                 textLeft, textTop);
@@ -342,7 +371,8 @@ public class InputArea extends Input {
                         placeholderColor(widgetStyle), textStyle);
             }
         } else {
-            renderer.text(font, displayText(), textLeft, textTop, textColor, textStyle);
+            drawText(renderer, font, layout, textStyle, displayText(), textColor,
+                    textLeft, textTop);
         }
         if (!isEnabled() || !isFocused() || hasSelection()
                 || !isCaretVisible(frame.elapsedSeconds())) {
@@ -353,7 +383,48 @@ public class InputArea extends Input {
                 caretWidth(font), layout.lineHeight()), textColor);
     }
 
-    private TextStyle textStyle(Rect content) {
+    /**
+     * Paints optional decoration behind the selection and text, such as a current-line highlight.
+     * The default does nothing.
+     *
+     * @param renderer drawing manager for the current frame
+     * @param layout layout of the display text
+     * @param widgetStyle resolved style used for the field
+     * @param content text rectangle inside any gutter
+     * @param textLeft display text origin
+     * @param textTop display text origin
+     */
+    protected void drawTextBackground(RenderManager renderer, TextLayout layout,
+                                      WidgetStyle widgetStyle, Rect content,
+                                      float textLeft, float textTop) {
+    }
+
+    /**
+     * Paints the editable text.
+     * Subclasses can split the text into colored runs for syntax highlighting.
+     *
+     * @param renderer drawing manager for the current frame
+     * @param font font used for the text
+     * @param layout layout of the display text
+     * @param textStyle layout style used for the text
+     * @param display display text to paint
+     * @param textColor default text color
+     * @param textLeft display text origin
+     * @param textTop display text origin
+     */
+    protected void drawText(RenderManager renderer, Font font, TextLayout layout,
+                            TextStyle textStyle, String display, Color textColor,
+                            float textLeft, float textTop) {
+        renderer.text(font, display, textLeft, textTop, textColor, textStyle);
+    }
+
+    /**
+     * Builds the layout style for the editable text.
+     *
+     * @param content text rectangle inside any gutter
+     * @return the layout style used for wrapping and drawing
+     */
+    protected final TextStyle textStyle(Rect content) {
         return new TextStyle(wrap ? content.width() : 0, 0, 0, TextOverflow.CLIP,
                 HorizontalAlignment.LEFT, VerticalAlignment.TOP);
     }
@@ -390,7 +461,7 @@ public class InputArea extends Input {
         if (font == null || widgetStyle == null) {
             return;
         }
-        Rect content = contentRect(widgetStyle);
+        Rect content = textRect(widgetStyle);
         if (content.isEmpty()) {
             return;
         }
@@ -417,7 +488,7 @@ public class InputArea extends Input {
         if (font == null || widgetStyle == null) {
             return;
         }
-        Rect content = contentRect(widgetStyle);
+        Rect content = textRect(widgetStyle);
         if (content.isEmpty()) {
             return;
         }
@@ -440,14 +511,21 @@ public class InputArea extends Input {
         if (font == null || widgetStyle == null) {
             return 1;
         }
-        Rect content = contentRect(widgetStyle);
+        Rect content = textRect(widgetStyle);
         if (content.isEmpty()) {
             return 1;
         }
         return Math.max(1, (int) Math.floor(content.height() / font.lineHeight()));
     }
 
-    private static int lineIndexAt(TextLayout layout, float y) {
+    /**
+     * Returns the visual line index containing a vertical text coordinate.
+     *
+     * @param layout layout of the display text
+     * @param y vertical coordinate relative to the layout origin
+     * @return the clamped zero-based line index
+     */
+    protected static int lineIndexAt(TextLayout layout, float y) {
         if (layout.lines().size() <= 1) {
             return 0;
         }

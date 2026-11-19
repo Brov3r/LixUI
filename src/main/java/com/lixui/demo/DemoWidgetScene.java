@@ -27,6 +27,7 @@ import com.lixui.widget.control.Hyperlink;
 import com.lixui.widget.FrameInfo;
 import com.lixui.widget.control.Input;
 import com.lixui.widget.control.InputArea;
+import com.lixui.widget.control.InputCode;
 import com.lixui.widget.control.KnobSlider;
 import com.lixui.widget.control.Label;
 import com.lixui.widget.control.MultiSelect;
@@ -144,6 +145,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 outerTabs.addTab("Input", createInputPage())::setIcon);
         bindIcon("a-to-z.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Text area", createInputAreaPage())::setIcon);
+        bindIcon("code.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Code", createCodePage())::setIcon);
         bindIcon("menu.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Popup", createPopupPage())::setIcon);
         bindIcon("text.svg", outerTabs.iconSize(), outerTabs.addTab("Labels", labelsPage)::setIcon);
@@ -720,6 +723,39 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(area)
                 .add(sliderCaption("Disabled"))
                 .add(disabled)
+                .add(status);
+        return page;
+    }
+
+    private Widget createCodePage() {
+        Label status = new Label("Tab indents, Shift+Tab outdents, Ctrl+Tab moves focus.");
+        status.setFontFamily(fontFamily);
+        status.setAutoSize(false);
+        status.setWrap(true);
+
+        InputCode code = new InputCode("package demo;\n\n"
+                + "public final class Example {\n"
+                + "    private static final int ANSWER = 42;\n\n"
+                + "    public static void main(String[] args) {\n"
+                + "        System.out.println(\"Hello, LixUI!\"); // comment\n"
+                + "        System.out.println(ANSWER);\n"
+                + "    }\n"
+                + "}\n");
+        code.setPlaceholder("// Write Java code...");
+        code.setGrow(1);
+        code.setOnChange(value -> {
+            String raw = code.rawText();
+            status.setText("Characters: " + raw.codePointCount(0, raw.length())
+                    + "    Lines: " + (raw.chars().filter(character -> character == '\n')
+                    .count() + 1));
+        });
+        code.setOnSubmit(() -> status.setText("Submitted with Ctrl+Enter."));
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(8);
+        page.add(sliderCaption("Code editor"))
+                .add(code)
                 .add(status);
         return page;
     }
