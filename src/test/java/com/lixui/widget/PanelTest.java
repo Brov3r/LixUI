@@ -7,6 +7,7 @@ import com.lixui.render.DrawCommand;
 import com.lixui.render.DrawList;
 import com.lixui.render.ImageData;
 import com.lixui.render.MeshCommand;
+import com.lixui.render.MeshVertex;
 import com.lixui.render.RenderBackend;
 import com.lixui.render.RoundedRectCommand;
 import com.lixui.render.Texture;
@@ -19,6 +20,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PanelTest {
     private static final Viewport VIEWPORT = new Viewport(1600, 1200, 800, 600);
@@ -101,6 +103,32 @@ class PanelTest {
         MeshCommand border = assertInstanceOf(MeshCommand.class,
                 backend.lastDrawList.commands().get(1));
         return border.vertices().get(0).color();
+    }
+
+    @Test
+    void keepsTheBorderInsideBoundsSoClippingDoesNotCutItInHalf() {
+        RecordingBackend backend = new RecordingBackend();
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
+        manager.resize(VIEWPORT);
+        Panel panel = new Panel();
+        panel.setBounds(PANEL_BOUNDS);
+        panel.setClipToBounds(true);
+        manager.add(panel);
+
+        manager.render();
+
+        MeshCommand border = assertInstanceOf(MeshCommand.class,
+                backend.lastDrawList.commands().get(1));
+        for (MeshVertex vertex : border.vertices()) {
+            assertTrue(vertex.x() >= PANEL_BOUNDS.x() && vertex.x() <= PANEL_BOUNDS.right(),
+                    "x=" + vertex.x());
+            assertTrue(vertex.y() >= PANEL_BOUNDS.y() && vertex.y() <= PANEL_BOUNDS.bottom(),
+                    "y=" + vertex.y());
+        }
+        assertEquals(PANEL_BOUNDS.x(), border.bounds().x(), 0.001f);
+        assertEquals(PANEL_BOUNDS.y(), border.bounds().y(), 0.001f);
+        assertEquals(PANEL_BOUNDS.width(), border.bounds().width(), 0.001f);
+        assertEquals(PANEL_BOUNDS.height(), border.bounds().height(), 0.001f);
     }
 
     @Test

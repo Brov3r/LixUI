@@ -2,6 +2,7 @@ package com.lixui.widget;
 
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
+import com.lixui.graphics.Color;
 import com.lixui.graphics.Paint;
 import com.lixui.render.RenderManager;
 import com.lixui.theme.WidgetState;
@@ -64,6 +65,7 @@ public class Panel extends Widget {
 
     /**
      * Paints the panel background and border in the current interaction state.
+     * The border is drawn inside the panel bounds, so a clipping container does not cut it in half.
      *
      * @param renderer drawing manager for the current frame
      * @param frame timing information for the current frame
@@ -76,19 +78,41 @@ public class Panel extends Widget {
         }
         WidgetState state = state();
         WidgetState borderState = borderState(state);
+        float borderWidth = style.borderWidth();
         if (corners == null) {
             renderer.roundedRect(localBounds(), style.cornerRadius(), style.background(state));
-            if (style.borderWidth() > 0) {
-                renderer.strokeRoundedRect(localBounds(), style.cornerRadius(), style.borderWidth(),
-                        Paint.solid(style.border(borderState)));
-            }
+            drawBorder(renderer, localBounds(), style.cornerRadius(), borderWidth,
+                    style.border(borderState));
             return;
         }
-        List<Point> outline = outline(corners);
+        List<Point> outline = outline(corners, localBounds());
         renderer.fillPolygon(outline, Paint.solid(style.background(state)));
-        if (style.borderWidth() > 0) {
-            renderer.strokePolygon(outline, style.borderWidth(), Paint.solid(style.border(borderState)));
+        if (borderWidth > 0) {
+            float inset = borderWidth / 2;
+            Rect inner = inset(localBounds(), inset);
+            if (!inner.isEmpty()) {
+                renderer.strokePolygon(outline(corners.shrink(inset), inner), borderWidth,
+                        Paint.solid(style.border(borderState)));
+            }
         }
+    }
+
+    private static void drawBorder(RenderManager renderer, Rect bounds, float radius,
+                                   float width, Color color) {
+        if (width <= 0) {
+            return;
+        }
+        Rect stroke = inset(bounds, width / 2);
+        if (stroke.isEmpty()) {
+            return;
+        }
+        renderer.strokeRoundedRect(stroke, Math.max(0, radius - width / 2), width, Paint.solid(color));
+    }
+
+    private static Rect inset(Rect bounds, float amount) {
+        return new Rect(bounds.x() + amount, bounds.y() + amount,
+                Math.max(0, bounds.width() - amount * 2),
+                Math.max(0, bounds.height() - amount * 2));
     }
 
     private WidgetState borderState(WidgetState state) {
@@ -96,8 +120,7 @@ public class Panel extends Widget {
                 ? WidgetState.NORMAL : state;
     }
 
-    private List<Point> outline(Corners radii) {
-        Rect bounds = localBounds();
+    private static List<Point> outline(Corners radii, Rect bounds) {
         float limit = Math.min(bounds.width(), bounds.height()) / 2;
         float topLeft = Math.min(radii.topLeft(), limit);
         float topRight = Math.min(radii.topRight(), limit);
@@ -196,6 +219,11 @@ public class Panel extends Widget {
             if (!Float.isFinite(radius) || radius < 0) {
                 throw new IllegalArgumentException(name + " corner radius must be finite and non-negative.");
             }
+        }
+
+        private Corners shrink(float amount) {
+            return new Corners(Math.max(0, topLeft - amount), Math.max(0, topRight - amount),
+                    Math.max(0, bottomRight - amount), Math.max(0, bottomLeft - amount));
         }
     }
 }
