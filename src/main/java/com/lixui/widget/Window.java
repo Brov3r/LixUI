@@ -4,6 +4,7 @@ import com.lixui.animation.Animation;
 import com.lixui.animation.Animator;
 import com.lixui.animation.Easing;
 import com.lixui.geometry.Rect;
+import com.lixui.geometry.Size;
 import com.lixui.graphics.Color;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
@@ -498,6 +499,20 @@ public class Window extends ScrollPanel {
     }
 
     /**
+     * Measures the content with the header and padding already applied, so an auto-sized window
+     * wraps its body and reports the header height while collapsed.
+     *
+     * @param constraints available and required dimensions
+     * @return the natural window size
+     */
+    @Override
+    protected Size onMeasure(LayoutConstraints constraints) {
+        updateContentInsets();
+        Size measured = super.onMeasure(constraints);
+        return collapsed ? new Size(measured.width(), headerHeight) : measured;
+    }
+
+    /**
      * Lays out the header, body and resize handle.
      */
     @Override
@@ -505,9 +520,7 @@ public class Window extends ScrollPanel {
         if (!animatingHeight && !collapsed && bounds().height() > headerHeight) {
             expandedHeight = bounds().height();
         }
-        setContentInsets(headerHeight + contentPaddingTop, contentPaddingRight,
-                contentPaddingBottom, contentPaddingLeft);
-        setScrollBarInsets(0, RESIZE_SIZE, RESIZE_SIZE, 0);
+        updateContentInsets();
         setScrollBarsSuppressed(collapsed);
         super.onLayout();
         header.setBounds(new Rect(0, 0, bounds().width(), headerHeight));
@@ -531,6 +544,12 @@ public class Window extends ScrollPanel {
     @Override
     protected boolean onPointerScroll(float x, float y, float deltaX, float deltaY) {
         return !collapsed && super.onPointerScroll(x, y, deltaX, deltaY);
+    }
+
+    private void updateContentInsets() {
+        setContentInsets(headerHeight + contentPaddingTop, contentPaddingRight,
+                contentPaddingBottom, contentPaddingLeft);
+        setScrollBarInsets(0, RESIZE_SIZE, RESIZE_SIZE, 0);
     }
 
     private void updatePinnedHover() {

@@ -49,6 +49,8 @@ public abstract class Widget {
     private boolean focusable;
     private boolean focusScope;
     private boolean focusOutlineEnabled = true;
+    private boolean autoSize;
+    private boolean fillViewport;
     private boolean hovered;
     private boolean pressed;
     private boolean focused;
@@ -257,15 +259,66 @@ public abstract class Widget {
     }
 
     /**
+     * Reports whether this widget sizes itself to its measured content.
+     *
+     * @return true when auto-sizing is enabled
+     */
+    public final boolean isAutoSize() {
+        return autoSize;
+    }
+
+    /**
+     * Enables or disables sizing this widget to its measured content.
+     * When enabled, {@link #layout(Rect)} keeps the assigned position but replaces the size with the
+     * result of {@link #measure(LayoutConstraints)}, clamped to the assigned size. Widgets whose
+     * natural size already follows their content, such as {@link Box} and {@link DockPanel}, wrap
+     * their children without manual bounds; the default widget measurement keeps the current size,
+     * so the flag has no effect there.
+     *
+     * @param autoSize true to size the widget to its content during layout
+     */
+    public final void setAutoSize(boolean autoSize) {
+        this.autoSize = autoSize;
+    }
+
+    /**
+     * Reports whether this top-level widget fills the viewport.
+     *
+     * @return true when the widget is laid out over the whole viewport
+     */
+    public final boolean isFillViewport() {
+        return fillViewport;
+    }
+
+    /**
+     * Enables or disables filling the viewport when this widget is a top-level widget.
+     * {@link WidgetManager#layout()} lays a filling widget out at the viewport origin with the
+     * viewport size, so it follows window resizes without manual bounds. Nested widgets ignore the
+     * flag because their parent assigns their bounds.
+     *
+     * @param fillViewport true to lay this widget out over the viewport
+     */
+    public final void setFillViewport(boolean fillViewport) {
+        this.fillViewport = fillViewport;
+    }
+
+    /**
      * Assigns bounds in the parent coordinate space and lays out this widget.
-     * The widget itself keeps the supplied size; children are arranged by
-     * {@link #onLayout()} if the subclass overrides it.
+     * The widget itself keeps the supplied size unless {@link #isAutoSize()} is enabled, in which
+     * case its measured content size is used and the supplied position is preserved. Children are
+     * arranged by {@link #onLayout()} if the subclass overrides it.
      *
      * @param bounds new bounds in logical UI units
      * @throws NullPointerException if {@code bounds} is null
      */
     public final void layout(Rect bounds) {
-        setBounds(bounds);
+        Objects.requireNonNull(bounds, "bounds");
+        if (autoSize && !fillViewport) {
+            Size natural = measure(LayoutConstraints.loose(bounds.width(), bounds.height()));
+            setBounds(new Rect(bounds.x(), bounds.y(), natural.width(), natural.height()));
+        } else {
+            setBounds(bounds);
+        }
         onLayout();
     }
 

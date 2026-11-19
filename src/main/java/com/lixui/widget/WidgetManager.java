@@ -282,16 +282,26 @@ public final class WidgetManager implements AutoCloseable {
 
     /**
      * Runs a layout pass over every top-level widget and its subtree.
-     * Each top-level widget keeps its current position and size, while containers rearrange their
-     * children through {@link Widget#layout(Rect)}.
+     * Top-level widgets with {@link Widget#isFillViewport()} cover the viewport, auto-sized widgets
+     * are measured against it at their current position, and all others keep their current bounds.
+     * Containers rearrange their children through {@link Widget#layout(Rect)}.
      * {@link #render()} calls this method automatically before drawing.
      *
      * @throws IllegalStateException if the manager is closed
      */
     public void layout() {
         ensureOpen();
+        Rect viewport = renderer.viewport();
         for (Widget widget : widgetSnapshot()) {
-            if (widget.context() == context) {
+            if (widget.context() != context) {
+                continue;
+            }
+            if (!viewport.isEmpty() && widget.isFillViewport()) {
+                widget.layout(viewport);
+            } else if (!viewport.isEmpty() && widget.isAutoSize()) {
+                widget.layout(new Rect(widget.bounds().x(), widget.bounds().y(),
+                        viewport.width(), viewport.height()));
+            } else {
                 widget.layout(widget.bounds());
             }
         }
@@ -453,8 +463,7 @@ public final class WidgetManager implements AutoCloseable {
         }
         for (int index = widgets.size() - 1; index >= 0; index--) {
             Widget widget = widgets.get(index);
-            if (widget.isVisible() && widget.isEnabled()
-                    && widget.contains(x - widget.bounds().x(), y - widget.bounds().y())) {
+            if (widget.hitTest(x - widget.bounds().x(), y - widget.bounds().y()) != null) {
                 return true;
             }
         }

@@ -147,6 +147,27 @@ class WindowTest {
     }
 
     @Test
+    void autoSizeWrapsTheBodyAndReportsTheHeaderWhenCollapsed() {
+        try (WidgetManager manager = manager()) {
+            Window window = new Window();
+            Widget content = new Widget() { };
+            content.setBounds(new Rect(0, 0, 200, 100));
+            window.setContent(content);
+            window.setAutoSize(true);
+            manager.add(window);
+
+            manager.layout();
+
+            assertEquals(200, window.bounds().width(), 0.001f);
+            assertEquals(window.headerHeight() + 100, window.bounds().height(), 0.001f);
+
+            window.setCollapsed(true);
+            manager.layout();
+            assertEquals(window.headerHeight(), window.bounds().height(), 0.001f);
+        }
+    }
+
+    @Test
     void movesTheWindowFromTheHeader() {
         WidgetManager manager = manager();
         Window window = createWindow(manager);

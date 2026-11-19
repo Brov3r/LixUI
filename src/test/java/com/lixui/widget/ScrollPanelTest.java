@@ -159,6 +159,24 @@ class ScrollPanelTest {
     }
 
     @Test
+    void autoSizeMeasuresTheContentAndInsets() {
+        WidgetManager manager = new WidgetManager(new InputState(), new RecordingBackend());
+        manager.resize(VIEWPORT);
+        ScrollPanel panel = new ScrollPanel();
+        panel.setContentInsets(5, 6, 7, 8);
+        Widget content = new Widget() { };
+        content.setBounds(new Rect(0, 0, 120, 80));
+        panel.setContent(content);
+        panel.setAutoSize(true);
+        manager.add(panel);
+
+        manager.layout();
+
+        assertEquals(134, panel.bounds().width(), 0.001f);
+        assertEquals(92, panel.bounds().height(), 0.001f);
+    }
+
+    @Test
     void exposesScrollRangesAndAppliesTheContentOffset() {
         RecordingBackend backend = new RecordingBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);

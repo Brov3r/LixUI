@@ -351,6 +351,25 @@ public class ScrollPanel extends Panel {
     }
 
     /**
+     * Measures the unclipped content plus the content insets, so an auto-sized panel wraps its
+     * content instead of reserving the scrollbar thickness.
+     *
+     * @param constraints available and required dimensions
+     * @return the natural panel size
+     */
+    @Override
+    protected Size onMeasure(LayoutConstraints constraints) {
+        float availableWidth = Math.max(0,
+                constraints.maxWidth() - contentInsetLeft - contentInsetRight);
+        float availableHeight = Math.max(0,
+                constraints.maxHeight() - contentInsetTop - contentInsetBottom);
+        Size contentSize = content == null ? new Size(0, 0)
+                : content.measure(LayoutConstraints.loose(availableWidth, availableHeight));
+        return new Size(contentSize.width() + contentInsetLeft + contentInsetRight,
+                contentSize.height() + contentInsetTop + contentInsetBottom);
+    }
+
+    /**
      * Lays out the content and positions the scrollbars.
      */
     @Override
