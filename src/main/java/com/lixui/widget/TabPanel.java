@@ -11,6 +11,7 @@ import com.lixui.graphics.Paint;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
 import com.lixui.platform.Cursor;
+import com.lixui.render.ImageStyle;
 import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
 import com.lixui.text.Font;
@@ -52,8 +53,8 @@ public class TabPanel extends Panel {
     private static final float TAB_INSET = 2;
     private static final float TITLE_SLACK = 2;
     private static final float HOVER_FILL_ALPHA = 0.1f;
-    private static final float ACTIVE_FILL_ALPHA = 0.22f;
-    private static final float ACTIVE_OUTLINE_ALPHA = 0.45f;
+    private static final float ACTIVE_FILL_ALPHA = 0.4f;
+    private static final float ACTIVE_OUTLINE_ALPHA = 0.55f;
     private static final float SCROLL_SECONDS = 0.15f;
     private static final float WHEEL_STEP = 48;
     private static final float DRAG_EDGE = 18;
@@ -71,6 +72,7 @@ public class TabPanel extends Panel {
     private float tabMaxWidth = DEFAULT_MAX_TAB_WIDTH;
     private float tabPadding = DEFAULT_TAB_PADDING;
     private float iconSize = DEFAULT_ICON_SIZE;
+    private ImageStyle iconStyle = ImageStyle.ICON;
     private float contentPadding;
     private Consumer<Tab> onChange;
     private Consumer<Tab> onClose;
@@ -492,6 +494,26 @@ public class TabPanel extends Panel {
             throw new IllegalArgumentException("Icon size must be finite and positive.");
         }
         this.iconSize = iconSize;
+    }
+
+    /**
+     * Returns how tab icons are fitted into their square slots.
+     *
+     * @return the tab icon placement style
+     */
+    public ImageStyle iconStyle() {
+        return iconStyle;
+    }
+
+    /**
+     * Sets how tab icons are fitted into their square slots.
+     * The default preserves the icon aspect ratio and centers it.
+     *
+     * @param iconStyle tab icon placement style
+     * @throws NullPointerException if {@code iconStyle} is null
+     */
+    public void setIconStyle(ImageStyle iconStyle) {
+        this.iconStyle = Objects.requireNonNull(iconStyle, "iconStyle");
     }
 
     /**
@@ -1117,7 +1139,7 @@ public class TabPanel extends Panel {
             if (iconWidth > 0) {
                 float iconY = TAB_INSET + (cellHeight - iconSize) / 2;
                 renderer.image(tab.icon(), new Rect(iconX, iconY, iconSize, iconSize),
-                        0, FULL_UV, textColor);
+                        FULL_UV, iconStyle, 0, textColor);
             }
             if (textWidth > 0) {
                 renderer.text(font, tab.title(), textX, cellHeight / 2 + TAB_INSET, textColor,

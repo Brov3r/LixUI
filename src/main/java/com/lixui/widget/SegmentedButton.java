@@ -6,6 +6,7 @@ import com.lixui.graphics.Color;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
 import com.lixui.platform.Cursor;
+import com.lixui.render.ImageStyle;
 import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
 import com.lixui.text.Font;
@@ -30,12 +31,18 @@ public class SegmentedButton extends Panel {
     private static final float DEFAULT_SEGMENT_PADDING = 12;
     private static final float DEFAULT_ICON_SIZE = 16;
     private static final float DEFAULT_ICON_GAP = 6;
+    private static final float SELECTION_FILL_ALPHA = 0.4f;
+    private static final float SELECTION_ANIMATION_RATE = 16;
+    private static final float ANIMATION_SNAP = 0.001f;
+    private static final float LIGHT_SURFACE_LUMINANCE = 0.5f;
+    private static final float LIGHT_LABEL_DARKENING = 0.55f;
     private static final Rect FULL_UV = new Rect(0, 0, 1, 1);
 
     private final List<Segment> segments = new ArrayList<>();
     private float segmentPadding = DEFAULT_SEGMENT_PADDING;
     private float iconSize = DEFAULT_ICON_SIZE;
     private float iconGap = DEFAULT_ICON_GAP;
+    private ImageStyle iconStyle = ImageStyle.ICON;
     /**
      * How clicking a segment changes the selection.
      */
@@ -56,6 +63,7 @@ public class SegmentedButton extends Panel {
     private IntConsumer onSelectionChange;
     private float[] segmentStarts = new float[0];
     private float[] segmentWidths = new float[0];
+    private boolean initialFrame = true;
 
     /**
      * Creates an empty segmented button.
@@ -352,6 +360,26 @@ public class SegmentedButton extends Panel {
     }
 
     /**
+     * Returns how segment icons are fitted into their square slots.
+     *
+     * @return the segment icon placement style
+     */
+    public final ImageStyle iconStyle() {
+        return iconStyle;
+    }
+
+    /**
+     * Sets how segment icons are fitted into their square slots.
+     * The default preserves the icon aspect ratio and centers it.
+     *
+     * @param iconStyle segment icon placement style
+     * @throws NullPointerException if {@code iconStyle} is null
+     */
+    public final void setIconStyle(ImageStyle iconStyle) {
+        this.iconStyle = Objects.requireNonNull(iconStyle, "iconStyle");
+    }
+
+    /**
      * Returns the gap between a segment icon and its label.
      *
      * @return the gap in logical UI units
@@ -438,27 +466,57 @@ public class SegmentedButton extends Panel {
 
     /**
      * Computes segment boundaries for hit testing and drawing.
+     * Extra space in a stretched control is shared equally, so every segment keeps the same
+     * padding around its content and around the dividers.
      */
     @Override
     protected void onLayout() {
         Font font = font();
         float width = localBounds().width();
-        float available = width;
+        int count = segments.size();
+        float[] naturalWidths = new float[count];
         float total = 0;
-        for (Segment segment : segments) {
-            total += segmentContentSize(segment, font).width() + segmentPadding * 2;
+        for (int index = 0; index < count; index++) {
+            float naturalWidth = segmentContentSize(segments.get(index), font).width()
+                    + segmentPadding * 2;
+            naturalWidths[index] = naturalWidth;
+            total += naturalWidth;
         }
-        float scale = total > 0 && total < available ? available / total : 1;
-        segmentStarts = new float[segments.size()];
-        segmentWidths = new float[segments.size()];
+        float extra = count == 0 ? 0 : Math.max(0, width - total) / count;
+        segmentStarts = new float[count];
+        segmentWidths = new float[count];
         float position = 0;
-        for (int index = 0; index < segments.size(); index++) {
-            float segmentWidth = (segmentContentSize(segments.get(index), font).width()
-                    + segmentPadding * 2) * scale;
+        for (int index = 0; index < count; index++) {
+            float segmentWidth = naturalWidths[index] + extra;
             segmentStarts[index] = position;
             segmentWidths[index] = segmentWidth;
             position += segmentWidth;
         }
+    }
+
+    Rect segmentBounds(int index) {
+        if (index < 0 || index >= segments.size()) {
+            throw new IllegalArgumentException("Segment index is out of range.");
+        }
+        return new Rect(segmentStarts[index], 0, segmentWidths[index], localBounds().height());
+    }
+
+    /**
+     * Advances the selection fade of every segment.
+     * The first frame applies the current selection instantly so initial state does not animate in.
+     *
+     * @param frame timing information for the current frame
+     */
+    @Override
+    protected void onUpdate(FrameInfo frame) {
+        float blend = initialFrame || frame.deltaSeconds() <= 0
+                ? 1 : 1 - (float) Math.exp(-SELECTION_ANIMATION_RATE * frame.deltaSeconds());
+        for (int index = 0; index < segments.size(); index++) {
+            Segment segment = segments.get(index);
+            float target = selectedIndices.contains(index) ? 1 : 0;
+            segment.selectionAmount = approach(segment.selectionAmount, target, blend);
+        }
+        initialFrame = false;
     }
 
     /**
@@ -480,8 +538,7 @@ public class SegmentedButton extends Panel {
         }
         Font font = font();
         float height = localBounds().height();
-        drawSelection(renderer, theme, height);
-        drawSegmentHighlight(renderer, style, height);
+        drawSegmentBackgrounds(renderer, theme, style, height);
         float dividerInset = height * 0.2f;
         for (int index = 1; index < segments.size(); index++) {
             renderer.rect(new Rect(segmentStarts[index], dividerInset, 1,
@@ -501,7 +558,7 @@ public class SegmentedButton extends Panel {
             if (hasIcon) {
                 renderer.image(segment.icon,
                         new Rect(startX, centerY - iconSize / 2, iconSize, iconSize),
-                        0, FULL_UV, color);
+                        FULL_UV, iconStyle, 0, color);
             }
             if (hasText) {
                 renderer.text(font, segment.text, textX, centerY, color,
@@ -528,44 +585,42 @@ public class SegmentedButton extends Panel {
         }
     }
 
-    private void drawSelection(RenderManager renderer, Theme theme, float height) {
+    private void drawSegmentBackgrounds(RenderManager renderer, Theme theme, WidgetStyle style,
+                                        float height) {
         if (!isEnabled()) {
             return;
         }
-        float radius = Math.min(context().theme().controlStyle().cornerRadius(), height / 2);
-        for (int index : selectedIndices) {
-            if (index < 0 || index >= segments.size()) {
+        int activeIndex = pressedIndex >= 0 ? pressedIndex : hoveredIndex;
+        float radius = Math.min(style.cornerRadius(), height / 2);
+        for (int index = 0; index < segments.size(); index++) {
+            Segment segment = segments.get(index);
+            if (!segment.enabled()) {
                 continue;
             }
-            Rect highlight = new Rect(segmentStarts[index] + 2, 2,
-                    Math.max(0, segmentWidths[index] - 4), Math.max(0, height - 4));
+            Rect highlight = segmentHighlight(index, height);
             if (highlight.isEmpty()) {
                 continue;
             }
-            renderer.roundedRect(highlight,
-                    Math.min(radius, Math.min(highlight.width(), highlight.height()) / 2),
-                    theme.primary().withAlpha(0.22f));
+            float highlightRadius = Math.min(radius,
+                    Math.min(highlight.width(), highlight.height()) / 2);
+            if (index == activeIndex) {
+                WidgetState state = pressedIndex == index
+                        ? WidgetState.PRESSED : WidgetState.HOVERED;
+                renderer.roundedRect(highlight, highlightRadius, style.background(state));
+            }
+            // Drawn after the interaction feedback so hovering or pressing never hides the accent.
+            if (segment.selectionAmount > ANIMATION_SNAP) {
+                renderer.roundedRect(highlight, highlightRadius,
+                        theme.primary().withAlpha(SELECTION_FILL_ALPHA * segment.selectionAmount));
+            }
         }
     }
 
-    private void drawSegmentHighlight(RenderManager renderer, WidgetStyle style, float height) {
-        if (!isEnabled()) {
-            return;
-        }
-        int index = pressedIndex >= 0 ? pressedIndex : hoveredIndex;
-        if (index < 0 || index >= segments.size() || !segments.get(index).enabled()) {
-            return;
-        }
-        float width = segmentWidths[index];
-        Rect highlight = new Rect(segmentStarts[index] + 2, 2,
-                Math.max(0, width - 4), Math.max(0, height - 4));
-        if (highlight.isEmpty()) {
-            return;
-        }
-        WidgetState state = pressedIndex == index ? WidgetState.PRESSED : WidgetState.HOVERED;
-        float radius = Math.min(style.cornerRadius(),
-                Math.min(highlight.width(), highlight.height()) / 2);
-        renderer.roundedRect(highlight, radius, style.background(state));
+    private Rect segmentHighlight(int index, float height) {
+        // Interior segments start one pixel later so the divider keeps two pixels on both sides.
+        float leftInset = index == 0 ? 2 : 3;
+        return new Rect(segmentStarts[index] + leftInset, 2,
+                Math.max(0, segmentWidths[index] - leftInset - 2), Math.max(0, height - 4));
     }
 
     /**
@@ -681,13 +736,47 @@ public class SegmentedButton extends Panel {
         if (!segment.enabled || !isEnabled()) {
             return style.text(WidgetState.DISABLED);
         }
-        if (selectedIndices.contains(index)) {
-            return context().theme().primary();
+        Theme theme = context().theme();
+        Color idle = index == hoveredIndex && isHovered()
+                ? style.text(WidgetState.NORMAL) : theme.textMuted();
+        return blend(idle, selectionLabelColor(theme), segment.selectionAmount);
+    }
+
+    /**
+     * Returns the label color of a selected segment.
+     * On light surfaces the accent is darkened so the label stays readable.
+     *
+     * @param theme current theme
+     * @return the selected segment label color
+     */
+    private Color selectionLabelColor(Theme theme) {
+        Color primary = theme.primary();
+        if (luminance(theme.surface()) < LIGHT_SURFACE_LUMINANCE) {
+            return primary;
         }
-        if (index == hoveredIndex && isHovered()) {
-            return style.text(WidgetState.NORMAL);
+        return blend(primary, theme.text(), LIGHT_LABEL_DARKENING);
+    }
+
+    private static float luminance(Color color) {
+        return color.r() * 0.299f + color.g() * 0.587f + color.b() * 0.114f;
+    }
+
+    private static float approach(float current, float target, float blend) {
+        float next = current + (target - current) * blend;
+        return Math.abs(target - next) < ANIMATION_SNAP ? target : next;
+    }
+
+    private static Color blend(Color from, Color to, float amount) {
+        if (amount <= 0) {
+            return from;
         }
-        return context().theme().textMuted();
+        if (amount >= 1) {
+            return to;
+        }
+        return new Color(from.r() + (to.r() - from.r()) * amount,
+                from.g() + (to.g() - from.g()) * amount,
+                from.b() + (to.b() - from.b()) * amount,
+                from.a() + (to.a() - from.a()) * amount);
     }
 
     private Size segmentContentSize(Segment segment, Font font) {
@@ -711,6 +800,7 @@ public class SegmentedButton extends Panel {
         private Runnable action;
         private Runnable soundPlayer;
         private boolean enabled = true;
+        private float selectionAmount;
 
         private Segment(String text, Texture icon) {
             this.text = Objects.requireNonNull(text, "text");

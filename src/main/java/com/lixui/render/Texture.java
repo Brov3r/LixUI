@@ -19,4 +19,14 @@ public interface Texture {
      * @return the positive texture height
      */
     int height();
+
+    /**
+     * Returns the sampling settings of this texture.
+     * Wrapped host textures that do not expose sampling settings report {@link TextureOptions#DEFAULT}.
+     *
+     * @return the texture sampling options
+     */
+    default TextureOptions options() {
+        return TextureOptions.DEFAULT;
+    }
 }

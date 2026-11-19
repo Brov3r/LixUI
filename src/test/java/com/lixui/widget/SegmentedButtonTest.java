@@ -13,9 +13,13 @@ import com.lixui.render.Viewport;
 import com.lixui.render.ImageData;
 import com.lixui.render.Texture;
 import com.lixui.render.command.RoundedRectCommand;
+import com.lixui.render.command.TextCommand;
+import com.lixui.text.FontData;
+import com.lixui.text.SystemFonts;
 import com.lixui.theme.Theme;
 import com.lixui.theme.WidgetState;
 import com.lixui.widget.testsupport.TestBackend;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -124,6 +128,158 @@ class SegmentedButtonTest {
             assertTrue(hasRoundedColor(backend, theme.controlStyle()
                     .background(WidgetState.PRESSED)));
             manager.handle(new PointerReleased(90, 16, MouseButton.LEFT, Modifiers.NONE));
+        }
+    }
+
+    @Test
+    void animatesTheSelectionAndKeepsTheAccentWhileHoveredOrPressed() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            Theme theme = manager.context().theme();
+            Color accent = theme.primary().withAlpha(0.4f);
+            SegmentedButton button = new SegmentedButton();
+            button.setBounds(new Rect(0, 0, 180, 32));
+            button.setSelectionMode(SegmentedButton.SelectionMode.SINGLE);
+            button.addSegment("One");
+            button.addSegment("Two");
+            button.addSegment("Three");
+            manager.add(button);
+            manager.update(0.016f);
+
+            button.setSelectedIndex(0);
+            manager.update(0.016f);
+            manager.render();
+            assertFalse(hasRoundedColor(backend, accent));
+
+            advance(manager, 120);
+            manager.render();
+            assertTrue(hasRoundedColor(backend, accent));
+
+            manager.handle(new PointerMoved(20, 16));
+            manager.render();
+            int hoveredBackground = roundedColorIndex(backend,
+                    theme.controlStyle().background(WidgetState.HOVERED));
+            assertTrue(hoveredBackground >= 0);
+            assertTrue(roundedColorIndex(backend, accent) > hoveredBackground);
+
+            manager.handle(new PointerPressed(20, 16, MouseButton.LEFT, Modifiers.NONE));
+            manager.render();
+            int pressedBackground = roundedColorIndex(backend,
+                    theme.controlStyle().background(WidgetState.PRESSED));
+            assertTrue(pressedBackground >= 0);
+            assertTrue(roundedColorIndex(backend, accent) > pressedBackground);
+            manager.handle(new PointerReleased(20, 16, MouseButton.LEFT, Modifiers.NONE));
+
+            button.setSelectedIndex(2);
+            manager.update(0.016f);
+            manager.render();
+            assertFalse(hasRoundedColor(backend, accent));
+
+            advance(manager, 120);
+            manager.render();
+            assertTrue(hasRoundedColor(backend, accent));
+        }
+    }
+
+    @Test
+    void keepsTheAccentFillAndDarkensTheSelectedLabelOnLightThemes() {
+        FontData data = SystemFonts.findDefault().orElse(null);
+        Assumptions.assumeTrue(data != null, "No readable system font is installed.");
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            manager.setTheme(Theme.light());
+            manager.setDefaultFont(manager.context().createFont(data, 16));
+            Theme theme = manager.context().theme();
+            SegmentedButton button = new SegmentedButton();
+            button.setBounds(new Rect(0, 0, 180, 32));
+            button.setSelectionMode(SegmentedButton.SelectionMode.SINGLE);
+            button.addSegment("One");
+            button.addSegment("Two");
+            button.setSelectedIndex(0);
+            manager.add(button);
+            manager.update(0.016f);
+            manager.render();
+
+            Color fill = theme.primary().withAlpha(0.4f);
+            assertTrue(hasRoundedColor(backend, fill));
+
+            TextCommand label = backend.lastDrawList().commands().stream()
+                    .filter(TextCommand.class::isInstance)
+                    .map(TextCommand.class::cast)
+                    .findFirst().orElseThrow();
+            Color labelColor = label.colors().getFirst();
+            assertTrue(luminance(labelColor) < luminance(theme.primary()));
+            assertFalse(labelColor.equals(theme.primary()));
+        }
+    }
+
+    @Test
+    void centersDividersBetweenSelectedSegments() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            Theme theme = manager.context().theme();
+            SegmentedButton button = new SegmentedButton();
+            button.setBounds(new Rect(0, 0, 180, 32));
+            button.setSelectionMode(SegmentedButton.SelectionMode.MULTIPLE);
+            button.addSegment("One");
+            button.addSegment("Two");
+            button.addSegment("Three");
+            for (int index = 0; index < 3; index++) {
+                button.setSelected(index, true);
+            }
+            manager.add(button);
+            manager.update(0.016f);
+            manager.render();
+
+            List<RoundedRectCommand> commands = backend.lastDrawList().commands().stream()
+                    .filter(RoundedRectCommand.class::isInstance)
+                    .map(RoundedRectCommand.class::cast)
+                    .toList();
+            Color accent = theme.primary().withAlpha(0.4f);
+            List<RoundedRectCommand> pills = commands.stream()
+                    .filter(command -> command.color().equals(accent))
+                    .toList();
+            List<RoundedRectCommand> dividers = commands.stream()
+                    .filter(command -> command.radius() == 0 && command.bounds().width() == 1)
+                    .toList();
+            assertEquals(2, dividers.size());
+            for (RoundedRectCommand divider : dividers) {
+                float dividerLeft = divider.bounds().x();
+                float dividerRight = divider.bounds().right();
+                float leftGap = dividerLeft - (float) pills.stream()
+                        .filter(pill -> pill.bounds().right() <= dividerLeft + 0.01f)
+                        .mapToDouble(pill -> pill.bounds().right())
+                        .max().orElseThrow();
+                float rightGap = (float) pills.stream()
+                        .filter(pill -> pill.bounds().x() >= dividerRight - 0.01f)
+                        .mapToDouble(pill -> pill.bounds().x())
+                        .min().orElseThrow() - dividerRight;
+                assertEquals(leftGap, rightGap, 0.01f);
+            }
+        }
+    }
+
+    @Test
+    void sharesExtraWidthEquallyBetweenStretchedSegments() {
+        FontData data = SystemFonts.findDefault().orElse(null);
+        Assumptions.assumeTrue(data != null, "No readable system font is installed.");
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            manager.setDefaultFont(manager.context().createFont(data, 16));
+            SegmentedButton button = new SegmentedButton();
+            button.setBounds(new Rect(0, 0, 600, 32));
+            button.addSegment("A");
+            button.addSegment("A much longer label");
+            button.addSegment("B");
+            manager.add(button);
+            manager.render();
+
+            float firstSlack = button.segmentBounds(0).width() - button.font().measure("A").width();
+            float secondSlack = button.segmentBounds(1).width()
+                    - button.font().measure("A much longer label").width();
+            float thirdSlack = button.segmentBounds(2).width() - button.font().measure("B").width();
+            assertEquals(firstSlack, secondSlack, 0.01f);
+            assertEquals(secondSlack, thirdSlack, 0.01f);
         }
     }
 
@@ -256,6 +412,27 @@ class SegmentedButtonTest {
         WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(VIEWPORT);
         return manager;
+    }
+
+    private static float luminance(Color color) {
+        return color.r() * 0.299f + color.g() * 0.587f + color.b() * 0.114f;
+    }
+
+    private static void advance(WidgetManager manager, int frames) {
+        for (int frame = 0; frame < frames; frame++) {
+            manager.update(0.016f);
+        }
+    }
+
+    private static int roundedColorIndex(TestBackend backend, Color color) {
+        var commands = backend.lastDrawList().commands();
+        for (int index = 0; index < commands.size(); index++) {
+            if (commands.get(index) instanceof RoundedRectCommand command
+                    && command.color().equals(color)) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     private static boolean hasRoundedColor(TestBackend backend, Color color) {

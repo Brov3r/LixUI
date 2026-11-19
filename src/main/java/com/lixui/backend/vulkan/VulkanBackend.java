@@ -20,6 +20,9 @@ import com.lixui.render.RenderBackend;
 import com.lixui.render.command.ShapeCommand;
 import com.lixui.render.command.TextCommand;
 import com.lixui.render.Texture;
+import com.lixui.render.TextureFilter;
+import com.lixui.render.TextureOptions;
+import com.lixui.render.TextureWrap;
 import com.lixui.render.Viewport;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -39,6 +42,7 @@ import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
 import org.lwjgl.vulkan.VkDevice;
 import org.lwjgl.vulkan.VkGraphicsPipelineCreateInfo;
+import org.lwjgl.vulkan.VkImageBlit;
 import org.lwjgl.vulkan.VkImageCreateInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier;
 import org.lwjgl.vulkan.VkImageViewCreateInfo;
@@ -75,7 +79,9 @@ import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.LongBuffer;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -104,9 +110,9 @@ public final class VulkanBackend implements RenderBackend {
     private final VkQueue queue;
     private final List<Batch> batches = new ArrayList<>();
     private final List<VulkanTexture> textures = new ArrayList<>();
+    private final Map<TextureOptions, Long> samplers = new LinkedHashMap<>();
     private long descriptorSetLayout;
     private long descriptorPool;
-    private long sampler;
     private long pipelineLayout;
     private long pipeline;
     private long maskIncrementPipeline;
@@ -156,7 +162,6 @@ public final class VulkanBackend implements RenderBackend {
             maskDecrementPipeline = createPipeline(renderPass, sampleCount, MaskAction.POP);
             uploadCommandPool = createUploadCommandPool(queueFamily);
             descriptorPool = createDescriptorPool();
-            sampler = createSampler();
             whiteTexture = (VulkanTexture) createTexture(new ImageData(1, 1, new byte[] {
                     (byte) 255, (byte) 255, (byte) 255, (byte) 255
             }));
@@ -206,7 +211,8 @@ public final class VulkanBackend implements RenderBackend {
     }
 
     /**
-     * Creates a device-local texture from RGBA8 image data and uploads it synchronously.
+     * Creates a device-local texture from RGBA8 image data with default sampling options and uploads
+     * it synchronously.
      *
      * @param image image data with a top-left origin
      * @return the created texture
@@ -215,9 +221,30 @@ public final class VulkanBackend implements RenderBackend {
      */
     @Override
     public Texture createTexture(ImageData image) {
+        return createTexture(image, TextureOptions.DEFAULT);
+    }
+
+    /**
+     * Creates a device-local texture from RGBA8 image data with explicit sampling options and uploads
+     * it synchronously. A mipmap chain is generated on the GPU when requested.
+     *
+     * @param image image data with a top-left origin
+     * @param options filtering, wrapping and mipmap settings applied to the texture
+     * @return the created texture
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalStateException if the texture or its descriptor cannot be created
+     */
+    @Override
+    public Texture createTexture(ImageData image, TextureOptions options) {
         Objects.requireNonNull(image, "image");
+        Objects.requireNonNull(options, "options");
         int width = image.width();
         int height = image.height();
+        int mipLevels = options.mipmaps() ? mipLevelCount(width, height) : 1;
+        int imageUsage = VK10.VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK10.VK_IMAGE_USAGE_SAMPLED_BIT;
+        if (mipLevels > 1) {
+            imageUsage |= VK10.VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        }
         long imageSize = (long) width * height * 4;
 
         BufferResource staging = createBuffer(imageSize,
@@ -240,11 +267,11 @@ public final class VulkanBackend implements RenderBackend {
                         .sType$Default()
                         .imageType(VK10.VK_IMAGE_TYPE_2D)
                         .format(VK10.VK_FORMAT_R8G8B8A8_UNORM)
-                        .mipLevels(1)
+                        .mipLevels(mipLevels)
                         .arrayLayers(1)
                         .samples(VK10.VK_SAMPLE_COUNT_1_BIT)
                         .tiling(VK10.VK_IMAGE_TILING_OPTIMAL)
-                        .usage(VK10.VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK10.VK_IMAGE_USAGE_SAMPLED_BIT)
+                        .usage(imageUsage)
                         .sharingMode(VK10.VK_SHARING_MODE_EXCLUSIVE)
                         .initialLayout(VK10.VK_IMAGE_LAYOUT_UNDEFINED);
                 imageInfo.extent().set(width, height, 1);
@@ -269,7 +296,7 @@ public final class VulkanBackend implements RenderBackend {
                         .format(VK10.VK_FORMAT_R8G8B8A8_UNORM);
                 viewInfo.subresourceRange()
                         .aspectMask(VK10.VK_IMAGE_ASPECT_COLOR_BIT)
-                        .levelCount(1)
+                        .levelCount(mipLevels)
                         .layerCount(1);
                 check(VK10.vkCreateImageView(device, viewInfo, null, result), "Create texture view");
                 imageView = result.get(0);
@@ -278,7 +305,8 @@ public final class VulkanBackend implements RenderBackend {
                 transitionImage(upload, imageHandle,
                         VK10.VK_IMAGE_LAYOUT_UNDEFINED, VK10.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                         0, VK10.VK_ACCESS_TRANSFER_WRITE_BIT,
-                        VK10.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK10.VK_PIPELINE_STAGE_TRANSFER_BIT);
+                        VK10.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK10.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        0, mipLevels);
 
                 VkBufferImageCopy.Buffer region = VkBufferImageCopy.calloc(1, stack);
                 region.get(0)
@@ -295,14 +323,19 @@ public final class VulkanBackend implements RenderBackend {
                 VK10.vkCmdCopyBufferToImage(upload, staging.buffer(), imageHandle,
                         VK10.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, region);
 
-                transitionImage(upload, imageHandle,
-                        VK10.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK10.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                        VK10.VK_ACCESS_TRANSFER_WRITE_BIT, VK10.VK_ACCESS_SHADER_READ_BIT,
-                        VK10.VK_PIPELINE_STAGE_TRANSFER_BIT, VK10.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+                if (mipLevels > 1) {
+                    generateMipmaps(upload, imageHandle, width, height, mipLevels);
+                } else {
+                    transitionImage(upload, imageHandle,
+                            VK10.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            VK10.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                            VK10.VK_ACCESS_TRANSFER_WRITE_BIT, VK10.VK_ACCESS_SHADER_READ_BIT,
+                            VK10.VK_PIPELINE_STAGE_TRANSFER_BIT, VK10.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+                }
                 endOneTime(upload);
 
                 descriptorSet = allocateDescriptorSet();
-                updateDescriptorSet(descriptorSet, imageView, sampler,
+                updateDescriptorSet(descriptorSet, imageView, sampler(options),
                         VK10.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
             }
         } catch (RuntimeException | Error exception) {
@@ -316,7 +349,7 @@ public final class VulkanBackend implements RenderBackend {
 
         destroyBuffer(staging);
         VulkanTexture texture = new VulkanTexture(imageHandle, imageView, imageMemory,
-                descriptorSet, width, height, true);
+                descriptorSet, width, height, true, options);
         textures.add(texture);
         return texture;
     }
@@ -333,7 +366,8 @@ public final class VulkanBackend implements RenderBackend {
      * @throws IllegalArgumentException if the image view or a dimension is not positive
      */
     public Texture wrapTexture(long imageView, int width, int height) {
-        return wrapTexture(imageView, sampler, VK10.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, width, height);
+        return wrapTexture(imageView, sampler(TextureOptions.DEFAULT),
+                VK10.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, width, height);
     }
 
     /**
@@ -350,16 +384,36 @@ public final class VulkanBackend implements RenderBackend {
      * @throws IllegalArgumentException if a handle or a dimension is not positive
      */
     public Texture wrapTexture(long imageView, long imageSampler, int imageLayout, int width, int height) {
+        return wrapTexture(imageView, imageSampler, imageLayout, width, height, TextureOptions.DEFAULT);
+    }
+
+    /**
+     * Wraps an existing Vulkan image view and sampler and records the sampling options associated
+     * with them. The backend never deletes the host image view or sampler.
+     *
+     * @param imageView host image view
+     * @param imageSampler sampler used to sample the image
+     * @param imageLayout current layout of the image
+     * @param width texture width in pixels
+     * @param height texture height in pixels
+     * @param options sampling options that describe the host sampler
+     * @return a non-owning texture handle
+     * @throws NullPointerException if {@code options} is null
+     * @throws IllegalArgumentException if a handle or a dimension is not positive
+     */
+    public Texture wrapTexture(long imageView, long imageSampler, int imageLayout, int width, int height,
+                               TextureOptions options) {
         if (imageView == VK10.VK_NULL_HANDLE || imageSampler == VK10.VK_NULL_HANDLE) {
             throw new IllegalArgumentException("Image view and sampler must be valid handles.");
         }
         if (width <= 0 || height <= 0) {
             throw new IllegalArgumentException("Texture dimensions must be positive.");
         }
+        Objects.requireNonNull(options, "options");
         long descriptorSet = allocateDescriptorSet();
         updateDescriptorSet(descriptorSet, imageView, imageSampler, imageLayout);
         VulkanTexture texture = new VulkanTexture(VK10.VK_NULL_HANDLE, imageView, VK10.VK_NULL_HANDLE,
-                descriptorSet, width, height, false);
+                descriptorSet, width, height, false, options);
         textures.add(texture);
         return texture;
     }
@@ -504,10 +558,10 @@ public final class VulkanBackend implements RenderBackend {
         }
         whiteTexture = null;
         destroyVertexBuffer();
-        if (sampler != VK10.VK_NULL_HANDLE) {
-            VK10.vkDestroySampler(device, sampler, null);
-            sampler = VK10.VK_NULL_HANDLE;
+        for (long cachedSampler : samplers.values()) {
+            VK10.vkDestroySampler(device, cachedSampler, null);
         }
+        samplers.clear();
         if (descriptorPool != VK10.VK_NULL_HANDLE) {
             VK10.vkDestroyDescriptorPool(device, descriptorPool, null);
             descriptorPool = VK10.VK_NULL_HANDLE;
@@ -818,15 +872,27 @@ public final class VulkanBackend implements RenderBackend {
         }
     }
 
-    private long createSampler() {
+    private long sampler(TextureOptions options) {
+        Long cached = samplers.get(options);
+        if (cached != null) {
+            return cached;
+        }
+        long created = createSampler(options);
+        samplers.put(options, created);
+        return created;
+    }
+
+    private long createSampler(TextureOptions options) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkSamplerCreateInfo info = VkSamplerCreateInfo.calloc(stack)
                     .sType$Default()
-                    .magFilter(VK10.VK_FILTER_LINEAR)
-                    .minFilter(VK10.VK_FILTER_LINEAR)
-                    .mipmapMode(VK10.VK_SAMPLER_MIPMAP_MODE_NEAREST)
-                    .addressModeU(VK10.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)
-                    .addressModeV(VK10.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)
+                    .magFilter(filter(options.filter()))
+                    .minFilter(filter(options.filter()))
+                    .mipmapMode(options.mipmaps()
+                            ? VK10.VK_SAMPLER_MIPMAP_MODE_LINEAR
+                            : VK10.VK_SAMPLER_MIPMAP_MODE_NEAREST)
+                    .addressModeU(addressMode(options.wrapU()))
+                    .addressModeV(addressMode(options.wrapV()))
                     .addressModeW(VK10.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)
                     .mipLodBias(0)
                     .anisotropyEnable(false)
@@ -834,13 +900,25 @@ public final class VulkanBackend implements RenderBackend {
                     .compareEnable(false)
                     .compareOp(VK10.VK_COMPARE_OP_ALWAYS)
                     .minLod(0)
-                    .maxLod(0)
+                    .maxLod(options.mipmaps() ? 1000.0f : 0)
                     .borderColor(VK10.VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK)
                     .unnormalizedCoordinates(false);
             LongBuffer result = stack.mallocLong(1);
             check(VK10.vkCreateSampler(device, info, null, result), "Create texture sampler");
             return result.get(0);
         }
+    }
+
+    private static int filter(TextureFilter filter) {
+        return filter == TextureFilter.NEAREST ? VK10.VK_FILTER_NEAREST : VK10.VK_FILTER_LINEAR;
+    }
+
+    private static int addressMode(TextureWrap wrap) {
+        return switch (wrap) {
+            case CLAMP -> VK10.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            case REPEAT -> VK10.VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            case MIRROR -> VK10.VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+        };
     }
 
     private long createShaderModule(ByteBuffer code) {
@@ -896,9 +974,62 @@ public final class VulkanBackend implements RenderBackend {
         }
     }
 
+    private void generateMipmaps(VkCommandBuffer command, long image, int width, int height, int mipLevels) {
+        for (int level = 1; level < mipLevels; level++) {
+            if (level == 1) {
+                transitionImage(command, image,
+                        VK10.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK10.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK10.VK_ACCESS_TRANSFER_WRITE_BIT, VK10.VK_ACCESS_TRANSFER_READ_BIT,
+                        VK10.VK_PIPELINE_STAGE_TRANSFER_BIT, VK10.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        level - 1, 1);
+            }
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                VkImageBlit.Buffer blit = VkImageBlit.calloc(1, stack);
+                blit.get(0).srcSubresource()
+                        .aspectMask(VK10.VK_IMAGE_ASPECT_COLOR_BIT)
+                        .mipLevel(level - 1)
+                        .baseArrayLayer(0)
+                        .layerCount(1);
+                blit.get(0).dstSubresource()
+                        .aspectMask(VK10.VK_IMAGE_ASPECT_COLOR_BIT)
+                        .mipLevel(level)
+                        .baseArrayLayer(0)
+                        .layerCount(1);
+                blit.get(0).srcOffsets(0).set(0, 0, 0);
+                blit.get(0).srcOffsets(1).set(
+                        Math.max(1, width >> (level - 1)), Math.max(1, height >> (level - 1)), 1);
+                blit.get(0).dstOffsets(0).set(0, 0, 0);
+                blit.get(0).dstOffsets(1).set(
+                        Math.max(1, width >> level), Math.max(1, height >> level), 1);
+                VK10.vkCmdBlitImage(command, image, VK10.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        image, VK10.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, blit, VK10.VK_FILTER_LINEAR);
+            }
+            transitionImage(command, image,
+                    VK10.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK10.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK10.VK_ACCESS_TRANSFER_WRITE_BIT, VK10.VK_ACCESS_TRANSFER_READ_BIT,
+                    VK10.VK_PIPELINE_STAGE_TRANSFER_BIT, VK10.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    level, 1);
+        }
+        transitionImage(command, image,
+                VK10.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK10.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK10.VK_ACCESS_TRANSFER_READ_BIT, VK10.VK_ACCESS_SHADER_READ_BIT,
+                VK10.VK_PIPELINE_STAGE_TRANSFER_BIT, VK10.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                0, mipLevels);
+    }
+
+    private static int mipLevelCount(int width, int height) {
+        return Integer.SIZE - Integer.numberOfLeadingZeros(Math.max(width, height));
+    }
+
     private void transitionImage(VkCommandBuffer command, long image,
                                  int oldLayout, int newLayout, int srcAccess, int dstAccess,
                                  int srcStage, int dstStage) {
+        transitionImage(command, image, oldLayout, newLayout, srcAccess, dstAccess, srcStage, dstStage, 0, 1);
+    }
+
+    private void transitionImage(VkCommandBuffer command, long image,
+                                 int oldLayout, int newLayout, int srcAccess, int dstAccess,
+                                 int srcStage, int dstStage, int baseMipLevel, int levelCount) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageMemoryBarrier.Buffer barrier = VkImageMemoryBarrier.calloc(1, stack);
             barrier.get(0)
@@ -912,7 +1043,8 @@ public final class VulkanBackend implements RenderBackend {
                     .image(image);
             barrier.get(0).subresourceRange()
                     .aspectMask(VK10.VK_IMAGE_ASPECT_COLOR_BIT)
-                    .levelCount(1)
+                    .baseMipLevel(baseMipLevel)
+                    .levelCount(levelCount)
                     .layerCount(1);
             VK10.vkCmdPipelineBarrier(command, srcStage, dstStage, 0, null, null, barrier);
         }

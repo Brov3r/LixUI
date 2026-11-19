@@ -4,6 +4,7 @@ import com.lixui.render.DrawList;
 import com.lixui.render.ImageData;
 import com.lixui.render.RenderBackend;
 import com.lixui.render.Texture;
+import com.lixui.render.TextureOptions;
 import com.lixui.render.Viewport;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
@@ -138,10 +139,27 @@ public final class OpenGlLayer implements RenderBackend {
      */
     @Override
     public Texture createTexture(ImageData image) {
+        return createTexture(image, TextureOptions.DEFAULT);
+    }
+
+    /**
+     * Uploads an icon or image with explicit sampling options while preserving the host's texture
+     * and pixel-unpack bindings.
+     *
+     * @param image straight-alpha RGBA8 source pixels
+     * @param options filtering, wrapping and mipmap settings applied to the texture
+     * @return the uploaded texture
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalStateException if the layer is closed
+     */
+    @Override
+    public Texture createTexture(ImageData image, TextureOptions options) {
         ensureOpen();
+        Objects.requireNonNull(image, "image");
+        Objects.requireNonNull(options, "options");
         try (OpenGlState state = new OpenGlState()) {
             state.prepareUpload();
-            return backend.createTexture(image);
+            return backend.createTexture(image, options);
         }
     }
 

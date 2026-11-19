@@ -1,5 +1,6 @@
 package com.lixui.render;
 
+import com.lixui.geometry.Insets;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
@@ -224,7 +225,7 @@ public final class DrawList {
      * @throws NullPointerException if {@code texture} or {@code bounds} is null
      */
     public void image(Texture texture, Rect bounds) {
-        image(texture, bounds, 0, FULL_UV, Color.WHITE, Transform.IDENTITY);
+        image(texture, bounds, 0, FULL_UV, Color.WHITE, Transform.IDENTITY, ImageStyle.FILL);
     }
 
     /**
@@ -238,7 +239,22 @@ public final class DrawList {
      * @throws NullPointerException if any argument is null
      */
     public void image(Texture texture, Rect bounds, Rect uv) {
-        image(texture, bounds, 0, uv, Color.WHITE, Transform.IDENTITY);
+        image(texture, bounds, 0, uv, Color.WHITE, Transform.IDENTITY, ImageStyle.FILL);
+    }
+
+    /**
+     * Appends a texture with an explicit layout style and no tint.
+     * The style controls aspect-preserving fits, anchoring and tiled repetition.
+     *
+     * @param texture the texture to draw
+     * @param bounds the destination rectangle
+     * @param uv the sampled texture region
+     * @param style placement and repetition settings
+     * @throws NullPointerException if any argument is null
+     * @throws IllegalArgumentException if the style repeats an axis clamped by the texture
+     */
+    public void image(Texture texture, Rect bounds, Rect uv, ImageStyle style) {
+        image(texture, bounds, 0, uv, Color.WHITE, Transform.IDENTITY, style);
     }
 
     /**
@@ -254,7 +270,7 @@ public final class DrawList {
      * @throws IllegalArgumentException if radius is non-finite or negative
      */
     public void image(Texture texture, Rect bounds, float radius, Rect uv, Color tint) {
-        image(texture, bounds, radius, uv, tint, Transform.IDENTITY);
+        image(texture, bounds, radius, uv, tint, Transform.IDENTITY, ImageStyle.FILL);
     }
 
     /**
@@ -271,10 +287,101 @@ public final class DrawList {
      * @throws NullPointerException if any reference argument is null
      * @throws IllegalArgumentException if radius is non-finite or negative
      */
+    public void image(Texture texture, Rect bounds, float radius, Rect uv, Color tint, Transform transform) {
+        image(texture, bounds, radius, uv, tint, transform, ImageStyle.FILL);
+    }
+
+    /**
+     * Appends a textured rounded rectangle with explicit layout and transform settings.
+     * The transform maps the resolved destination rectangle, so the corner radius and texture
+     * coordinates stay local. Commands with empty bounds or an empty clip are omitted.
+     *
+     * @param texture the texture to draw
+     * @param bounds the destination rectangle before {@code transform} is applied
+     * @param radius corner radius in logical UI units before {@code transform} is applied
+     * @param uv the sampled texture region
+     * @param tint straight-alpha tint multiplied with the sampled texel
+     * @param transform affine transform applied to the destination rectangle
+     * @param style placement and repetition settings
+     * @throws NullPointerException if any reference argument is null
+     * @throws IllegalArgumentException if radius is invalid or the style repeats a clamped axis
+     */
     public void image(Texture texture, Rect bounds, float radius, Rect uv, Color tint,
-                      Transform transform) {
+                      Transform transform, ImageStyle style) {
         Objects.requireNonNull(texture, "texture");
         Objects.requireNonNull(bounds, "bounds");
+        Objects.requireNonNull(uv, "uv");
+        Objects.requireNonNull(tint, "tint");
+        Objects.requireNonNull(transform, "transform");
+        Objects.requireNonNull(style, "style");
+        Rect clip = clips.peek();
+        if (bounds.isEmpty() || clip.isEmpty()) {
+            return;
+        }
+        if (ImageLayout.repeatsHorizontally(style.repeat())
+                && texture.options().wrapU() == TextureWrap.CLAMP) {
+            throw new IllegalArgumentException(
+                    "Horizontal repeat requires a texture created with a repeated wrap mode.");
+        }
+        if (ImageLayout.repeatsVertically(style.repeat())
+                && texture.options().wrapV() == TextureWrap.CLAMP) {
+            throw new IllegalArgumentException(
+                    "Vertical repeat requires a texture created with a repeated wrap mode.");
+        }
+        ImageLayout.ImageQuad quad = ImageLayout.resolve(
+                bounds, uv, texture.width(), texture.height(), style);
+        commands.add(new ImageCommand(quad.bounds(), radius, quad.uv(), texture, tint, clip, transform));
+    }
+
+    /**
+     * Appends a nine-patch texture with the full normalized UV range and no tint.
+     * Corners keep their source pixel size, edges stretch along one axis and the center stretches
+     * along both. Insets are measured in source pixels from the sampled region's edges.
+     *
+     * @param texture the texture to draw
+     * @param bounds the destination rectangle
+     * @param insets source pixel insets that separate corners from edges and center
+     * @throws NullPointerException if any argument is null
+     * @throws IllegalArgumentException if the insets leave no positive center region
+     */
+    public void ninePatch(Texture texture, Rect bounds, Insets insets) {
+        ninePatch(texture, bounds, insets, FULL_UV, Color.WHITE, Transform.IDENTITY);
+    }
+
+    /**
+     * Appends a nine-patch texture sampled from an explicit UV region without a tint.
+     *
+     * @param texture the texture to draw
+     * @param bounds the destination rectangle
+     * @param insets source pixel insets inside the sampled region
+     * @param uv the sampled texture region
+     * @throws NullPointerException if any argument is null
+     * @throws IllegalArgumentException if the insets leave no positive center region
+     */
+    public void ninePatch(Texture texture, Rect bounds, Insets insets, Rect uv) {
+        ninePatch(texture, bounds, insets, uv, Color.WHITE, Transform.IDENTITY);
+    }
+
+    /**
+     * Appends a nine-patch texture with an explicit tint using the current clip.
+     * Corners keep their source pixel size, edges stretch along one axis and the center stretches
+     * along both. Destinations smaller than the corner insets shrink every column or row
+     * proportionally instead of overlapping.
+     *
+     * @param texture the texture to draw
+     * @param bounds the destination rectangle before {@code transform} is applied
+     * @param insets source pixel insets inside the sampled region
+     * @param uv the sampled texture region
+     * @param tint straight-alpha tint multiplied with the sampled texels
+     * @param transform affine transform applied to every patch
+     * @throws NullPointerException if any reference argument is null
+     * @throws IllegalArgumentException if the insets leave no positive center region
+     */
+    public void ninePatch(Texture texture, Rect bounds, Insets insets, Rect uv, Color tint,
+                          Transform transform) {
+        Objects.requireNonNull(texture, "texture");
+        Objects.requireNonNull(bounds, "bounds");
+        Objects.requireNonNull(insets, "insets");
         Objects.requireNonNull(uv, "uv");
         Objects.requireNonNull(tint, "tint");
         Objects.requireNonNull(transform, "transform");
@@ -282,7 +389,10 @@ public final class DrawList {
         if (bounds.isEmpty() || clip.isEmpty()) {
             return;
         }
-        commands.add(new ImageCommand(bounds, radius, uv, texture, tint, clip, transform));
+        for (NinePatchLayout.Patch patch : NinePatchLayout.split(
+                bounds, uv, insets, texture.width(), texture.height())) {
+            commands.add(new ImageCommand(patch.bounds(), 0, patch.uv(), texture, tint, clip, transform));
+        }
     }
 
     /**

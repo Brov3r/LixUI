@@ -4,6 +4,7 @@ import com.lixui.render.DrawList;
 import com.lixui.render.ImageData;
 import com.lixui.render.RenderBackend;
 import com.lixui.render.Texture;
+import com.lixui.render.TextureOptions;
 import com.lixui.render.Viewport;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.VK10;
@@ -239,8 +240,24 @@ public final class VulkanLayer implements RenderBackend {
      */
     @Override
     public Texture createTexture(ImageData image) {
+        return createTexture(image, TextureOptions.DEFAULT);
+    }
+
+    /**
+     * Uploads a straight-alpha texture owned by this layer with explicit sampling options.
+     *
+     * @param image source RGBA8 pixels
+     * @param options filtering, wrapping and mipmap settings applied to the texture
+     * @return the uploaded texture
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalStateException if the layer is closed or uploading fails
+     */
+    @Override
+    public Texture createTexture(ImageData image, TextureOptions options) {
         ensureOpen();
-        return backend.createTexture(image);
+        Objects.requireNonNull(image, "image");
+        Objects.requireNonNull(options, "options");
+        return backend.createTexture(image, options);
     }
 
     /**

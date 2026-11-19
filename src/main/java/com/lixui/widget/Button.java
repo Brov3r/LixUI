@@ -7,6 +7,7 @@ import com.lixui.input.Key;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
 import com.lixui.platform.Cursor;
+import com.lixui.render.ImageStyle;
 import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
 import com.lixui.text.Font;
@@ -39,6 +40,7 @@ public class Button extends Panel {
     private Runnable action;
     private Texture icon;
     private float iconSize = DEFAULT_ICON_SIZE;
+    private ImageStyle iconStyle = ImageStyle.ICON;
     private Color iconTint;
     private Color iconHoverTint;
     private Color iconPressedTint;
@@ -179,6 +181,26 @@ public class Button extends Panel {
     }
 
     /**
+     * Returns how the icon is fitted into its square slot.
+     *
+     * @return the icon placement style
+     */
+    public final ImageStyle iconStyle() {
+        return iconStyle;
+    }
+
+    /**
+     * Assigns how the icon is fitted into its square slot.
+     * The default preserves the icon aspect ratio and centers it.
+     *
+     * @param iconStyle icon placement style
+     * @throws NullPointerException if {@code iconStyle} is null
+     */
+    public final void setIconStyle(ImageStyle iconStyle) {
+        this.iconStyle = Objects.requireNonNull(iconStyle, "iconStyle");
+    }
+
+    /**
      * Activates the button and runs its sound and action callbacks when the button is enabled.
      */
     public final void click() {
@@ -272,7 +294,7 @@ public class Button extends Panel {
         float contentX = centerX - contentWidth / 2;
         Color tint = iconColor(state(), style);
         renderer.image(icon, new Rect(contentX, centerY - iconSize / 2, iconSize, iconSize),
-                0, FULL_UV, tint);
+                FULL_UV, iconStyle, 0, tint);
         if (hasText) {
             renderer.text(font, text, contentX + iconSize + ICON_GAP,
                     centerY, style.text(state()), LEADING);

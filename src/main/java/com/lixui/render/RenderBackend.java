@@ -2,6 +2,8 @@ package com.lixui.render;
 
 import com.lixui.render.command.ShapeCommand;
 
+import java.util.Objects;
+
 /**
  * A graphics backend that consumes backend-neutral draw lists.
  * Implementations own their GPU state and may change graphics state while drawing.
@@ -66,6 +68,26 @@ public interface RenderBackend extends AutoCloseable {
      * @throws NullPointerException if {@code image} is null
      */
     Texture createTexture(ImageData image);
+
+    /**
+     * Creates a texture with explicit sampling options.
+     * The default implementation delegates to {@link #createTexture(ImageData)} for default options
+     * and rejects custom options, so existing backends keep working unchanged.
+     *
+     * @param image RGBA8 image data with a top-left origin
+     * @param options filtering, wrapping and mipmap settings applied to the texture
+     * @return the created texture
+     * @throws NullPointerException if an argument is null
+     * @throws UnsupportedOperationException if this backend does not support custom sampling options
+     */
+    default Texture createTexture(ImageData image, TextureOptions options) {
+        Objects.requireNonNull(image, "image");
+        Objects.requireNonNull(options, "options");
+        if (!TextureOptions.DEFAULT.equals(options)) {
+            throw new UnsupportedOperationException("Custom texture options are not supported.");
+        }
+        return createTexture(image);
+    }
 
     /**
      * Releases a texture created by this backend.

@@ -9,6 +9,7 @@ import com.lixui.graphics.Color;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
 import com.lixui.platform.Cursor;
+import com.lixui.render.ImageStyle;
 import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
 import com.lixui.text.Font;
@@ -55,6 +56,7 @@ public class Window extends ScrollPanel {
     private String title = "";
     private Texture headerIcon;
     private float headerIconSize = HEADER_ICON_SIZE;
+    private ImageStyle headerIconStyle = ImageStyle.ICON;
     private float headerHeight = DEFAULT_HEADER_HEIGHT;
     private float contentPaddingTop;
     private float contentPaddingRight;
@@ -132,6 +134,26 @@ public class Window extends ScrollPanel {
      */
     public void setHeaderIcon(Texture headerIcon) {
         this.headerIcon = headerIcon;
+    }
+
+    /**
+     * Returns how the header icon is fitted into its square slot.
+     *
+     * @return the header icon placement style
+     */
+    public ImageStyle headerIconStyle() {
+        return headerIconStyle;
+    }
+
+    /**
+     * Assigns how the header icon is fitted into its square slot.
+     * The default preserves the icon aspect ratio and centers it.
+     *
+     * @param headerIconStyle header icon placement style
+     * @throws NullPointerException if {@code headerIconStyle} is null
+     */
+    public void setHeaderIconStyle(ImageStyle headerIconStyle) {
+        this.headerIconStyle = Objects.requireNonNull(headerIconStyle, "headerIconStyle");
     }
 
     /**
@@ -767,7 +789,7 @@ public class Window extends ScrollPanel {
             if (headerIcon != null) {
                 float y = (bounds().height() - headerIconSize) / 2;
                 renderer.image(headerIcon, new Rect(x, y, headerIconSize, headerIconSize),
-                        0, FULL_UV, theme.text());
+                        FULL_UV, headerIconStyle, 0, theme.text());
                 x += headerIconSize + HEADER_ICON_GAP;
             }
             Font font = font();

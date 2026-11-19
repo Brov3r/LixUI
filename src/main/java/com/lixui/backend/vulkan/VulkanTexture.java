@@ -1,6 +1,7 @@
 package com.lixui.backend.vulkan;
 
 import com.lixui.render.Texture;
+import com.lixui.render.TextureOptions;
 
 /**
  * A Vulkan texture handle that references a descriptor set and an optionally
@@ -14,8 +15,10 @@ final class VulkanTexture implements Texture {
     private final int width;
     private final int height;
     private final boolean owned;
+    private final TextureOptions options;
 
-    VulkanTexture(long image, long imageView, long memory, long descriptorSet, int width, int height, boolean owned) {
+    VulkanTexture(long image, long imageView, long memory, long descriptorSet, int width, int height,
+                  boolean owned, TextureOptions options) {
         this.image = image;
         this.imageView = imageView;
         this.memory = memory;
@@ -23,6 +26,7 @@ final class VulkanTexture implements Texture {
         this.width = width;
         this.height = height;
         this.owned = owned;
+        this.options = options;
     }
 
     long image() {
@@ -53,5 +57,10 @@ final class VulkanTexture implements Texture {
     @Override
     public int height() {
         return height;
+    }
+
+    @Override
+    public TextureOptions options() {
+        return options;
     }
 }

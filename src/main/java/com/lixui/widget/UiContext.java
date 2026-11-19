@@ -10,6 +10,7 @@ import com.lixui.platform.UiPlatform;
 import com.lixui.render.ImageData;
 import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
+import com.lixui.render.TextureOptions;
 import com.lixui.render.Viewport;
 import com.lixui.text.Font;
 import com.lixui.text.FontData;
@@ -327,8 +328,23 @@ public final class UiContext implements AutoCloseable {
      * @throws IllegalStateException if the context is closed
      */
     public Texture createTexture(ImageData image) {
+        return createTexture(image, TextureOptions.DEFAULT);
+    }
+
+    /**
+     * Creates and tracks a backend texture with explicit sampling options.
+     *
+     * @param image RGBA8 image data with a top-left origin
+     * @param options filtering, wrapping and mipmap settings applied to the texture
+     * @return the created texture
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalStateException if the context is closed
+     * @throws UnsupportedOperationException if the backend does not support custom sampling options
+     */
+    public Texture createTexture(ImageData image, TextureOptions options) {
         ensureOpen();
-        Texture texture = renderer.createTexture(Objects.requireNonNull(image, "image"));
+        Texture texture = renderer.createTexture(Objects.requireNonNull(image, "image"),
+                Objects.requireNonNull(options, "options"));
         textures.add(texture);
         return texture;
     }

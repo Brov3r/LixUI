@@ -20,10 +20,14 @@ import com.lixui.render.RenderBackend;
 import com.lixui.render.command.ShapeCommand;
 import com.lixui.render.command.TextCommand;
 import com.lixui.render.Texture;
+import com.lixui.render.TextureFilter;
+import com.lixui.render.TextureOptions;
+import com.lixui.render.TextureWrap;
 import com.lixui.render.Viewport;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
@@ -112,7 +116,8 @@ public final class OpenGlBackend implements RenderBackend {
     }
 
     /**
-     * Creates a texture from RGBA8 image data in the current OpenGL context.
+     * Creates a texture from RGBA8 image data with default sampling options in the current
+     * OpenGL context.
      *
      * @param image image data with a top-left origin
      * @return the created texture
@@ -120,25 +125,49 @@ public final class OpenGlBackend implements RenderBackend {
      */
     @Override
     public Texture createTexture(ImageData image) {
+        return createTexture(image, TextureOptions.DEFAULT);
+    }
+
+    /**
+     * Creates a texture from RGBA8 image data with explicit sampling options in the current
+     * OpenGL context. Mipmaps are generated on the GPU when requested.
+     *
+     * @param image image data with a top-left origin
+     * @param options filtering, wrapping and mipmap settings applied to the texture
+     * @return the created texture
+     * @throws NullPointerException if an argument is null
+     */
+    @Override
+    public Texture createTexture(ImageData image, TextureOptions options) {
         Objects.requireNonNull(image, "image");
+        Objects.requireNonNull(options, "options");
         int id = GL11.glGenTextures();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, id);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
-
-        ByteBuffer pixels = MemoryUtil.memAlloc(image.pixels().length);
         try {
-            pixels.put(image.pixels()).flip();
-            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RGBA8, image.width(), image.height(), 0,
-                    GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, pixels);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, minFilter(options));
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, magFilter(options.filter()));
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, wrapMode(options.wrapU()));
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, wrapMode(options.wrapV()));
+
+            ByteBuffer pixels = MemoryUtil.memAlloc(image.pixels().length);
+            try {
+                pixels.put(image.pixels()).flip();
+                GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RGBA8, image.width(), image.height(), 0,
+                        GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, pixels);
+            } finally {
+                MemoryUtil.memFree(pixels);
+            }
+            if (options.mipmaps()) {
+                GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
+            }
+        } catch (RuntimeException | Error exception) {
+            GL11.glDeleteTextures(id);
+            throw exception;
         } finally {
-            MemoryUtil.memFree(pixels);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
         }
 
-        GlTexture texture = new GlTexture(id, image.width(), image.height(), true);
+        GlTexture texture = new GlTexture(id, image.width(), image.height(), true, options);
         textures.add(texture);
         return texture;
     }
@@ -155,13 +184,30 @@ public final class OpenGlBackend implements RenderBackend {
      * @throws IllegalArgumentException if the texture name or a dimension is not positive
      */
     public Texture wrapTexture(int textureId, int width, int height) {
+        return wrapTexture(textureId, width, height, TextureOptions.DEFAULT);
+    }
+
+    /**
+     * Wraps an existing OpenGL texture owned by the host application and records the sampling
+     * options associated with it. The backend never deletes the host texture.
+     *
+     * @param textureId existing OpenGL texture name
+     * @param width texture width in pixels
+     * @param height texture height in pixels
+     * @param options sampling options that describe the host texture state
+     * @return a non-owning texture handle
+     * @throws NullPointerException if {@code options} is null
+     * @throws IllegalArgumentException if the texture name or a dimension is not positive
+     */
+    public Texture wrapTexture(int textureId, int width, int height, TextureOptions options) {
         if (textureId <= 0) {
             throw new IllegalArgumentException("Texture name must be positive.");
         }
         if (width <= 0 || height <= 0) {
             throw new IllegalArgumentException("Texture dimensions must be positive.");
         }
-        return new GlTexture(textureId, width, height, false);
+        Objects.requireNonNull(options, "options");
+        return new GlTexture(textureId, width, height, false, options);
     }
 
     /**
@@ -618,6 +664,25 @@ public final class OpenGlBackend implements RenderBackend {
             throw new IllegalArgumentException("Texture belongs to a different render backend.");
         }
         return glTexture;
+    }
+
+    private static int minFilter(TextureOptions options) {
+        if (options.filter() == TextureFilter.NEAREST) {
+            return options.mipmaps() ? GL11.GL_NEAREST_MIPMAP_NEAREST : GL11.GL_NEAREST;
+        }
+        return options.mipmaps() ? GL11.GL_LINEAR_MIPMAP_LINEAR : GL11.GL_LINEAR;
+    }
+
+    private static int magFilter(TextureFilter filter) {
+        return filter == TextureFilter.NEAREST ? GL11.GL_NEAREST : GL11.GL_LINEAR;
+    }
+
+    private static int wrapMode(TextureWrap wrap) {
+        return switch (wrap) {
+            case CLAMP -> GL12.GL_CLAMP_TO_EDGE;
+            case REPEAT -> GL11.GL_REPEAT;
+            case MIRROR -> GL14.GL_MIRRORED_REPEAT;
+        };
     }
 
     private static int createProgram() {

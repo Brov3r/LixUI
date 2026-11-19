@@ -1,5 +1,6 @@
 package com.lixui.render;
 
+import com.lixui.geometry.Insets;
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
@@ -192,6 +193,75 @@ public final class RenderManager {
      */
     public void image(Texture texture, Rect bounds, float radius, Rect uv, Color tint) {
         list().image(texture, bounds, radius, uv, applyOpacity(tint), currentTransform());
+    }
+
+    /**
+     * Appends a texture region with explicit layout settings and no tint.
+     * The style controls aspect-preserving fits, anchoring and tiled repetition.
+     *
+     * @param texture texture to draw
+     * @param bounds destination rectangle
+     * @param uv sampled texture region
+     * @param style placement and repetition settings
+     * @throws NullPointerException if any argument is null
+     * @throws IllegalArgumentException if the style repeats an axis clamped by the texture
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void image(Texture texture, Rect bounds, Rect uv, ImageStyle style) {
+        image(texture, bounds, uv, style, 0, Color.WHITE);
+    }
+
+    /**
+     * Appends a textured rounded rectangle with explicit layout settings.
+     * The current transform is applied to the resolved destination rectangle.
+     *
+     * @param texture texture to draw
+     * @param bounds destination rectangle
+     * @param uv sampled texture region
+     * @param style placement and repetition settings
+     * @param radius corner radius in logical UI units
+     * @param tint straight-alpha tint multiplied with the sampled texel
+     * @throws NullPointerException if any reference argument is null
+     * @throws IllegalArgumentException if the radius is invalid or the style repeats a clamped axis
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void image(Texture texture, Rect bounds, Rect uv, ImageStyle style, float radius, Color tint) {
+        list().image(texture, bounds, radius, uv, applyOpacity(tint), currentTransform(), style);
+    }
+
+    /**
+     * Appends a nine-patch texture with the full normalized UV range and no tint.
+     * Corners keep their source pixel size, edges stretch along one axis and the center stretches
+     * along both. Insets are measured in source pixels from the sampled region's edges.
+     * The current transform is applied to every patch.
+     *
+     * @param texture texture to draw
+     * @param bounds destination rectangle
+     * @param insets source pixel insets that separate corners from edges and center
+     * @throws NullPointerException if any argument is null
+     * @throws IllegalArgumentException if the insets leave no positive center region
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void ninePatch(Texture texture, Rect bounds, Insets insets) {
+        ninePatch(texture, bounds, insets, FULL_UV, Color.WHITE);
+    }
+
+    /**
+     * Appends a nine-patch texture sampled from an explicit UV region with a tint.
+     * Corners keep their source pixel size, edges stretch along one axis and the center stretches
+     * along both. The current transform is applied to every patch.
+     *
+     * @param texture texture to draw
+     * @param bounds destination rectangle
+     * @param insets source pixel insets inside the sampled region
+     * @param uv sampled texture region
+     * @param tint straight-alpha tint multiplied with the sampled texels
+     * @throws NullPointerException if any reference argument is null
+     * @throws IllegalArgumentException if the insets leave no positive center region
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void ninePatch(Texture texture, Rect bounds, Insets insets, Rect uv, Color tint) {
+        list().ninePatch(texture, bounds, insets, uv, applyOpacity(tint), currentTransform());
     }
 
     /**
@@ -1242,7 +1312,21 @@ public final class RenderManager {
      * @throws NullPointerException if {@code image} is null
      */
     public Texture createTexture(ImageData image) {
-        return backend.createTexture(Objects.requireNonNull(image, "image"));
+        return createTexture(image, TextureOptions.DEFAULT);
+    }
+
+    /**
+     * Creates a backend texture from CPU image data with explicit sampling options.
+     *
+     * @param image RGBA8 image data with a top-left origin
+     * @param options filtering, wrapping and mipmap settings applied to the texture
+     * @return the created texture
+     * @throws NullPointerException if an argument is null
+     * @throws UnsupportedOperationException if the backend does not support custom sampling options
+     */
+    public Texture createTexture(ImageData image, TextureOptions options) {
+        return backend.createTexture(Objects.requireNonNull(image, "image"),
+                Objects.requireNonNull(options, "options"));
     }
 
     /**
