@@ -5,11 +5,14 @@ import com.lixui.geometry.Size;
 import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.Widget;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 /**
  * A one-dimensional container that stacks children along the main axis with an optional gap.
- * Children keep their measured main-axis size and are stretched across the cross axis by default.
+ * Children keep their measured main-axis size unless they have a positive grow factor, in which
+ * case they share the leftover space. Children are stretched across the cross axis by default.
  * Invisible children are ignored and keep their bounds.
  */
 public abstract class Box extends LayoutContainer {
@@ -118,30 +121,51 @@ public abstract class Box extends LayoutContainer {
 
     /**
      * Places children in insertion order along the main axis.
+     * Leftover main-axis space is shared between children with a positive
+     * {@link Widget#grow()} factor in proportion to their factors.
      */
     @Override
     protected void onLayout() {
         float padding = padding();
         float contentWidth = Math.max(0, bounds().width() - padding * 2);
         float contentHeight = Math.max(0, bounds().height() - padding * 2);
-        float position = padding;
+        List<Widget> visible = new ArrayList<>();
+        List<Size> preferred = new ArrayList<>();
+        float mainSize = 0;
+        float totalGrow = 0;
         for (Widget child : children()) {
             if (!child.isVisible()) {
                 continue;
             }
-            Size preferred = child.measure(LayoutConstraints.loose(contentWidth, contentHeight));
+            Size size = child.measure(LayoutConstraints.loose(contentWidth, contentHeight));
+            visible.add(child);
+            preferred.add(size);
+            mainSize += vertical() ? size.height() : size.width();
+            totalGrow += child.grow();
+        }
+        if (visible.size() > 1) {
+            mainSize += gap * (visible.size() - 1);
+        }
+        float free = Math.max(0, (vertical() ? contentHeight : contentWidth) - mainSize);
+        float position = padding;
+        for (int index = 0; index < visible.size(); index++) {
+            Widget child = visible.get(index);
+            Size size = preferred.get(index);
+            float share = totalGrow > 0 ? free * child.grow() / totalGrow : 0;
             if (vertical()) {
+                float height = size.height() + share;
                 float width = crossAlignment == CrossAlignment.STRETCH
-                        ? contentWidth : Math.min(preferred.width(), contentWidth);
+                        ? contentWidth : Math.min(size.width(), contentWidth);
                 float x = padding + crossOffset(contentWidth - width);
-                child.layout(new Rect(x, position, width, preferred.height()));
-                position += preferred.height() + gap;
+                child.layout(new Rect(x, position, width, height));
+                position += height + gap;
             } else {
+                float width = size.width() + share;
                 float height = crossAlignment == CrossAlignment.STRETCH
-                        ? contentHeight : Math.min(preferred.height(), contentHeight);
+                        ? contentHeight : Math.min(size.height(), contentHeight);
                 float y = padding + crossOffset(contentHeight - height);
-                child.layout(new Rect(position, y, preferred.width(), height));
-                position += preferred.width() + gap;
+                child.layout(new Rect(position, y, width, height));
+                position += width + gap;
             }
         }
     }

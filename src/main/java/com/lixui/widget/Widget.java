@@ -54,6 +54,7 @@ public abstract class Widget {
     private boolean focusOutlineEnabled = true;
     private boolean autoSize;
     private boolean fillViewport;
+    private float grow;
     private Widget tooltip;
     private TooltipSettings tooltipSettings;
     private boolean tooltipEnabled = true;
@@ -474,6 +475,30 @@ public abstract class Widget {
      */
     public final void setFillViewport(boolean fillViewport) {
         this.fillViewport = fillViewport;
+    }
+
+    /**
+     * Returns the flex factor used by layout containers that distribute leftover space.
+     *
+     * @return the non-negative flex factor; zero keeps the natural size
+     */
+    public final float grow() {
+        return grow;
+    }
+
+    /**
+     * Sets the flex factor used by layout containers that distribute leftover space along their
+     * main axis. A factor of zero keeps the natural size, while positive factors share the leftover
+     * space in proportion. Layout containers that do not support flexible children ignore it.
+     *
+     * @param grow non-negative flex factor
+     * @throws IllegalArgumentException if the factor is negative or non-finite
+     */
+    public final void setGrow(float grow) {
+        if (!Float.isFinite(grow) || grow < 0) {
+            throw new IllegalArgumentException("Grow factor must be finite and non-negative.");
+        }
+        this.grow = grow;
     }
 
     /**

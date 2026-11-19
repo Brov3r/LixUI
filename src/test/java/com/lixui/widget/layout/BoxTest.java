@@ -115,6 +115,24 @@ class BoxTest {
     }
 
     @Test
+    void distributesLeftoverMainAxisSpaceBetweenGrowingChildren() {
+        HBox box = new HBox();
+        box.setGap(10);
+        FixedWidget first = new FixedWidget(20, 10);
+        FixedWidget second = new FixedWidget(20, 10);
+        FixedWidget third = new FixedWidget(20, 10);
+        first.setGrow(1);
+        second.setGrow(3);
+        box.add(first).add(second).add(third);
+
+        box.layout(new Rect(0, 0, 240, 60));
+
+        assertEquals(new Rect(0, 0, 60, 60), first.bounds());
+        assertEquals(new Rect(70, 0, 140, 60), second.bounds());
+        assertEquals(new Rect(220, 0, 20, 60), third.bounds());
+    }
+
+    @Test
     void emptyLayoutSpaceDoesNotBlockPointerInput() {
         try (WidgetManager manager = new WidgetManager(new InputState(), new TestBackend())) {
             manager.resize(VIEWPORT);
