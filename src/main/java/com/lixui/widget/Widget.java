@@ -57,6 +57,7 @@ public abstract class Widget {
     private Widget tooltip;
     private TooltipSettings tooltipSettings;
     private boolean tooltipEnabled = true;
+    private Runnable soundPlayer;
     private boolean alwaysOnTop;
     private boolean raiseOnFocus;
     private boolean hovered;
@@ -295,6 +296,16 @@ public abstract class Widget {
     }
 
     /**
+     * Assigns a ready-made text tooltip.
+     * Null or empty text clears the tooltip.
+     *
+     * @param text tooltip label, or null to clear the tooltip
+     */
+    public final void setTooltipText(String text) {
+        setTooltip(text == null || text.isEmpty() ? null : new TextTooltip(text));
+    }
+
+    /**
      * Reports whether tooltips are enabled for this widget and its descendants.
      *
      * @return true when tooltips may be shown for this subtree
@@ -331,6 +342,34 @@ public abstract class Widget {
      */
     public final void setTooltipSettings(TooltipSettings tooltipSettings) {
         this.tooltipSettings = tooltipSettings;
+    }
+
+    /**
+     * Returns the callback invoked to play a sound when this widget activates.
+     *
+     * @return the sound callback, or null when none is assigned
+     */
+    public final Runnable soundPlayer() {
+        return soundPlayer;
+    }
+
+    /**
+     * Assigns a callback invoked when this widget activates.
+     * The widget does not play audio itself; hosts route the callback to their sound system.
+     *
+     * @param soundPlayer sound callback, or null to clear it
+     */
+    public final void setSoundPlayer(Runnable soundPlayer) {
+        this.soundPlayer = soundPlayer;
+    }
+
+    /**
+     * Invokes the assigned sound callback.
+     */
+    protected final void playSound() {
+        if (soundPlayer != null) {
+            soundPlayer.run();
+        }
     }
 
     /**
@@ -748,6 +787,16 @@ public abstract class Widget {
             }
         }
         return defaultStyle();
+    }
+
+    /**
+     * Reports whether this widget has an explicitly assigned style.
+     * Descendants inherit an explicit style before falling back to their own default.
+     *
+     * @return true when {@link #setStyle(WidgetStyle)} assigned a non-null style
+     */
+    protected final boolean hasLocalStyle() {
+        return style != null;
     }
 
     /**

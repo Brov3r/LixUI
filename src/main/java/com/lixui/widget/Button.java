@@ -37,7 +37,6 @@ public class Button extends Panel {
 
     private String text;
     private Runnable action;
-    private Runnable soundPlayer;
     private Texture icon;
     private float iconSize = DEFAULT_ICON_SIZE;
     private Color iconTint;
@@ -99,25 +98,6 @@ public class Button extends Panel {
      */
     public final void setOnAction(Runnable action) {
         this.action = action;
-    }
-
-    /**
-     * Returns the callback invoked when the button activates to play a sound.
-     *
-     * @return the sound callback, or null when none is assigned
-     */
-    public final Runnable soundPlayer() {
-        return soundPlayer;
-    }
-
-    /**
-     * Assigns a callback invoked before the button action.
-     * The widget does not implement audio playback; hosts can call their sound system here.
-     *
-     * @param soundPlayer sound callback, or null to clear it
-     */
-    public final void setSoundPlayer(Runnable soundPlayer) {
-        this.soundPlayer = soundPlayer;
     }
 
     /**
@@ -205,9 +185,7 @@ public class Button extends Panel {
         if (!isEnabled()) {
             return;
         }
-        if (soundPlayer != null) {
-            soundPlayer.run();
-        }
+        playSound();
         if (action != null) {
             action.run();
         }
