@@ -552,7 +552,7 @@ public final class UiContext implements AutoCloseable {
         }
     }
 
-    private static <T> Set<T> identitySet() {
+    static <T> Set<T> identitySet() {
         return Collections.newSetFromMap(new IdentityHashMap<>());
     }
 

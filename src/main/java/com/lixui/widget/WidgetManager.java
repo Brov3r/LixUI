@@ -31,7 +31,6 @@ import com.lixui.widget.tooltip.TooltipSettings;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
-import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -766,7 +765,7 @@ public final class WidgetManager implements AutoCloseable {
         pointerX = x;
         pointerY = y;
         Widget target = updateHover();
-        Set<Widget> delivered = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<Widget> delivered = UiContext.identitySet();
         if (target != null) {
             bubblePointerMove(target, x, y, delivered);
         }
@@ -1133,7 +1132,7 @@ public final class WidgetManager implements AutoCloseable {
             refreshCursor();
             return;
         }
-        Set<Widget> released = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<Widget> released = UiContext.identitySet();
         Iterator<Map.Entry<MouseButton, Widget>> iterator = captures.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<MouseButton, Widget> entry = iterator.next();
@@ -1168,7 +1167,7 @@ public final class WidgetManager implements AutoCloseable {
         if (captures.isEmpty()) {
             return;
         }
-        Set<Widget> pressedWidgets = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<Widget> pressedWidgets = UiContext.identitySet();
         pressedWidgets.addAll(captures.values());
         captures.clear();
         for (Widget widget : pressedWidgets) {
@@ -1210,11 +1209,7 @@ public final class WidgetManager implements AutoCloseable {
         if (widget.context() != context) {
             return false;
         }
-        Widget top = widget;
-        while (top.parent() != null) {
-            top = top.parent();
-        }
-        return containsIdentity(widgets, top);
+        return containsIdentity(widgets, topLevel(widget));
     }
 
     private static boolean containsIdentity(List<Widget> list, Widget widget) {
