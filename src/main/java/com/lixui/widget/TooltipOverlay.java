@@ -3,6 +3,7 @@ package com.lixui.widget;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
 import com.lixui.render.RenderManager;
+import com.lixui.widget.tooltip.TooltipSettings;
 
 /**
  * Presents the tooltip widget of the hovered subtree after a delay.

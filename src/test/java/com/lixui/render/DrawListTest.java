@@ -3,6 +3,14 @@ package com.lixui.render;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
+import com.lixui.render.command.DrawCommand;
+import com.lixui.render.command.ImageCommand;
+import com.lixui.render.command.MaskBeginCommand;
+import com.lixui.render.command.MaskEndCommand;
+import com.lixui.render.command.MaskTextureBeginCommand;
+import com.lixui.render.command.MaskTextureEndCommand;
+import com.lixui.render.command.MeshCommand;
+import com.lixui.render.command.RoundedRectCommand;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

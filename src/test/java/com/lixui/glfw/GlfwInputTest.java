@@ -1,17 +1,17 @@
 package com.lixui.glfw;
 
-import com.lixui.input.CharTyped;
-import com.lixui.input.FocusChanged;
+import com.lixui.input.event.CharTyped;
+import com.lixui.input.event.FocusChanged;
 import com.lixui.input.InputState;
 import com.lixui.input.Key;
-import com.lixui.input.KeyPressed;
-import com.lixui.input.KeyReleased;
+import com.lixui.input.event.KeyPressed;
+import com.lixui.input.event.KeyReleased;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
-import com.lixui.input.PointerMoved;
-import com.lixui.input.PointerPressed;
-import com.lixui.input.PointerReleased;
-import com.lixui.input.PointerScrolled;
+import com.lixui.input.event.PointerMoved;
+import com.lixui.input.event.PointerPressed;
+import com.lixui.input.event.PointerReleased;
+import com.lixui.input.event.PointerScrolled;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.lwjgl.glfw.GLFW;

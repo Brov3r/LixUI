@@ -3,8 +3,8 @@ package com.lixui.backend;
 import com.lixui.graphics.Color;
 import com.lixui.graphics.GradientStop;
 import com.lixui.graphics.Paint;
-import com.lixui.render.DrawCommand;
-import com.lixui.render.ShapeCommand;
+import com.lixui.render.command.DrawCommand;
+import com.lixui.render.command.ShapeCommand;
 
 import java.nio.FloatBuffer;
 import java.util.List;

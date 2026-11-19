@@ -7,6 +7,7 @@ import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
 import com.lixui.graphics.GradientStop;
 import com.lixui.graphics.Paint;
+import com.lixui.render.command.ShapeCommand;
 import com.lixui.text.Font;
 import com.lixui.text.FontData;
 import com.lixui.text.FontStyle;

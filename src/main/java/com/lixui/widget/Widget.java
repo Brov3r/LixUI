@@ -11,6 +11,8 @@ import com.lixui.platform.Cursor;
 import com.lixui.render.RenderManager;
 import com.lixui.text.Font;
 import com.lixui.theme.WidgetStyle;
+import com.lixui.widget.tooltip.TextTooltip;
+import com.lixui.widget.tooltip.TooltipSettings;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -382,7 +384,7 @@ public abstract class Widget {
      * Enables or disables sizing this widget to its measured content.
      * When enabled, {@link #layout(Rect)} keeps the assigned position but replaces the size with the
      * result of {@link #measure(LayoutConstraints)}, clamped to the assigned size. Widgets whose
-     * natural size already follows their content, such as {@link Box} and {@link DockPanel}, wrap
+     * natural size already follows their content, such as the layout containers, wrap
      * their children without manual bounds; the default widget measurement keeps the current size,
      * so the flag has no effect there.
      *

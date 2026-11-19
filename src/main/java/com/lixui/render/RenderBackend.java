@@ -1,5 +1,7 @@
 package com.lixui.render;
 
+import com.lixui.render.command.ShapeCommand;
+
 /**
  * A graphics backend that consumes backend-neutral draw lists.
  * Implementations own their GPU state and may change graphics state while drawing.
