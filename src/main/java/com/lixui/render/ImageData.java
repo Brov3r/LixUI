@@ -10,8 +10,9 @@ import java.io.UncheckedIOException;
 import java.util.Objects;
 
 /**
- * An immutable RGBA8 image in row-major order, starting at the top-left pixel.
+ * An RGBA8 image in row-major order, starting at the top-left pixel.
  * Pixel data is straight-alpha and not premultiplied.
+ * The pixel array is shared with the caller and must not be modified during texture upload.
  *
  * @param width image width in pixels
  * @param height image height in pixels
@@ -32,7 +33,7 @@ public record ImageData(int width, int height, byte[] pixels) {
         if (width <= 0 || height <= 0) {
             throw new IllegalArgumentException("Image dimensions must be positive.");
         }
-        long expected = (long) width * height * 4;
+        int expected = payloadSize(width, height);
         if (pixels.length != expected) {
             throw new IllegalArgumentException(
                     "RGBA8 image requires " + expected + " bytes, got " + pixels.length + ".");
@@ -69,9 +70,7 @@ public record ImageData(int width, int height, byte[] pixels) {
      */
     public static ImageData fromResource(String resource, int width, int height) {
         Objects.requireNonNull(resource, "resource");
-        if (width <= 0 || height <= 0) {
-            throw new IllegalArgumentException("Image dimensions must be positive.");
-        }
+        payloadSize(width, height);
         BufferedImage image = read(resource);
         if (image.getWidth() == width && image.getHeight() == height) {
             return toImageData(image);
@@ -109,7 +108,7 @@ public record ImageData(int width, int height, byte[] pixels) {
     private static ImageData toImageData(BufferedImage image) {
         int width = image.getWidth();
         int height = image.getHeight();
-        byte[] pixels = new byte[width * height * 4];
+        byte[] pixels = new byte[payloadSize(width, height)];
         int[] row = new int[width];
         for (int y = 0; y < height; y++) {
             image.getRGB(0, y, width, 1, row, 0, width);
@@ -123,5 +122,12 @@ public record ImageData(int width, int height, byte[] pixels) {
             }
         }
         return new ImageData(width, height, pixels);
+    }
+
+    private static int payloadSize(int width, int height) {
+        if (width <= 0 || height <= 0 || (long) width * height > Integer.MAX_VALUE / 4) {
+            throw new IllegalArgumentException("Image dimensions must fit an RGBA8 byte array.");
+        }
+        return width * height * 4;
     }
 }

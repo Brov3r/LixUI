@@ -8,7 +8,6 @@ import com.lixui.graphics.Color;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
 import com.lixui.platform.Cursor;
-import com.lixui.render.ImageData;
 import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
 import com.lixui.text.Font;
@@ -50,6 +49,7 @@ public class Window extends ScrollPanel {
     private final Button collapseButton = new Button();
     private final Button closeButton = new Button();
     private final List<Texture> ownedTextures = new ArrayList<>();
+    private int iconPixelSize;
 
     private String title = "";
     private Texture headerIcon;
@@ -175,6 +175,7 @@ public class Window extends ScrollPanel {
         }
         this.headerHeight = headerHeight;
         if (collapsed) {
+            cancelHeightAnimation();
             setSize(bounds().width(), headerHeight);
         }
     }
@@ -405,7 +406,7 @@ public class Window extends ScrollPanel {
     }
 
     /**
-     * Assigns a callback invoked before the default close behavior hides the window.
+     * Assigns a callback invoked after the window is hidden.
      *
      * @param onClose close callback, or null to clear it
      */
@@ -454,20 +455,25 @@ public class Window extends ScrollPanel {
      */
     @Override
     protected void onDetached() {
+        super.onDetached();
+        boolean settlingHeight = animatingHeight;
         cancelHeightAnimation();
-        UiContext context = context();
-        if (context != null) {
-            for (Texture texture : ownedTextures) {
-                context.destroyTexture(texture);
-            }
+        if (settlingHeight) {
+            setSize(bounds().width(), collapsed ? headerHeight : Math.max(expandedHeight, headerHeight));
         }
-        ownedTextures.clear();
-        pinOnIcon = null;
-        pinOffIcon = null;
-        collapseIcon = null;
-        expandIcon = null;
-        closeIcon = null;
-        resizeIcon = null;
+        try {
+            releaseIcons(ownedTextures);
+        } finally {
+            ownedTextures.clear();
+            pinOnIcon = null;
+            pinOffIcon = null;
+            collapseIcon = null;
+            expandIcon = null;
+            closeIcon = null;
+            resizeIcon = null;
+            iconPixelSize = 0;
+            updateButtonIcons();
+        }
     }
 
     /**
@@ -475,6 +481,7 @@ public class Window extends ScrollPanel {
      */
     @Override
     protected void onContextChanged() {
+        loadIcons();
         updateButtonStyles();
     }
 
@@ -560,10 +567,13 @@ public class Window extends ScrollPanel {
     }
 
     private void collapseTo(boolean value) {
-        cancelHeightAnimation();
+        if (collapsed == value) {
+            return;
+        }
         if (value && !collapsed && !animatingHeight) {
             expandedHeight = Math.max(headerHeight, bounds().height());
         }
+        cancelHeightAnimation();
         collapsed = value;
         setScrollBarsSuppressed(value);
         setVisibleIfChanged(resizeHandle, isResizable() && !value);
@@ -583,6 +593,7 @@ public class Window extends ScrollPanel {
                 .setOnComplete(() -> {
                     animatingHeight = false;
                     heightAnimation = null;
+                    animationOwner = null;
                 });
     }
 
@@ -592,25 +603,64 @@ public class Window extends ScrollPanel {
             heightAnimation = null;
         }
         animatingHeight = false;
+        animationOwner = null;
     }
 
     private void loadIcons() {
-        if (!ownedTextures.isEmpty() || context() == null) {
+        UiContext context = context();
+        if (context == null) {
             return;
         }
-        pinOnIcon = createIcon("pushpin.png");
-        pinOffIcon = createIcon("unlock.png");
-        collapseIcon = createIcon("minus.png");
-        expandIcon = createIcon("plus.png");
-        closeIcon = createIcon("cross.png");
-        resizeIcon = createIcon("cursor-diagonal-resize.png");
+        int size = Math.max(1, (int) Math.ceil(Math.min(128,
+                ICON_SIZE * Math.max(context.scaleX(), context.scaleY()))));
+        if (iconPixelSize == size) {
+            return;
+        }
+        List<Texture> loaded = new ArrayList<>();
+        try {
+            for (String name : List.of("pushpin.png", "unlock.png", "minus.png",
+                    "plus.png", "cross.png", "cursor-diagonal-resize.png")) {
+                loaded.add(context.acquireIcon("assets/icons-128/" + name, size));
+            }
+        } catch (RuntimeException | Error exception) {
+            try {
+                releaseIcons(loaded);
+            } catch (RuntimeException cleanupFailure) {
+                if (cleanupFailure != exception) {
+                    exception.addSuppressed(cleanupFailure);
+                }
+            }
+            throw exception;
+        }
+        List<Texture> previous = List.copyOf(ownedTextures);
+        ownedTextures.clear();
+        ownedTextures.addAll(loaded);
+        pinOnIcon = loaded.get(0);
+        pinOffIcon = loaded.get(1);
+        collapseIcon = loaded.get(2);
+        expandIcon = loaded.get(3);
+        closeIcon = loaded.get(4);
+        resizeIcon = loaded.get(5);
+        iconPixelSize = size;
+        updateButtonIcons();
+        releaseIcons(previous);
     }
 
-    private Texture createIcon(String name) {
-        Texture texture = context().createTexture(ImageData.fromResource(
-                "assets/icons-128/" + name, (int) ICON_SIZE, (int) ICON_SIZE));
-        ownedTextures.add(texture);
-        return texture;
+    private void releaseIcons(List<Texture> textures) {
+        if (context() == null) {
+            return;
+        }
+        RuntimeException failure = null;
+        for (Texture texture : textures) {
+            try {
+                context().releaseIcon(texture);
+            } catch (RuntimeException exception) {
+                failure = Widget.recordFailure(failure, exception);
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
     }
 
     private void updateButtonIcons() {
@@ -670,15 +720,19 @@ public class Window extends ScrollPanel {
             setClipToBounds(true);
         }
 
+        /**
+         * Places visible action buttons together against the right edge.
+         */
         @Override
         protected void onLayout() {
             float x = bounds().width() - HEADER_PADDING - BUTTON_SIZE;
             float y = (bounds().height() - BUTTON_SIZE) / 2;
-            layoutButton(closeButton, x, y);
-            x -= BUTTON_SIZE + BUTTON_GAP;
-            layoutButton(collapseButton, x, y);
-            x -= BUTTON_SIZE + BUTTON_GAP;
-            layoutButton(pinButton, x, y);
+            for (Button button : List.of(closeButton, collapseButton, pinButton)) {
+                if (button.isVisible()) {
+                    layoutButton(button, x, y);
+                    x -= BUTTON_SIZE + BUTTON_GAP;
+                }
+            }
         }
 
         @Override
@@ -712,14 +766,10 @@ public class Window extends ScrollPanel {
 
         private float buttonsLeft() {
             float x = bounds().width() - HEADER_PADDING;
-            if (closeButton.isVisible()) {
-                x -= BUTTON_SIZE;
-            }
-            if (collapseButton.isVisible()) {
-                x -= BUTTON_GAP + BUTTON_SIZE;
-            }
-            if (pinButton.isVisible()) {
-                x -= BUTTON_GAP + BUTTON_SIZE;
+            for (Button button : List.of(closeButton, collapseButton, pinButton)) {
+                if (button.isVisible()) {
+                    x = Math.min(x, button.bounds().x());
+                }
             }
             return x;
         }

@@ -7,6 +7,7 @@ import com.lixui.input.MouseButton;
 import com.lixui.input.PointerMoved;
 import com.lixui.input.PointerPressed;
 import com.lixui.input.PointerReleased;
+import com.lixui.input.PointerScrolled;
 import com.lixui.platform.Cursor;
 import com.lixui.render.DrawList;
 import com.lixui.render.ImageData;
@@ -20,11 +21,130 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WindowTest {
     private static final Viewport VIEWPORT = new Viewport(1600, 1200, 800, 600);
     private static final Rect WINDOW_BOUNDS = new Rect(10, 10, 300, 240);
+
+    @Test
+    void sharesIconsAtDisplayResolutionAndReleasesTheLastReference() {
+        RecordingBackend backend = new RecordingBackend();
+        try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
+            manager.resize(VIEWPORT);
+            Window first = createWindow(manager);
+            Window second = createWindow(manager);
+            List<Button> firstButtons = new ArrayList<>();
+            List<Button> secondButtons = new ArrayList<>();
+            collectButtons(first, firstButtons);
+            collectButtons(second, secondButtons);
+
+            assertEquals(6, backend.created.size());
+            assertEquals(28, firstButtons.getFirst().icon().width());
+            assertSame(firstButtons.getFirst().icon(), secondButtons.getFirst().icon());
+
+            manager.remove(first);
+            assertTrue(backend.destroyed.isEmpty());
+            assertNull(firstButtons.getFirst().icon());
+
+            manager.resize(new Viewport(800, 600, 800, 600));
+            assertEquals(14, secondButtons.getFirst().icon().width());
+            assertEquals(12, backend.created.size());
+            assertEquals(6, backend.destroyed.size());
+
+            manager.remove(second);
+            assertEquals(12, backend.destroyed.size());
+        }
+        assertEquals(12, backend.destroyed.size());
+    }
+
+    @Test
+    void rollsBackPartiallyLoadedIconsWhenUploadFails() {
+        RecordingBackend backend = new RecordingBackend();
+        try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
+            backend.failAfter = 2;
+            Window window = new Window();
+            assertThrows(IllegalStateException.class, () -> manager.add(window));
+            assertNull(window.context());
+            assertTrue(manager.widgets().isEmpty());
+            assertEquals(2, backend.destroyed.size());
+
+            backend.failAfter = Integer.MAX_VALUE;
+            manager.add(window);
+            assertEquals(8, backend.created.size());
+        }
+        assertEquals(8, backend.destroyed.size());
+    }
+
+    @Test
+    void preservesExpandedHeightAcrossInterruptedTransitions() {
+        try (WidgetManager manager = manager()) {
+            Window window = createWindow(manager);
+            window.setCollapsed(true);
+            manager.update(0.3f);
+            window.setCollapsed(false);
+            manager.update(0.1f);
+            window.setCollapsed(true);
+            manager.update(0.3f);
+            window.setCollapsed(false);
+            manager.update(0.3f);
+
+            assertEquals(240, window.bounds().height(), 0.001f);
+            window.setCollapsed(true);
+            manager.update(0.1f);
+            window.setCollapsed(true);
+            manager.update(0.11f);
+            assertEquals(window.headerHeight(), window.bounds().height());
+        }
+    }
+
+    @Test
+    void detachingCancelsBothHeightAndScrollAnimations() {
+        try (WidgetManager manager = manager()) {
+            Window window = createWindow(manager);
+            manager.handle(new PointerScrolled(100, 100, 0, -1));
+            window.setCollapsed(true);
+            assertEquals(2, manager.animator().size());
+
+            manager.remove(window);
+
+            assertTrue(manager.animator().isEmpty());
+            assertEquals(window.headerHeight(), window.bounds().height());
+        }
+    }
+
+    @Test
+    void changingHeaderHeightDuringCollapseKeepsTheNewHeight() {
+        try (WidgetManager manager = manager()) {
+            Window window = createWindow(manager);
+            window.setCollapsed(true);
+            manager.update(0.1f);
+            window.setHeaderHeight(50);
+            manager.update(0.3f);
+
+            assertEquals(50, window.bounds().height());
+        }
+    }
+
+    @Test
+    void hiddenActionsDoNotLeaveGapsInTheHeader() {
+        try (WidgetManager manager = manager()) {
+            Window window = createWindow(manager);
+            window.setClosable(false);
+            window.setCollapsible(false);
+            manager.layout();
+            List<Button> buttons = new ArrayList<>();
+            collectButtons(window, buttons);
+            Button pin = buttons.stream().filter(Button::isVisible).findFirst().orElseThrow();
+
+            assertEquals(264, pin.bounds().x());
+            click(manager, 287, 25);
+            assertTrue(window.isPinned());
+        }
+    }
 
     @Test
     void movesTheWindowFromTheHeader() {
@@ -210,6 +330,9 @@ class WindowTest {
 
     private static final class RecordingBackend implements RenderBackend {
         private DrawList lastDrawList;
+        private final List<Texture> created = new ArrayList<>();
+        private final List<Texture> destroyed = new ArrayList<>();
+        private int failAfter = Integer.MAX_VALUE;
 
         @Override
         public void resize(Viewport viewport) {
@@ -222,11 +345,17 @@ class WindowTest {
 
         @Override
         public Texture createTexture(ImageData image) {
-            return new TestTexture(image.width(), image.height());
+            if (created.size() >= failAfter) {
+                throw new IllegalStateException("Texture upload failed.");
+            }
+            Texture texture = new TestTexture(image.width(), image.height());
+            created.add(texture);
+            return texture;
         }
 
         @Override
         public void destroyTexture(Texture texture) {
+            destroyed.add(texture);
         }
 
         @Override

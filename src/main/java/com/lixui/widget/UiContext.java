@@ -17,8 +17,11 @@ import com.lixui.text.FontStyle;
 import com.lixui.theme.Theme;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -38,6 +41,7 @@ public final class UiContext implements AutoCloseable {
     private final Animator animator = new Animator();
     private final Set<Texture> textures = identitySet();
     private final Set<Font> fonts = identitySet();
+    private final Map<IconKey, SharedIcon> icons = new HashMap<>();
     private Rect viewport = Rect.EMPTY;
     private float scaleX = 1;
     private float scaleY = 1;
@@ -329,6 +333,32 @@ public final class UiContext implements AutoCloseable {
         return texture;
     }
 
+    Texture acquireIcon(String resource, int size) {
+        ensureOpen();
+        IconKey key = new IconKey(resource, size);
+        SharedIcon icon = icons.get(key);
+        if (icon == null) {
+            icon = new SharedIcon(createTexture(ImageData.fromResource(resource, size, size)));
+            icons.put(key, icon);
+        }
+        icon.references++;
+        return icon.texture;
+    }
+
+    void releaseIcon(Texture texture) {
+        Iterator<SharedIcon> iterator = icons.values().iterator();
+        while (iterator.hasNext()) {
+            SharedIcon icon = iterator.next();
+            if (icon.texture == texture) {
+                if (--icon.references == 0) {
+                    iterator.remove();
+                    destroyTexture(texture);
+                }
+                return;
+            }
+        }
+    }
+
     /**
      * Releases a texture created by this context.
      * Textures created elsewhere, already released textures, and calls after {@link #close()} are
@@ -361,18 +391,19 @@ public final class UiContext implements AutoCloseable {
             try {
                 renderer.destroyFont(font);
             } catch (RuntimeException exception) {
-                failure = recordFailure(failure, exception);
+                failure = Widget.recordFailure(failure, exception);
             }
         }
         for (Texture texture : List.copyOf(textures)) {
             try {
                 renderer.destroyTexture(texture);
             } catch (RuntimeException exception) {
-                failure = recordFailure(failure, exception);
+                failure = Widget.recordFailure(failure, exception);
             }
         }
         fonts.clear();
         textures.clear();
+        icons.clear();
         defaultFont = null;
         if (failure != null) {
             throw failure;
@@ -418,15 +449,19 @@ public final class UiContext implements AutoCloseable {
         }
     }
 
-    private static RuntimeException recordFailure(RuntimeException failure, RuntimeException exception) {
-        if (failure == null) {
-            return exception;
-        }
-        failure.addSuppressed(exception);
-        return failure;
-    }
-
     private static <T> Set<T> identitySet() {
         return Collections.newSetFromMap(new IdentityHashMap<>());
+    }
+
+    private record IconKey(String resource, int size) {
+    }
+
+    private static final class SharedIcon {
+        private final Texture texture;
+        private int references;
+
+        private SharedIcon(Texture texture) {
+            this.texture = texture;
+        }
     }
 }

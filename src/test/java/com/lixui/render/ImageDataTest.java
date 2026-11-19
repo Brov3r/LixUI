@@ -54,6 +54,14 @@ class ImageDataTest {
     }
 
     @Test
+    void rejectsDimensionsThatOverflowTheRgbaPayload() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new ImageData(Integer.MAX_VALUE, Integer.MAX_VALUE, new byte[0]));
+        assertThrows(IllegalArgumentException.class,
+                () -> ImageData.fromResource("assets/icons-128/light-mode.png", 65536, 65536));
+    }
+
+    @Test
     void rejectsMissingResourcesAndInvalidScales() {
         assertThrows(NullPointerException.class, () -> ImageData.fromResource(null));
         assertThrows(IllegalArgumentException.class, () -> ImageData.fromResource("missing.png"));
