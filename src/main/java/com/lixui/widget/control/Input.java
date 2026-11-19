@@ -140,7 +140,7 @@ public class Input extends Panel {
     public final void setText(String text) {
         String previous = this.text();
         String normalized = parseMaskedInput(
-                normalizeSingleLine(Objects.requireNonNull(text, "text")), valueLimit());
+                sanitize(Objects.requireNonNull(text, "text")), valueLimit());
         this.text = normalized;
         caret = normalized.length();
         anchor = caret;
@@ -537,7 +537,7 @@ public class Input extends Panel {
      *
      * @return the field style, or null when the field is not attached and has no local style
      */
-    private WidgetStyle resolvedStyle() {
+    protected final WidgetStyle resolvedStyle() {
         if (hasLocalStyle()) {
             return style();
         }
@@ -725,6 +725,9 @@ public class Input extends Panel {
      */
     @Override
     protected boolean onKeyPressed(Key key, Modifiers modifiers, boolean repeat) {
+        if (!isEnabled()) {
+            return false;
+        }
         boolean command = modifiers.superKey() || (modifiers.control() && !modifiers.alt());
         boolean shift = modifiers.shift();
         if (key == Key.INSERT) {
@@ -827,6 +830,9 @@ public class Input extends Panel {
      */
     @Override
     protected boolean onCharTyped(int codepoint) {
+        if (!isEnabled()) {
+            return true;
+        }
         if (readOnly) {
             return true;
         }
@@ -838,7 +844,7 @@ public class Input extends Panel {
         if (!allows(codepoint)) {
             return true;
         }
-        insert(new String(Character.toChars(codepoint)), false);
+        insertText(new String(Character.toChars(codepoint)), false);
         return true;
     }
 
@@ -856,7 +862,13 @@ public class Input extends Panel {
         resetBlink();
     }
 
-    private void drawSurface(RenderManager renderer, WidgetStyle widgetStyle) {
+    /**
+     * Paints the state-aware field surface and border with analytic rounded rectangles.
+     *
+     * @param renderer drawing manager for the current frame
+     * @param widgetStyle resolved style used for the field
+     */
+    protected final void drawSurface(RenderManager renderer, WidgetStyle widgetStyle) {
         WidgetState widgetState = state();
         Rect bounds = localBounds();
         float radius = widgetStyle.cornerRadius();
@@ -892,16 +904,29 @@ public class Input extends Panel {
         } else {
             renderer.text(font, display, textLeft, textTop, textColor, TextStyle.DEFAULT);
         }
-        if (!isFocused() || hasSelection() || !isCaretVisible(frame.elapsedSeconds())) {
+        if (!isEnabled() || !isFocused() || hasSelection()
+                || !isCaretVisible(frame.elapsedSeconds())) {
             return;
         }
         float caretX = textLeft + layout.caretPosition(displayCaret).x();
         renderer.rect(new Rect(caretX, textTop, caretWidth, layout.lineHeight()), textColor);
     }
 
-    private void drawSelection(RenderManager renderer, TextLayout layout, WidgetStyle widgetStyle,
-                               int start, int end, float textLeft, float textTop) {
-        if (start == end) {
+    /**
+     * Paints selection rectangles for a display range.
+     *
+     * @param renderer drawing manager for the current frame
+     * @param layout layout of the display text
+     * @param widgetStyle resolved style used for the field
+     * @param start selection start in display coordinates
+     * @param end selection end in display coordinates
+     * @param textLeft display text origin
+     * @param textTop display text origin
+     */
+    protected final void drawSelection(RenderManager renderer, TextLayout layout,
+                                       WidgetStyle widgetStyle, int start, int end,
+                                       float textLeft, float textTop) {
+        if (!isEnabled() || start == end) {
             return;
         }
         Color color = selectionColor;
@@ -917,12 +942,27 @@ public class Input extends Panel {
         }
     }
 
-    private Color placeholderColor(WidgetStyle widgetStyle) {
+    /**
+     * Resolves the placeholder color for the current interaction state.
+     *
+     * @param widgetStyle resolved style used for the field
+     * @return the muted or disabled placeholder color
+     */
+    protected final Color placeholderColor(WidgetStyle widgetStyle) {
+        if (!isEnabled()) {
+            return widgetStyle.text(WidgetState.DISABLED);
+        }
         UiContext context = context();
         return context == null ? widgetStyle.text(WidgetState.DISABLED) : context.theme().textMuted();
     }
 
-    private Rect contentRect(WidgetStyle widgetStyle) {
+    /**
+     * Returns the content rectangle inside the field padding.
+     *
+     * @param widgetStyle resolved style used for the field
+     * @return the content rectangle in widget-local coordinates, or an empty rectangle
+     */
+    protected final Rect contentRect(WidgetStyle widgetStyle) {
         float padding = widgetStyle.padding();
         float width = localBounds().width() - padding * 2;
         float height = localBounds().height() - padding * 2;
@@ -952,7 +992,14 @@ public class Input extends Panel {
         scrollX = Math.clamp(scrollX, 0, maxScroll);
     }
 
-    private int indexAt(float x, float y) {
+    /**
+     * Maps a widget-local point to the closest caret index in the stored value.
+     *
+     * @param x horizontal coordinate relative to the widget
+     * @param y vertical coordinate relative to the widget
+     * @return the closest UTF-16 index in the raw value
+     */
+    protected int indexAt(float x, float y) {
         Font font = font();
         if (font == null) {
             return caret;
@@ -1049,7 +1096,13 @@ public class Input extends Panel {
         return position;
     }
 
-    private void moveCaret(int index, boolean extend) {
+    /**
+     * Moves the caret to the supplied raw index and optionally extends the selection.
+     *
+     * @param index UTF-16 index in the raw value
+     * @param extend true to keep the selection anchor
+     */
+    protected final void moveCaret(int index, boolean extend) {
         caret = clampIndex(index);
         if (!extend) {
             anchor = caret;
@@ -1058,7 +1111,7 @@ public class Input extends Panel {
     }
 
     private boolean deleteBackward(boolean word) {
-        if (readOnly) {
+        if (!isEnabled() || readOnly) {
             return true;
         }
         if (hasSelection()) {
@@ -1074,7 +1127,7 @@ public class Input extends Panel {
     }
 
     private boolean deleteForward(boolean word) {
-        if (readOnly) {
+        if (!isEnabled() || readOnly) {
             return true;
         }
         if (hasSelection()) {
@@ -1089,19 +1142,33 @@ public class Input extends Panel {
         return true;
     }
 
-    private void deleteSelection() {
+    /**
+     * Deletes the selected range from the stored value.
+     */
+    protected final void deleteSelection() {
+        if (!isEnabled()) {
+            return;
+        }
         int start = selectionStart();
         int end = selectionEnd();
         applyEdit(text.substring(0, start) + text.substring(end), start, start);
     }
 
-    private boolean insert(String value, boolean pasted) {
-        if (readOnly) {
+    /**
+     * Inserts text at the caret, replacing the selection and honoring the mask and restrictions.
+     * The history is updated when the value actually changes.
+     *
+     * @param value text to insert
+     * @param pasted true when the text comes from the clipboard and may contain mask literals
+     * @return true when the insertion is consumed
+     */
+    protected final boolean insertText(String value, boolean pasted) {
+        if (!isEnabled() || readOnly) {
             return true;
         }
         int start = selectionStart();
         int end = selectionEnd();
-        String sanitized = normalizeSingleLine(value);
+        String sanitized = sanitize(value);
         if (sanitized.isEmpty() && start == end) {
             return false;
         }
@@ -1147,11 +1214,22 @@ public class Input extends Panel {
         return formatText(false);
     }
 
-    private String displayText() {
+    /**
+     * Returns the visible text, applying the mask and secret mode.
+     *
+     * @return the display text
+     */
+    protected final String displayText() {
         return formatText(secret);
     }
 
-    private String formatText(boolean hideValues) {
+    /**
+     * Formats the stored value with the active mask and optional secret replacement.
+     *
+     * @param hideValues true to replace value characters with the secret character
+     * @return the display text
+     */
+    protected final String formatText(boolean hideValues) {
         if (maskSlots.isEmpty()) {
             if (!hideValues) {
                 return text;
@@ -1160,7 +1238,11 @@ public class Input extends Panel {
             for (int index = 0; index < text.length(); ) {
                 int codepoint = text.codePointAt(index);
                 index += Character.charCount(codepoint);
-                hidden.append(secretCharacter);
+                if (isLineBreak(codepoint)) {
+                    hidden.appendCodePoint(codepoint);
+                } else {
+                    hidden.append(secretCharacter);
+                }
             }
             return hidden.toString();
         }
@@ -1179,13 +1261,24 @@ public class Input extends Panel {
             }
             int codepoint = text.codePointAt(position);
             position += Character.charCount(codepoint);
-            if (hideValues) {
+            if (hideValues && !isLineBreak(codepoint)) {
                 formatted.append(secretCharacter);
             } else {
                 formatted.appendCodePoint(codepoint);
             }
         }
         return formatted.toString();
+    }
+
+    /**
+     * Reports whether a code point must stay visible in secret mode.
+     * The single-line field hides every character; multiline subclasses can preserve line breaks.
+     *
+     * @param codepoint code point to inspect
+     * @return true when the code point is a structural line break
+     */
+    protected boolean isLineBreak(int codepoint) {
+        return false;
     }
 
     private String parseMaskedInput(String input, int limit) {
@@ -1272,7 +1365,13 @@ public class Input extends Panel {
         return result.toString();
     }
 
-    private boolean allows(int codepoint) {
+    /**
+     * Reports whether the active restrictions accept a code point.
+     *
+     * @param codepoint code point to inspect
+     * @return true when the code point may be stored
+     */
+    protected boolean allows(int codepoint) {
         return allowedCharacters.contains(kindOf(codepoint));
     }
 
@@ -1289,7 +1388,13 @@ public class Input extends Panel {
         return CharacterKind.SYMBOLS;
     }
 
-    private int displayIndexForRaw(int rawIndex) {
+    /**
+     * Maps a raw caret index to the equivalent display index.
+     *
+     * @param rawIndex UTF-16 index in the stored value
+     * @return the UTF-16 index in the display text
+     */
+    protected final int displayIndexForRaw(int rawIndex) {
         int clamped = clampIndex(rawIndex);
         if (maskSlots.isEmpty()) {
             return secret ? text.codePointCount(0, clamped) : clamped;
@@ -1314,7 +1419,13 @@ public class Input extends Panel {
         return display;
     }
 
-    private int rawIndexForDisplay(int displayIndex) {
+    /**
+     * Maps a display index to the equivalent raw caret index.
+     *
+     * @param displayIndex UTF-16 index in the display text
+     * @return the closest UTF-16 index in the stored value
+     */
+    protected final int rawIndexForDisplay(int displayIndex) {
         int limit = displayText().length();
         int index = Math.clamp(displayIndex, 0, limit);
         if (maskSlots.isEmpty()) {
@@ -1426,7 +1537,7 @@ public class Input extends Panel {
     }
 
     private boolean undo() {
-        if (readOnly) {
+        if (!isEnabled() || readOnly) {
             return true;
         }
         EditState state = undoHistory.poll();
@@ -1442,7 +1553,7 @@ public class Input extends Panel {
     }
 
     private boolean redo() {
-        if (readOnly) {
+        if (!isEnabled() || readOnly) {
             return true;
         }
         EditState state = redoHistory.poll();
@@ -1488,7 +1599,7 @@ public class Input extends Panel {
         if (!hasSelection()) {
             return false;
         }
-        if (secret || readOnly) {
+        if (secret || readOnly || !isEnabled()) {
             return true;
         }
         copySelection();
@@ -1501,14 +1612,20 @@ public class Input extends Panel {
         if (context == null) {
             return false;
         }
-        if (readOnly) {
+        if (readOnly || !isEnabled()) {
             return true;
         }
-        insert(context.clipboardText(), true);
+        insertText(context.clipboardText(), true);
         return true;
     }
 
-    private void submit() {
+    /**
+     * Invokes the submit callback when the field is enabled.
+     */
+    protected final void submit() {
+        if (!isEnabled()) {
+            return;
+        }
         if (onSubmit != null) {
             onSubmit.run();
         }
@@ -1524,7 +1641,13 @@ public class Input extends Panel {
         blinkStart = lastElapsed;
     }
 
-    private boolean isCaretVisible(double elapsedSeconds) {
+    /**
+     * Reports whether the blinking caret is in its visible phase.
+     *
+     * @param elapsedSeconds current elapsed frame time
+     * @return true when the caret should be painted
+     */
+    protected final boolean isCaretVisible(double elapsedSeconds) {
         double phase = (elapsedSeconds - blinkStart) % CARET_BLINK_PERIOD;
         if (phase < 0) {
             phase += CARET_BLINK_PERIOD;
@@ -1532,7 +1655,13 @@ public class Input extends Panel {
         return phase < CARET_BLINK_HALF_PERIOD;
     }
 
-    private static float caretWidth(Font font) {
+    /**
+     * Returns the caret stroke width for a font.
+     *
+     * @param font font used by the field
+     * @return the caret width in logical UI units
+     */
+    protected static float caretWidth(Font font) {
         return Math.max(1, font.pixelSize() * 0.075f);
     }
 
@@ -1597,6 +1726,18 @@ public class Input extends Panel {
         return Character.isLetterOrDigit(codepoint) || codepoint == '_'
                 || type == Character.NON_SPACING_MARK || type == Character.COMBINING_SPACING_MARK
                 || type == Character.ENCLOSING_MARK;
+    }
+
+    /**
+     * Normalizes entered text before it is stored or edited.
+     * The default implementation collapses line breaks and tabs to spaces, because this field is
+     * single-line. Subclasses can preserve other whitespace.
+     *
+     * @param value text to normalize
+     * @return the normalized text
+     */
+    protected String sanitize(String value) {
+        return normalizeSingleLine(value);
     }
 
     private static String normalizeSingleLine(String value) {

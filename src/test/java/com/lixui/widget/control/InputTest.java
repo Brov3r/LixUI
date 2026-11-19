@@ -343,6 +343,40 @@ class InputTest {
     }
 
     @Test
+    void disabledFieldRejectsEditsAndHidesCaretAndSelection() {
+        Optional<FontData> data = SystemFonts.findDefault();
+        Assumptions.assumeTrue(data.isPresent(), "No readable system font is installed.");
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend, new ClipboardPlatform())) {
+            Font font = manager.context().createFont(data.get(), 16);
+            manager.setDefaultFont(font);
+            Input input = new Input("Hi");
+            input.setBounds(FIELD_BOUNDS);
+            manager.add(input);
+            manager.focus(input);
+            input.selectAll();
+
+            input.setEnabled(false);
+
+            assertFalse(input.isFocused());
+            assertTrue(input.insertText("X", false));
+            assertEquals("Hi", input.text());
+
+            manager.render();
+            List<DrawCommand> commands = backend.lastDrawList().commands();
+            assertEquals(2, commands.stream()
+                    .filter(RoundedRectCommand.class::isInstance).count());
+            TextCommand text = commands.stream()
+                    .filter(TextCommand.class::isInstance)
+                    .map(TextCommand.class::cast)
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(manager.context().theme().controlStyle().text(WidgetState.DISABLED),
+                    text.colors().getFirst());
+        }
+    }
+
+    @Test
     void validatesConfigurationAndNormalizesPlaceholder() {
         Input input = new Input();
         assertThrows(NullPointerException.class, () -> new Input(null));

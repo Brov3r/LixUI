@@ -25,6 +25,7 @@ import com.lixui.widget.control.CheckBox;
 import com.lixui.widget.control.Dropdown;
 import com.lixui.widget.FrameInfo;
 import com.lixui.widget.control.Input;
+import com.lixui.widget.control.InputArea;
 import com.lixui.widget.control.KnobSlider;
 import com.lixui.widget.control.Label;
 import com.lixui.widget.control.MultiSelect;
@@ -138,6 +139,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 outerTabs.addTab("Progress", createProgressPage())::setIcon);
         bindIcon("keyboard.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Input", createInputPage())::setIcon);
+        bindIcon("a-to-z.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Text area", createInputAreaPage())::setIcon);
         bindIcon("menu.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Popup", createPopupPage())::setIcon);
         bindIcon("text.svg", outerTabs.iconSize(), outerTabs.addTab("Labels", labelsPage)::setIcon);
@@ -678,6 +681,41 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(sliderCaption("Split button"))
                 .add(split)
                 .add(splitStatus)
+                .add(status);
+        return page;
+    }
+
+    private Widget createInputAreaPage() {
+        Label status = new Label("Enter inserts a line break; Ctrl+Enter submits.");
+        status.setFontFamily(fontFamily);
+        status.setAutoSize(false);
+        status.setWrap(true);
+
+        InputArea area = new InputArea("A multiline text area\nwith soft wrapping enabled "
+                + "by default.\n\nUse arrow keys, Home/End, Page Up/Page Down and the wheel "
+                + "to navigate longer notes.");
+        area.setPlaceholder("Write a note...");
+        area.setGrow(1);
+        area.setOnChange(value -> {
+            String raw = area.rawText();
+            status.setText("Characters: " + raw.codePointCount(0, raw.length())
+                    + "    Lines: " + (raw.chars().filter(character -> character == '\n')
+                    .count() + 1));
+        });
+        area.setOnSubmit(() -> status.setText("Submitted with Ctrl+Enter."));
+
+        InputArea disabled = new InputArea(
+                "A disabled text area cannot be edited or focused.\n"
+                        + "Its selection highlight and caret are hidden.");
+        disabled.setEnabled(false);
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(8);
+        page.add(sliderCaption("Multiline input"))
+                .add(area)
+                .add(sliderCaption("Disabled"))
+                .add(disabled)
                 .add(status);
         return page;
     }
