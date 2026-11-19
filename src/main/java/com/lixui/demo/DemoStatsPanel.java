@@ -11,14 +11,13 @@ import com.lixui.widget.Panel;
 
 /**
  * A compact panel that displays frame rate, draw calls and the number of visible widgets.
- * The panel sizes itself to the measured text of its columns.
+ * The panel sizes itself to the measured text of its columns and to the requested height.
  */
 final class DemoStatsPanel extends Panel {
     private static final String[] LABELS = {"FPS", "DrawCall", "Widgets"};
     private static final float LABEL_GAP = 6;
     private static final float COLUMN_GAP = 18;
     private static final float PADDING_HORIZONTAL = 12;
-    private static final float PADDING_VERTICAL = 8;
 
     private int fps;
     private int drawCalls;
@@ -52,11 +51,12 @@ final class DemoStatsPanel extends Panel {
     }
 
     /**
-     * Resizes the panel to fit the measured metric columns.
+     * Resizes the panel to fit the measured metric columns and the supplied height.
      *
      * @param renderer drawing manager used to measure text
+     * @param height target panel height in logical UI units
      */
-    void resizeToContent(RenderManager renderer) {
+    void resizeToContent(RenderManager renderer, float height) {
         Font font = font();
         if (font == null) {
             return;
@@ -70,7 +70,6 @@ final class DemoStatsPanel extends Panel {
                 width += COLUMN_GAP;
             }
         }
-        float height = renderer.measureText(font, LABELS[0]).height() + PADDING_VERTICAL * 2;
         setSize(width, height);
     }
 

@@ -22,10 +22,14 @@ import com.lixui.text.VerticalAlignment;
 import com.lixui.theme.Theme;
 import com.lixui.theme.WidgetStyle;
 import com.lixui.widget.Button;
+import com.lixui.widget.CheckBox;
 import com.lixui.widget.FrameInfo;
 import com.lixui.widget.Label;
+import com.lixui.widget.RadioBox;
 import com.lixui.widget.RichLabel;
+import com.lixui.widget.SegmentedButton;
 import com.lixui.widget.TabPanel;
+import com.lixui.widget.ToggleGroup;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.Window;
@@ -43,7 +47,7 @@ final class DemoWidgetScene implements AutoCloseable {
     private static final float STATS_GAP = 8;
     private static final double FPS_UPDATE_SECONDS = 0.25;
     private static final float WINDOW_WIDTH = 560;
-    private static final float WINDOW_HEIGHT = 420;
+    private static final float WINDOW_HEIGHT = 500;
     private static final float CONTENT_PADDING = 10;
     private static final float CONTENT_GAP = 8;
     private static final Color BLUE = Color.hex("#7EA6F5");
@@ -117,11 +121,18 @@ final class DemoWidgetScene implements AutoCloseable {
         labelsPage.add(titleLabel).add(bodyLabel).add(elidedLabel)
                 .add(decoratedLabel).add(justifiedLabel).add(richLabel);
         innerTabs = createInnerTabs();
+        Texture labelsIcon = manager.context().createTexture(
+                ImageData.fromResource("assets/icons-128/text.png",
+                        THEME_ICON_SIZE, THEME_ICON_SIZE));
+        Texture controlsIcon = manager.context().createTexture(
+                ImageData.fromResource("assets/icons-128/adjustment.png",
+                        THEME_ICON_SIZE, THEME_ICON_SIZE));
         outerTabs = new TabPanel();
-        outerTabs.addTab("Labels", labelsPage);
-        outerTabs.addTab("Tabs", innerTabs);
+        outerTabs.addTab("Labels", labelsIcon, labelsPage);
+        outerTabs.addTab("Tabs", windowIcon, innerTabs);
+        outerTabs.addTab("Controls", controlsIcon, createControlsPage());
         window = new Window();
-        window.setTitle("Label, RichLabel & TabPanel");
+        window.setTitle("LixUI - Demo Window");
         window.setHeaderIcon(windowIcon);
         window.setHeaderIconSize(THEME_ICON_SIZE);
         window.setContent(outerTabs);
@@ -171,6 +182,107 @@ final class DemoWidgetScene implements AutoCloseable {
         tabs.setTabClosable(tabList.get(0), false);
         tabs.setTabMovable(tabList.get(11), false);
         return tabs;
+    }
+
+    private VBox createControlsPage() {
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(10);
+        page.setCrossAlignment(VBox.CrossAlignment.START);
+
+        CheckBox sound = new CheckBox("Enable sound");
+        sound.setIndicator(CheckBox.Indicator.SWITCH);
+        sound.setTooltipText("Toggles interface sounds.");
+
+        CheckBox grid = new CheckBox("Show grid");
+        grid.setChecked(true);
+        grid.setTooltipText("Draws the layout grid over the scene.");
+
+        ToggleGroup styleGroup = new ToggleGroup();
+        styleGroup.setMaximumSelected(2);
+        CheckBox bold = new CheckBox("Bold");
+        bold.setChecked(true);
+        bold.setTooltipText("At most two styles can be active.");
+        CheckBox italic = new CheckBox("Italic");
+        CheckBox underline = new CheckBox("Underline");
+        bold.setGroup(styleGroup);
+        italic.setGroup(styleGroup);
+        underline.setGroup(styleGroup);
+
+        ToggleGroup sizeGroup = new ToggleGroup();
+        sizeGroup.setExclusive(true);
+        RadioBox small = new RadioBox("Small");
+        RadioBox medium = new RadioBox("Medium");
+        medium.setChecked(true);
+        RadioBox large = new RadioBox("Large");
+        small.setGroup(sizeGroup);
+        medium.setGroup(sizeGroup);
+        large.setGroup(sizeGroup);
+        sizeGroup.setMinimumSelected(1);
+
+        Label status = new Label("Segmented button: no action yet");
+        status.setFontFamily(fontFamily);
+        status.setAutoSize(false);
+
+        SegmentedButton actions = new SegmentedButton();
+        actions.setTooltipText("Each segment runs its own action.");
+        Texture cutIcon = manager.context().createTexture(
+                ImageData.fromResource("assets/icons-128/scissors.png",
+                        THEME_ICON_SIZE, THEME_ICON_SIZE));
+        Texture copyIcon = manager.context().createTexture(
+                ImageData.fromResource("assets/icons-128/copy.png",
+                        THEME_ICON_SIZE, THEME_ICON_SIZE));
+        Texture pasteIcon = manager.context().createTexture(
+                ImageData.fromResource("assets/icons-128/paste.png",
+                        THEME_ICON_SIZE, THEME_ICON_SIZE));
+        Texture trashIcon = manager.context().createTexture(
+                ImageData.fromResource("assets/icons-128/trash.png",
+                        THEME_ICON_SIZE, THEME_ICON_SIZE));
+        actions.addSegment("Cut", cutIcon)
+                .setOnAction(() -> status.setText("Cut segment clicked"));
+        actions.addSegment("Copy", copyIcon)
+                .setOnAction(() -> status.setText("Copy segment clicked"));
+        actions.addSegment("Paste", pasteIcon)
+                .setOnAction(() -> status.setText("Paste segment clicked"));
+        actions.addSegment("Delete", trashIcon).setEnabled(false);
+
+        SegmentedButton alignment = new SegmentedButton();
+        alignment.setSelectionMode(SegmentedButton.SelectionMode.SINGLE);
+        alignment.setTooltipText("Radio-like selection; icons can be hidden above.");
+        Texture leftIcon = manager.context().createTexture(
+                ImageData.fromResource("assets/icons-128/align-left-02.png",
+                        THEME_ICON_SIZE, THEME_ICON_SIZE));
+        Texture centerIcon = manager.context().createTexture(
+                ImageData.fromResource("assets/icons-128/align-horizontal-centers-02.png",
+                        THEME_ICON_SIZE, THEME_ICON_SIZE));
+        Texture rightIcon = manager.context().createTexture(
+                ImageData.fromResource("assets/icons-128/align-right-02.png",
+                        THEME_ICON_SIZE, THEME_ICON_SIZE));
+        alignment.addSegment("Left", leftIcon);
+        alignment.addSegment("Center", centerIcon);
+        alignment.addSegment("Right", rightIcon);
+        alignment.setSelectedIndex(1);
+        alignment.setOnSelectionChange(index ->
+                status.setText("Alignment segment " + index + " selected"));
+
+        CheckBox icons = new CheckBox("Show segment icons");
+        icons.setChecked(true);
+        icons.setTooltipText("Hides or shows icons inside both segmented buttons.");
+        icons.setOnChange(checked -> {
+            actions.setShowIcons(checked);
+            alignment.setShowIcons(checked);
+        });
+
+        CheckBox multiple = new CheckBox("Multiple segment selection");
+        multiple.setTooltipText("Switches the alignment control between radio and check box modes.");
+        multiple.setOnChange(checked -> alignment.setSelectionMode(checked
+                ? SegmentedButton.SelectionMode.MULTIPLE
+                : SegmentedButton.SelectionMode.SINGLE));
+
+        page.add(sound).add(grid).add(bold).add(italic).add(underline)
+                .add(small).add(medium).add(large)
+                .add(icons).add(actions).add(alignment).add(multiple).add(status);
+        return page;
     }
 
     private FontFamily createFontFamily() {
@@ -280,7 +392,7 @@ final class DemoWidgetScene implements AutoCloseable {
         float contentWidth = Math.max(0, window.bounds().width());
         float contentHeight = Math.max(0, window.bounds().height() - window.headerHeight());
         outerTabs.setSize(contentWidth, contentHeight);
-        statsPanel.resizeToContent(manager.renderer());
+        statsPanel.resizeToContent(manager.renderer(), THEME_BUTTON_SIZE);
         manager.render();
         statsPanel.setDrawCalls(backend.drawCallCount());
     }
