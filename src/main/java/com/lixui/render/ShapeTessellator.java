@@ -72,8 +72,7 @@ final class ShapeTessellator {
             return List.of();
         }
         List<Point> path = roundedRectPath(bounds, radius);
-        Point center = new Point(bounds.x() + bounds.width() / 2,
-                bounds.y() + bounds.height() / 2);
+        Point center = bounds.center();
         List<MeshVertex> vertices = new ArrayList<>();
         if (paint instanceof Paint.Solid) {
             addClosedFan(vertices, center, path, paint);
@@ -331,7 +330,7 @@ final class ShapeTessellator {
     }
 
     private static int ringCount(float size) {
-        return clamp((int) Math.ceil(size / 10 * quality), MIN_RINGS, MAX_RINGS);
+        return Math.clamp((int) Math.ceil(size / 10 * quality), MIN_RINGS, MAX_RINGS);
     }
 
     private static void addQuad(List<MeshVertex> vertices, Point a, Point b, Point c, Point d,
@@ -472,7 +471,7 @@ final class ShapeTessellator {
         float top = bounds.y();
         float right = bounds.right();
         float bottom = bounds.bottom();
-        int segments = Math.max(2, Math.min(16, (int) Math.ceil(clamped / 6 * quality)));
+        int segments = Math.clamp((int) Math.ceil(clamped / 6 * quality), 2, 16);
         List<Point> points = new ArrayList<>();
         points.add(new Point(left + clamped, top));
         points.add(new Point(right - clamped, top));
@@ -530,26 +529,23 @@ final class ShapeTessellator {
 
     private static int gradientSteps(Rect bounds) {
         int steps = (int) Math.ceil(Math.max(bounds.width(), bounds.height()) / 16 * quality);
-        return clamp(steps, 4, MAX_GRADIENT_STEPS);
+        return Math.clamp(steps, 4, MAX_GRADIENT_STEPS);
     }
 
     private static int circleSegments(float radius) {
         int segments = (int) Math.ceil(radius * 1.5f * quality);
-        return clamp(segments, MIN_CIRCLE_SEGMENTS, MAX_CIRCLE_SEGMENTS);
+        return Math.clamp(segments, MIN_CIRCLE_SEGMENTS, MAX_CIRCLE_SEGMENTS);
     }
 
     private static int ellipseSegments(float radiusX, float radiusY, float sweep) {
         float circumference = (float) (Math.PI * (radiusX + radiusY));
         float length = circumference * (sweep / TWO_PI);
         int segments = (int) Math.ceil(length / 6 * quality);
-        return clamp(segments, MIN_CIRCLE_SEGMENTS, MAX_CIRCLE_SEGMENTS);
+        return Math.clamp(segments, MIN_CIRCLE_SEGMENTS, MAX_CIRCLE_SEGMENTS);
     }
 
     private static boolean isFullCircle(float sweep) {
         return Math.abs(sweep) >= TWO_PI - EPSILON;
     }
 
-    private static int clamp(int value, int minimum, int maximum) {
-        return Math.max(minimum, Math.min(value, maximum));
-    }
 }

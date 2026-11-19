@@ -38,6 +38,15 @@ public record Rect(float x, float y, float width, float height) {
     }
 
     /**
+     * Returns the center point of this rectangle.
+     *
+     * @return the center point
+     */
+    public Point center() {
+        return new Point(x + width / 2, y + height / 2);
+    }
+
+    /**
      * Returns the horizontal coordinate of the right edge.
      *
      * @return the left edge plus the width

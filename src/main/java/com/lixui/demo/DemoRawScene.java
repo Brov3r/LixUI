@@ -18,9 +18,6 @@ import java.util.List;
  * Demonstrates the raw fill and stroke API, multi-stop gradients, transforms and stencil masks.
  */
 final class DemoRawScene {
-    private static final float DESIGN_WIDTH = 1280;
-    private static final float DESIGN_HEIGHT = 720;
-
     private DemoRawScene() {
     }
 
@@ -36,7 +33,7 @@ final class DemoRawScene {
      */
     static void draw(RenderManager renderer, Texture texture, Texture wrappedTexture,
                      Texture maskTexture, DemoFonts fonts, float time) {
-        Layout layout = Layout.fit(renderer.viewport());
+        DesignLayout.Layout layout = DesignLayout.Layout.fit(renderer.viewport());
         renderer.fillRect(renderer.viewport(), Paint.solid(Color.hex("#12141A")));
 
         drawTopRow(renderer, layout);
@@ -45,7 +42,7 @@ final class DemoRawScene {
         drawText(renderer, layout, fonts);
     }
 
-    private static void drawTopRow(RenderManager renderer, Layout layout) {
+    private static void drawTopRow(RenderManager renderer, DesignLayout.Layout layout) {
         renderer.fillRoundedRect(layout.rect(40, 40, 280, 160), layout.scale(28),
                 Paint.linear(layout.point(40, 40), layout.point(320, 200),
                         new GradientStop(0, Color.hex("#5B8CFF")),
@@ -88,7 +85,7 @@ final class DemoRawScene {
         renderer.strokePolygon(polygon, layout.scale(4), Paint.solid(Color.WHITE.withAlpha(0.55f)));
     }
 
-    private static void drawMaskRow(RenderManager renderer, Layout layout,
+    private static void drawMaskRow(RenderManager renderer, DesignLayout.Layout layout,
                                     Texture texture, Texture wrappedTexture) {
         Rect firstCard = layout.rect(40, 240, 360, 220);
         Rect firstView = layout.rect(58, 258, 324, 184);
@@ -134,7 +131,7 @@ final class DemoRawScene {
         renderer.popMask();
     }
 
-    private static void drawTransformRow(RenderManager renderer, Layout layout,
+    private static void drawTransformRow(RenderManager renderer, DesignLayout.Layout layout,
                                          Texture maskTexture, float time) {
         Rect rotatingRect = layout.rect(80, 510, 220, 150);
         Point rotatingCenter = center(rotatingRect);
@@ -188,7 +185,7 @@ final class DemoRawScene {
         return new Point(rect.x() + rect.width() / 2, rect.y() + rect.height() / 2);
     }
 
-    private static void drawText(RenderManager renderer, Layout layout, DemoFonts fonts) {
+    private static void drawText(RenderManager renderer, DesignLayout.Layout layout, DemoFonts fonts) {
         if (fonts == null) {
             return;
         }
@@ -212,7 +209,7 @@ final class DemoRawScene {
                 HorizontalAlignment.RIGHT, VerticalAlignment.CENTER);
     }
 
-    private static void drawRotatedTextLine(RenderManager renderer, Layout layout, Font font,
+    private static void drawRotatedTextLine(RenderManager renderer, DesignLayout.Layout layout, Font font,
                                             float x, float y, float angle, String text) {
         Point origin = layout.point(x, y);
         Transform transform = Transform.translation(origin.x(), origin.y())
@@ -221,24 +218,24 @@ final class DemoRawScene {
         renderer.withTransform(transform, () -> renderer.text(font, text, 0, 0, Color.WHITE));
     }
 
-    private static void drawTextLine(RenderManager renderer, Layout layout, Font font,
+    private static void drawTextLine(RenderManager renderer, DesignLayout.Layout layout, Font font,
                                      float x, float y, String text, Color color) {
         drawTextLine(renderer, layout, font, x, y, text, Paint.solid(color));
     }
 
-    private static void drawTextLine(RenderManager renderer, Layout layout, Font font,
+    private static void drawTextLine(RenderManager renderer, DesignLayout.Layout layout, Font font,
                                      float x, float y, String text, Paint paint) {
         drawTextLine(renderer, layout, font, x, y, text, paint,
                 HorizontalAlignment.LEFT, VerticalAlignment.TOP);
     }
 
-    private static void drawTextLine(RenderManager renderer, Layout layout, Font font,
+    private static void drawTextLine(RenderManager renderer, DesignLayout.Layout layout, Font font,
                                      float x, float y, String text, Color color,
                                      HorizontalAlignment horizontal, VerticalAlignment vertical) {
         drawTextLine(renderer, layout, font, x, y, text, Paint.solid(color), horizontal, vertical);
     }
 
-    private static void drawTextLine(RenderManager renderer, Layout layout, Font font,
+    private static void drawTextLine(RenderManager renderer, DesignLayout.Layout layout, Font font,
                                      float x, float y, String text, Paint paint,
                                      HorizontalAlignment horizontal, VerticalAlignment vertical) {
         Point origin = layout.point(x, y);
@@ -254,24 +251,4 @@ final class DemoRawScene {
                 .multiply(Transform.translation(-center.x(), -center.y()));
     }
 
-    private record Layout(float scale, float offsetX, float offsetY) {
-        static Layout fit(Rect viewport) {
-            float scale = Math.min(viewport.width() / DESIGN_WIDTH, viewport.height() / DESIGN_HEIGHT);
-            return new Layout(scale,
-                    viewport.x() + (viewport.width() - DESIGN_WIDTH * scale) / 2,
-                    viewport.y() + (viewport.height() - DESIGN_HEIGHT * scale) / 2);
-        }
-
-        Point point(float x, float y) {
-            return new Point(offsetX + x * scale, offsetY + y * scale);
-        }
-
-        Rect rect(float x, float y, float width, float height) {
-            return new Rect(offsetX + x * scale, offsetY + y * scale, width * scale, height * scale);
-        }
-
-        float scale(float value) {
-            return value * scale;
-        }
-    }
 }

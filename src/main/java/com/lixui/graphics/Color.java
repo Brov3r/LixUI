@@ -160,6 +160,46 @@ public record Color(float r, float g, float b, float a) {
     }
 
     /**
+     * Linearly blends two colors in straight alpha space.
+     * Amounts outside {@code [0, 1]} are clamped to the nearest endpoint.
+     *
+     * @param from color at amount zero
+     * @param to color at amount one
+     * @param amount blend amount in {@code [0, 1]}
+     * @return the blended color
+     * @throws NullPointerException if either color is null
+     * @throws IllegalArgumentException if the amount is non-finite
+     */
+    public static Color mix(Color from, Color to, float amount) {
+        Objects.requireNonNull(from, "from");
+        Objects.requireNonNull(to, "to");
+        if (!Float.isFinite(amount)) {
+            throw new IllegalArgumentException("Blend amount must be finite.");
+        }
+        float clamped = Math.clamp(amount, 0, 1);
+        if (clamped <= 0) {
+            return from;
+        }
+        if (clamped >= 1) {
+            return to;
+        }
+        return new Color(
+                from.r() + (to.r() - from.r()) * clamped,
+                from.g() + (to.g() - from.g()) * clamped,
+                from.b() + (to.b() - from.b()) * clamped,
+                from.a() + (to.a() - from.a()) * clamped);
+    }
+
+    /**
+     * Returns the perceived brightness using Rec.601 luma weights.
+     *
+     * @return a value in {@code [0, 1]}
+     */
+    public float luminance() {
+        return r() * 0.299f + g() * 0.587f + b() * 0.114f;
+    }
+
+    /**
      * Packs RGB into {@code 0xRRGGBB}, rounding to the nearest 8-bit values and discarding alpha.
      *
      * @return packed RGB with the most significant byte set to zero

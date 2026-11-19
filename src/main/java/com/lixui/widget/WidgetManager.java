@@ -983,158 +983,112 @@ public final class WidgetManager implements AutoCloseable {
         return (float) Math.hypot(secondX - firstX, secondY - firstY);
     }
 
-    private boolean bubblePointerMove(Widget target, float x, float y,
-                                             Set<Widget> delivered) {
-        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
-                widget = widget.parent()) {
-            if (!delivered.add(widget)) {
-                continue;
-            }
-            Point local = localPoint(widget, x, y);
-            if (widget.onPointerMove(local.x(), local.y())) {
-                return true;
-            }
-        }
-        return false;
+    private boolean bubblePointerMove(Widget target, float x, float y, Set<Widget> delivered) {
+        return bubblePointer(target, x, y, delivered,
+                (widget, local) -> widget.onPointerMove(local.x(), local.y()));
     }
 
     private boolean bubblePointerPress(Widget target, PointerPressed pressed) {
-        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
-                widget = widget.parent()) {
-            Point local = localPoint(widget, pressed.x(), pressed.y());
-            if (widget.onPointerPress(local.x(), local.y(), pressed.button(), pressed.modifiers())) {
-                return true;
-            }
-        }
-        return false;
+        return bubblePointer(target, pressed.x(), pressed.y(), null,
+                (widget, local) -> widget.onPointerPress(local.x(), local.y(),
+                        pressed.button(), pressed.modifiers()));
     }
 
     private boolean bubblePointerRelease(Widget target, PointerReleased released) {
-        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
-                widget = widget.parent()) {
-            Point local = localPoint(widget, released.x(), released.y());
-            if (widget.onPointerRelease(local.x(), local.y(), released.button(),
-                    released.modifiers())) {
-                return true;
-            }
-        }
-        return false;
+        return bubblePointer(target, released.x(), released.y(), null,
+                (widget, local) -> widget.onPointerRelease(local.x(), local.y(),
+                        released.button(), released.modifiers()));
     }
 
     private boolean bubblePointerScroll(Widget target, PointerScrolled scrolled) {
-        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
-                widget = widget.parent()) {
-            Point local = localPoint(widget, scrolled.x(), scrolled.y());
-            if (widget.onPointerScroll(local.x(), local.y(), scrolled.deltaX(), scrolled.deltaY())) {
-                return true;
-            }
-        }
-        return false;
+        return bubblePointer(target, scrolled.x(), scrolled.y(), null,
+                (widget, local) -> widget.onPointerScroll(local.x(), local.y(),
+                        scrolled.deltaX(), scrolled.deltaY()));
     }
 
     private boolean bubbleClick(Widget target, float x, float y, MouseButton button,
-                                       Modifiers modifiers) {
-        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
-                widget = widget.parent()) {
-            Point local = localPoint(widget, x, y);
-            if (widget.onClick(local.x(), local.y(), button, modifiers)) {
-                return true;
-            }
-        }
-        return false;
+                                Modifiers modifiers) {
+        return bubblePointer(target, x, y, null,
+                (widget, local) -> widget.onClick(local.x(), local.y(), button, modifiers));
     }
 
     private boolean bubbleDoubleClick(Widget target, float x, float y, MouseButton button,
-                                             Modifiers modifiers) {
-        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
-                widget = widget.parent()) {
-            Point local = localPoint(widget, x, y);
-            if (widget.onDoubleClick(local.x(), local.y(), button, modifiers)) {
-                return true;
-            }
-        }
-        return false;
+                                      Modifiers modifiers) {
+        return bubblePointer(target, x, y, null,
+                (widget, local) -> widget.onDoubleClick(local.x(), local.y(), button, modifiers));
     }
 
     private boolean bubbleDragStart(Widget target, float x, float y, MouseButton button,
-                                           Modifiers modifiers) {
-        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
-                widget = widget.parent()) {
-            Point local = localPoint(widget, x, y);
-            if (widget.onDragStart(local.x(), local.y(), button, modifiers)) {
-                return true;
-            }
-        }
-        return false;
+                                    Modifiers modifiers) {
+        return bubblePointer(target, x, y, null,
+                (widget, local) -> widget.onDragStart(local.x(), local.y(), button, modifiers));
     }
 
     private boolean bubbleDrag(Widget target, float x, float y, MouseButton button,
-                                      Modifiers modifiers) {
-        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
-                widget = widget.parent()) {
-            Point local = localPoint(widget, x, y);
-            if (widget.onDrag(local.x(), local.y(), button, modifiers)) {
-                return true;
-            }
-        }
-        return false;
+                               Modifiers modifiers) {
+        return bubblePointer(target, x, y, null,
+                (widget, local) -> widget.onDrag(local.x(), local.y(), button, modifiers));
     }
 
     private boolean bubbleDragEnd(Widget target, float x, float y, MouseButton button,
-                                         Modifiers modifiers) {
-        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
-                widget = widget.parent()) {
-            Point local = localPoint(widget, x, y);
-            if (widget.onDragEnd(local.x(), local.y(), button, modifiers)) {
-                return true;
-            }
-        }
-        return false;
+                                  Modifiers modifiers) {
+        return bubblePointer(target, x, y, null,
+                (widget, local) -> widget.onDragEnd(local.x(), local.y(), button, modifiers));
     }
 
     private boolean bubbleLongPress(Widget target, float x, float y, MouseButton button,
-                                           Modifiers modifiers) {
-        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
-                widget = widget.parent()) {
-            Point local = localPoint(widget, x, y);
-            if (widget.onLongPress(local.x(), local.y(), button, modifiers)) {
-                return true;
-            }
-        }
-        return false;
+                                    Modifiers modifiers) {
+        return bubblePointer(target, x, y, null,
+                (widget, local) -> widget.onLongPress(local.x(), local.y(), button, modifiers));
     }
 
     private boolean bubbleKeyPressed(KeyPressed pressed) {
-        Widget target = focused;
-        for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
-                widget = widget.parent()) {
-            if (widget.onKeyPressed(pressed.key(), pressed.modifiers(), pressed.repeat())) {
-                return true;
-            }
-        }
-        return false;
+        return bubbleKey(widget -> widget.onKeyPressed(pressed.key(), pressed.modifiers(),
+                pressed.repeat()));
     }
 
     private boolean bubbleKeyReleased(KeyReleased released) {
-        Widget target = focused;
+        return bubbleKey(widget -> widget.onKeyReleased(released.key(), released.modifiers()));
+    }
+
+    private boolean bubbleCharTyped(int codepoint) {
+        return bubbleKey(widget -> widget.onCharTyped(codepoint));
+    }
+
+    private boolean bubblePointer(Widget target, float x, float y, Set<Widget> delivered,
+                                  PointerHandler handler) {
         for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
                 widget = widget.parent()) {
-            if (widget.onKeyReleased(released.key(), released.modifiers())) {
+            if (delivered != null && !delivered.add(widget)) {
+                continue;
+            }
+            Point local = localPoint(widget, x, y);
+            if (handler.handle(widget, local)) {
                 return true;
             }
         }
         return false;
     }
 
-    private boolean bubbleCharTyped(int codepoint) {
+    private boolean bubbleKey(WidgetEventHandler handler) {
         Widget target = focused;
         for (Widget widget = target; widget != null && isAttached(target) && isInteractive(target);
                 widget = widget.parent()) {
-            if (widget.onCharTyped(codepoint)) {
+            if (handler.handle(widget)) {
                 return true;
             }
         }
         return false;
+    }
+
+    @FunctionalInterface
+    private interface PointerHandler {
+        boolean handle(Widget widget, Point local);
+    }
+
+    @FunctionalInterface
+    private interface WidgetEventHandler {
+        boolean handle(Widget widget);
     }
 
     private void drawLayer(RenderManager renderer, FrameInfo frame, boolean alwaysOnTop) {

@@ -119,18 +119,10 @@ public sealed interface Paint permits Paint.Solid, Paint.LinearGradient, Paint.R
                 if (span <= 0) {
                     return right.color();
                 }
-                return interpolate(left.color(), right.color(), (position - left.offset()) / span);
+                return Color.mix(left.color(), right.color(), (position - left.offset()) / span);
             }
         }
         return last.color();
-    }
-
-    private static Color interpolate(Color start, Color end, float amount) {
-        return new Color(
-                start.r() + (end.r() - start.r()) * amount,
-                start.g() + (end.g() - start.g()) * amount,
-                start.b() + (end.b() - start.b()) * amount,
-                start.a() + (end.a() - start.a()) * amount);
     }
 
     /**

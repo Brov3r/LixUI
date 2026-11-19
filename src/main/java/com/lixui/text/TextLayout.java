@@ -161,7 +161,7 @@ public final class TextLayout {
     }
 
     private int lineAt(int index) {
-        int clamped = Math.max(0, Math.min(index, text.length()));
+        int clamped = Math.clamp(index, 0, text.length());
         int selected = 0;
         for (int row = 1; row < lines.size(); row++) {
             if (clamped < lines.get(row).start()) {
@@ -178,7 +178,7 @@ public final class TextLayout {
         }
         float relative = y - lines.get(0).y();
         int index = (int) Math.floor(relative / lineHeight);
-        return Math.max(0, Math.min(index, lines.size() - 1));
+        return Math.clamp(index, 0, lines.size() - 1);
     }
 
     private float caretX(TextLine line, int index, float extraSpace) {

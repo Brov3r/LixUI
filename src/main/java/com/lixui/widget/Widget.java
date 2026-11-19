@@ -1,5 +1,6 @@
 package com.lixui.widget;
 
+import com.lixui.widget.container.Window;
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
@@ -1418,7 +1419,26 @@ public abstract class Widget {
                 && (double) y + bounds.height() + padding > clip.y();
     }
 
-    static RuntimeException recordFailure(RuntimeException failure, RuntimeException exception) {
+    /**
+     * Updates visibility only when the requested value differs from the current one.
+     *
+     * @param widget widget to update
+     * @param visible requested visibility
+     */
+    protected static void setVisibleIfChanged(Widget widget, boolean visible) {
+        if (widget.isVisible() != visible) {
+            widget.setVisible(visible);
+        }
+    }
+
+    /**
+     * Accumulates a cleanup failure without hiding the original failure.
+     *
+     * @param failure failure collected so far, or null when this is the first one
+     * @param exception newly observed cleanup failure
+     * @return the first failure, with later failures added as suppressed exceptions
+     */
+    protected static RuntimeException recordFailure(RuntimeException failure, RuntimeException exception) {
         if (failure == null) {
             return exception;
         }

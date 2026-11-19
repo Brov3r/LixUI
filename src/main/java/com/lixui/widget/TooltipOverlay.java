@@ -113,8 +113,8 @@ final class TooltipOverlay {
         if (y + size.height() > viewport.height()) {
             y = pointerY - active.offsetY() - size.height() + slide;
         }
-        x = Math.max(0, Math.min(x, Math.max(0, viewport.width() - size.width())));
-        y = Math.max(0, Math.min(y, Math.max(0, viewport.height() - size.height())));
+        x = Math.clamp(x, 0, Math.max(0, viewport.width() - size.width()));
+        y = Math.clamp(y, 0, Math.max(0, viewport.height() - size.height()));
         shown.layout(new Rect(x, y, size.width(), size.height()));
         renderer.withOpacity(opacity, () -> shown.draw(renderer, frame));
     }

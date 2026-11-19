@@ -23,4 +23,19 @@ public record TextGlyph(Rect bounds, Rect uv) {
         Objects.requireNonNull(bounds, "bounds");
         Objects.requireNonNull(uv, "uv");
     }
+
+    /**
+     * Returns a glyph with its destination rectangle moved by the supplied offset.
+     *
+     * @param dx horizontal offset in logical UI units
+     * @param dy vertical offset in logical UI units
+     * @return the translated glyph, or this glyph when the offset is zero
+     */
+    public TextGlyph translate(float dx, float dy) {
+        if (dx == 0 && dy == 0) {
+            return this;
+        }
+        return new TextGlyph(new Rect(bounds.x() + dx, bounds.y() + dy,
+                bounds.width(), bounds.height()), uv);
+    }
 }

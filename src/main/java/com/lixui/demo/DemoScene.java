@@ -10,9 +10,6 @@ import com.lixui.render.Texture;
  * Builds the sample draw list shared by the OpenGL and Vulkan demos.
  */
 final class DemoScene {
-    private static final float DESIGN_WIDTH = 1280;
-    private static final float DESIGN_HEIGHT = 720;
-
     private DemoScene() {
     }
 
@@ -28,7 +25,7 @@ final class DemoScene {
      */
     static DrawList create(int width, int height, Texture texture, Texture wrappedTexture) {
         DrawList list = new DrawList(new Rect(0, 0, width, height));
-        Layout layout = Layout.fit(width, height);
+        DesignLayout.Layout layout = DesignLayout.Layout.fit(new Rect(0, 0, width, height));
 
         list.roundedRect(layout.rect(80, 80, 420, 260), layout.scale(20), Color.hex("#23262E"));
         list.roundedRect(layout.rect(104, 104, 8, 212), layout.scale(4), Color.hex("#5B8CFF"));
@@ -71,21 +68,4 @@ final class DemoScene {
         return list;
     }
 
-    private record Layout(float scale, float offsetX, float offsetY) {
-        static Layout fit(int width, int height) {
-            float scale = Math.min(width / DESIGN_WIDTH, height / DESIGN_HEIGHT);
-            return new Layout(
-                    scale,
-                    (width - DESIGN_WIDTH * scale) / 2,
-                    (height - DESIGN_HEIGHT * scale) / 2);
-        }
-
-        Rect rect(float x, float y, float width, float height) {
-            return new Rect(offsetX + x * scale, offsetY + y * scale, width * scale, height * scale);
-        }
-
-        float scale(float value) {
-            return value * scale;
-        }
-    }
 }

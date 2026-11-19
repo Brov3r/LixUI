@@ -725,11 +725,10 @@ public final class RenderManager {
         List<TextGlyph> glyphs = new ArrayList<>(relative.size());
         List<Color> colors = new ArrayList<>(relative.size());
         for (TextGlyph glyph : relative) {
-            Rect bounds = glyph.bounds();
-            Rect snapped = snapToPixel(new Rect(bounds.x() + x, bounds.y() + y,
-                    bounds.width(), bounds.height()), transform);
-            glyphs.add(new TextGlyph(snapped, glyph.uv()));
-            colors.add(solid != null ? solid : paint.colorAt(center(snapped)));
+            TextGlyph translated = glyph.translate(x, y);
+            Rect snapped = snapToPixel(translated.bounds(), transform);
+            glyphs.add(new TextGlyph(snapped, translated.uv()));
+            colors.add(solid != null ? solid : paint.colorAt(snapped.center()));
         }
         target.text(atlas, glyphs, colors, transform);
     }
@@ -746,10 +745,6 @@ public final class RenderManager {
             return bounds;
         }
         return new Rect(x, y, bounds.width(), bounds.height());
-    }
-
-    private static Point center(Rect bounds) {
-        return new Point(bounds.x() + bounds.width() / 2, bounds.y() + bounds.height() / 2);
     }
 
     /**

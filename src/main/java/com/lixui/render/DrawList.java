@@ -64,10 +64,15 @@ public final class DrawList {
     }
 
     void shape(Rect bounds, float radius, boolean ellipse, Paint paint, Transform transform) {
-        ShapeCommand command = new ShapeCommand(bounds, radius, ellipse, paint, clips.peek(), transform);
-        if (!bounds.isEmpty() && !clips.peek().isEmpty()) {
-            commands.add(command);
+        Rect clip = drawClip(bounds);
+        if (clip != null) {
+            commands.add(new ShapeCommand(bounds, radius, ellipse, paint, clip, transform));
         }
+    }
+
+    private Rect drawClip(Rect bounds) {
+        Rect clip = clips.peek();
+        return bounds.isEmpty() || clip.isEmpty() ? null : clip;
     }
 
     /**
@@ -210,8 +215,8 @@ public final class DrawList {
     public void roundedRect(Rect bounds, float radius, Color color) {
         Objects.requireNonNull(bounds, "bounds");
         Objects.requireNonNull(color, "color");
-        Rect clip = clips.peek();
-        if (bounds.isEmpty() || clip.isEmpty()) {
+        Rect clip = drawClip(bounds);
+        if (clip == null) {
             return;
         }
         commands.add(new RoundedRectCommand(bounds, radius, color, clip));
@@ -314,8 +319,8 @@ public final class DrawList {
         Objects.requireNonNull(tint, "tint");
         Objects.requireNonNull(transform, "transform");
         Objects.requireNonNull(style, "style");
-        Rect clip = clips.peek();
-        if (bounds.isEmpty() || clip.isEmpty()) {
+        Rect clip = drawClip(bounds);
+        if (clip == null) {
             return;
         }
         if (ImageLayout.repeatsHorizontally(style.repeat())
@@ -385,8 +390,8 @@ public final class DrawList {
         Objects.requireNonNull(uv, "uv");
         Objects.requireNonNull(tint, "tint");
         Objects.requireNonNull(transform, "transform");
-        Rect clip = clips.peek();
-        if (bounds.isEmpty() || clip.isEmpty()) {
+        Rect clip = drawClip(bounds);
+        if (clip == null) {
             return;
         }
         for (NinePatchLayout.Patch patch : NinePatchLayout.split(

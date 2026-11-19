@@ -17,6 +17,7 @@ import com.lixui.text.FontData;
 import com.lixui.text.FontStyle;
 import com.lixui.theme.Theme;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -393,7 +394,18 @@ public final class UiContext implements AutoCloseable {
         iconSmoothing = enabled;
     }
 
-    Texture acquireIcon(String name, int size) {
+    /**
+     * Acquires a shared bundled icon and increments its reference count.
+     * Icons with the same name, pixel size and smoothing setting reuse one texture.
+     *
+     * @param name bundled icon resource name
+     * @param size icon edge length in physical pixels
+     * @return the shared icon texture
+     * @throws NullPointerException if {@code name} is null
+     * @throws IllegalArgumentException if the size is not positive or the icon is missing
+     * @throws IllegalStateException if the context is closed
+     */
+    public Texture acquireIcon(String name, int size) {
         ensureOpen();
         IconKey key = new IconKey(name, size, iconSmoothing);
         SharedIcon icon = icons.get(key);
@@ -405,7 +417,15 @@ public final class UiContext implements AutoCloseable {
         return icon.texture;
     }
 
-    void releaseIcon(Texture texture) {
+    /**
+     * Releases one reference to a shared bundled icon and destroys it when no references remain.
+     * Textures not acquired through {@link #acquireIcon(String, int)} are ignored.
+     *
+     * @param texture icon texture to release
+     * @throws NullPointerException if {@code texture} is null
+     */
+    public void releaseIcon(Texture texture) {
+        Objects.requireNonNull(texture, "texture");
         Iterator<SharedIcon> iterator = icons.values().iterator();
         while (iterator.hasNext()) {
             SharedIcon icon = iterator.next();
@@ -416,6 +436,29 @@ public final class UiContext implements AutoCloseable {
                 }
                 return;
             }
+        }
+    }
+
+    /**
+     * Releases several shared bundled icons and suppresses later cleanup failures.
+     * Every texture is attempted even when one release fails.
+     *
+     * @param textures icon textures to release
+     * @throws NullPointerException if the collection or an element is null
+     * @throws RuntimeException the first cleanup failure, with later failures suppressed
+     */
+    public void releaseIcons(Collection<Texture> textures) {
+        Objects.requireNonNull(textures, "textures");
+        RuntimeException failure = null;
+        for (Texture texture : textures) {
+            try {
+                releaseIcon(texture);
+            } catch (RuntimeException exception) {
+                failure = Widget.recordFailure(failure, exception);
+            }
+        }
+        if (failure != null) {
+            throw failure;
         }
     }
 

@@ -476,9 +476,7 @@ public final class Font {
         }
         List<TextGlyph> quads = new ArrayList<>(relative.size());
         for (TextGlyph glyph : relative) {
-            Rect bounds = glyph.bounds();
-            quads.add(new TextGlyph(new Rect(bounds.x() + x, bounds.y() + y,
-                    bounds.width(), bounds.height()), glyph.uv()));
+            quads.add(glyph.translate(x, y));
         }
         return quads;
     }
@@ -585,9 +583,7 @@ public final class Font {
         }
         List<TextGlyph> quads = new ArrayList<>(relative.size());
         for (TextGlyph glyph : relative) {
-            Rect bounds = glyph.bounds();
-            quads.add(new TextGlyph(new Rect(bounds.x() + x, bounds.y() + y,
-                    bounds.width(), bounds.height()), glyph.uv()));
+            quads.add(glyph.translate(x, y));
         }
         return quads;
     }

@@ -160,7 +160,7 @@ public class Panel extends Widget {
 
     private static void appendArc(List<Point> points, float centerX, float centerY, float radius,
                                   float startAngle) {
-        int segments = Math.max(2, Math.min(16, (int) Math.ceil(radius / 4)));
+        int segments = Math.clamp((int) Math.ceil(radius / 4), 2, 16);
         for (int index = 0; index <= segments; index++) {
             float angle = startAngle + (float) (Math.PI / 2) * index / segments;
             points.add(new Point(centerX + (float) Math.cos(angle) * radius,

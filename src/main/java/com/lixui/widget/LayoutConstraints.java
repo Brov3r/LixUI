@@ -87,7 +87,7 @@ public record LayoutConstraints(float minWidth, float maxWidth, float minHeight,
             throw new IllegalArgumentException("Measured dimensions must be finite and non-negative.");
         }
         return new Size(
-                Math.max(minWidth, Math.min(maxWidth, width)),
-                Math.max(minHeight, Math.min(maxHeight, height)));
+                Math.clamp(width, minWidth, maxWidth),
+                Math.clamp(height, minHeight, maxHeight));
     }
 }

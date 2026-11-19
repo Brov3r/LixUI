@@ -20,24 +20,24 @@ import com.lixui.text.TextShadow;
 import com.lixui.text.VerticalAlignment;
 import com.lixui.theme.Theme;
 import com.lixui.theme.WidgetStyle;
-import com.lixui.widget.Button;
-import com.lixui.widget.CheckBox;
+import com.lixui.widget.control.Button;
+import com.lixui.widget.control.CheckBox;
 import com.lixui.widget.FrameInfo;
-import com.lixui.widget.KnobSlider;
-import com.lixui.widget.Label;
+import com.lixui.widget.control.KnobSlider;
+import com.lixui.widget.control.Label;
 import com.lixui.widget.Panel;
-import com.lixui.widget.RadioBox;
-import com.lixui.widget.RangeSlider;
-import com.lixui.widget.RichLabel;
-import com.lixui.widget.SegmentedButton;
-import com.lixui.widget.Separator;
-import com.lixui.widget.Slider;
-import com.lixui.widget.SplitPanel;
-import com.lixui.widget.TabPanel;
-import com.lixui.widget.ToggleGroup;
+import com.lixui.widget.control.RadioBox;
+import com.lixui.widget.control.RangeSlider;
+import com.lixui.widget.control.RichLabel;
+import com.lixui.widget.control.SegmentedButton;
+import com.lixui.widget.control.Separator;
+import com.lixui.widget.control.Slider;
+import com.lixui.widget.container.SplitPanel;
+import com.lixui.widget.container.TabPanel;
+import com.lixui.widget.control.ToggleGroup;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
-import com.lixui.widget.Window;
+import com.lixui.widget.container.Window;
 import com.lixui.widget.layout.HBox;
 import com.lixui.widget.layout.VBox;
 
@@ -467,10 +467,7 @@ final class DemoWidgetScene implements AutoCloseable {
     }
 
     private static boolean isLight(Theme theme) {
-        Color background = theme.background();
-        float luminance = 0.2126f * background.r() + 0.7152f * background.g()
-                + 0.0722f * background.b();
-        return luminance > 0.5f;
+        return theme.background().luminance() > 0.5f;
     }
 
     private static Color tint(Theme theme, Color color) {
