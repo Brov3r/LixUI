@@ -125,6 +125,7 @@ tasks.named('shadowJar') {
 
     duplicatesStrategy = DuplicatesStrategy.INCLUDE
     mergeServiceFiles()
+    relocate 'com.github.weisj.jsvg', 'com.lixui.internal.jsvg'
 
     // LWJGL belongs to the host application; bundling it would cause duplicate classes.
     dependencies {
