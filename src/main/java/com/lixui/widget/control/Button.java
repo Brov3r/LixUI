@@ -298,6 +298,18 @@ public class Button extends Panel {
             return;
         }
         super.onDraw(renderer, frame);
+        drawForeground(renderer, frame);
+    }
+
+    /**
+     * Paints the icon and label over the button surface.
+     * Subclasses override this method to insert their own layers between the surface and the
+     * content, keeping the label and icon on top.
+     *
+     * @param renderer drawing manager for the current frame
+     * @param frame timing information for the current frame
+     */
+    protected void drawForeground(RenderManager renderer, FrameInfo frame) {
         WidgetStyle style = surfaceStyle();
         if (style == null) {
             return;

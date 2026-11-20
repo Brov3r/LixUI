@@ -209,6 +209,96 @@ class SplitButtonTest {
     }
 
     @Test
+    void highlightsTheArrowAndPrimaryAreasSeparately() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            Theme theme = manager.context().theme();
+            WidgetStyle style = theme.controlStyle();
+            SplitButton button = splitButton();
+            button.setIcon(new TestTexture(16, 16));
+            manager.add(button);
+            manager.render();
+
+            manager.handle(new PointerMoved(200, 20));
+            manager.render();
+            assertTrue(hasPrimaryHighlight(backend, button, style.background(WidgetState.HOVERED)));
+
+            button.menu().addItem("Open", null);
+            manager.handle(new PointerMoved(40, 20));
+            manager.render();
+            assertTrue(hasPrimaryHighlight(backend, button, style.background(WidgetState.HOVERED)));
+            assertFalse(hasArrowHighlight(backend, button, style.background(WidgetState.HOVERED)));
+            assertFalse(hasFullWidthRoundedColor(backend, style.background(WidgetState.HOVERED)));
+            assertTrue(highlightBehindContent(backend, button));
+
+            manager.handle(new PointerMoved(200, 20));
+            manager.render();
+            assertTrue(hasArrowHighlight(backend, button, style.background(WidgetState.HOVERED)));
+            assertFalse(hasPrimaryHighlight(backend, button, style.background(WidgetState.HOVERED)));
+
+            manager.handle(new PointerPressed(200, 20, MouseButton.LEFT, Modifiers.NONE));
+            manager.render();
+            assertTrue(hasArrowHighlight(backend, button, style.background(WidgetState.PRESSED)));
+            assertFalse(hasFullWidthRoundedColor(backend, style.background(WidgetState.PRESSED)));
+            manager.handle(new PointerReleased(200, 20, MouseButton.LEFT, Modifiers.NONE));
+            button.closeMenu();
+
+            manager.handle(new PointerMoved(40, 20));
+            manager.handle(new PointerPressed(40, 20, MouseButton.LEFT, Modifiers.NONE));
+            manager.render();
+            assertTrue(hasPrimaryHighlight(backend, button, style.background(WidgetState.PRESSED)));
+            assertFalse(hasArrowHighlight(backend, button, style.background(WidgetState.PRESSED)));
+            manager.handle(new PointerReleased(40, 20, MouseButton.LEFT, Modifiers.NONE));
+        }
+    }
+
+    @Test
+    void keepsEqualGapsBetweenTheHighlightsAndTheDivider() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            WidgetStyle style = manager.context().theme().controlStyle();
+            SplitButton button = splitButton();
+            button.menu().addItem("Open", null);
+            manager.add(button);
+            manager.render();
+
+            manager.handle(new PointerMoved(40, 20));
+            manager.render();
+            RoundedRectCommand divider = divider(backend);
+            RoundedRectCommand primary = roundedColor(backend,
+                    style.background(WidgetState.HOVERED));
+            assertEquals(2, divider.bounds().x() - primary.bounds().right(), 0.01f);
+
+            manager.handle(new PointerMoved(200, 20));
+            manager.render();
+            RoundedRectCommand arrow = roundedColor(backend,
+                    style.background(WidgetState.HOVERED));
+            assertEquals(2, arrow.bounds().x() - divider.bounds().right(), 0.01f);
+        }
+    }
+
+    @Test
+    void doesNotHighlightTheSurfaceWhenHoverStartsWithoutAMove() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            WidgetStyle style = manager.context().theme().controlStyle();
+            manager.handle(new PointerMoved(40, 20));
+
+            SplitButton button = splitButton();
+            button.menu().addItem("Open", null);
+            manager.add(button);
+            manager.update(0.016f);
+            manager.render();
+            assertFalse(hasRoundedColor(backend, style.background(WidgetState.HOVERED)));
+            assertFalse(hasRoundedColor(backend, style.background(WidgetState.PRESSED)));
+
+            manager.handle(new PointerMoved(40, 20));
+            manager.render();
+            assertTrue(hasPrimaryHighlight(backend, button, style.background(WidgetState.HOVERED)));
+        }
+    }
+
+    @Test
     void hidesTheFocusOutlineForPointerFocusAndRestoresItForKeyboardFocus() {
         TestBackend backend = new TestBackend();
         try (WidgetManager manager = manager(backend)) {
@@ -265,6 +355,76 @@ class SplitButtonTest {
     private static boolean hasArrow(TestBackend backend) {
         return backend.lastDrawList().commands().stream()
                 .anyMatch(ImageCommand.class::isInstance);
+    }
+
+    private static boolean highlightBehindContent(TestBackend backend, SplitButton button) {
+        var commands = backend.lastDrawList().commands();
+        float slotWidth = button.trailingSlotWidth();
+        int highlight = -1;
+        int icon = -1;
+        for (int index = 0; index < commands.size(); index++) {
+            var command = commands.get(index);
+            if (highlight < 0 && command instanceof RoundedRectCommand rounded
+                    && rounded.bounds().width() > slotWidth
+                    && rounded.bounds().width() < BOUNDS.width()) {
+                highlight = index;
+            }
+            if (icon < 0 && command instanceof ImageCommand) {
+                icon = index;
+            }
+        }
+        return highlight >= 0 && icon > highlight;
+    }
+
+    private static boolean hasRoundedColor(TestBackend backend, Color color) {
+        return backend.lastDrawList().commands().stream()
+                .filter(RoundedRectCommand.class::isInstance)
+                .map(RoundedRectCommand.class::cast)
+                .anyMatch(command -> command.color().equals(color));
+    }
+
+    private static RoundedRectCommand roundedColor(TestBackend backend, Color color) {
+        return backend.lastDrawList().commands().stream()
+                .filter(RoundedRectCommand.class::isInstance)
+                .map(RoundedRectCommand.class::cast)
+                .filter(command -> command.color().equals(color))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static RoundedRectCommand divider(TestBackend backend) {
+        return backend.lastDrawList().commands().stream()
+                .filter(RoundedRectCommand.class::isInstance)
+                .map(RoundedRectCommand.class::cast)
+                .filter(command -> command.radius() == 0 && command.bounds().width() == 1)
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static boolean hasFullWidthRoundedColor(TestBackend backend, Color color) {
+        return backend.lastDrawList().commands().stream()
+                .filter(RoundedRectCommand.class::isInstance)
+                .map(RoundedRectCommand.class::cast)
+                .anyMatch(command -> command.color().equals(color)
+                        && Math.abs(command.bounds().width() - BOUNDS.width()) < 0.01f);
+    }
+
+    private static boolean hasArrowHighlight(TestBackend backend, SplitButton button, Color color) {
+        return hasRoundedColorWidth(backend, color, 0, button.trailingSlotWidth());
+    }
+
+    private static boolean hasPrimaryHighlight(TestBackend backend, SplitButton button, Color color) {
+        return hasRoundedColorWidth(backend, color, button.trailingSlotWidth(), BOUNDS.width());
+    }
+
+    private static boolean hasRoundedColorWidth(TestBackend backend, Color color,
+                                                float minWidth, float maxWidth) {
+        return backend.lastDrawList().commands().stream()
+                .filter(RoundedRectCommand.class::isInstance)
+                .map(RoundedRectCommand.class::cast)
+                .anyMatch(command -> command.color().equals(color)
+                        && command.bounds().width() > minWidth
+                        && command.bounds().width() < maxWidth);
     }
 
     private static SplitButton splitButton() {
