@@ -13,6 +13,7 @@ import com.lixui.render.Viewport;
 import com.lixui.theme.WidgetStyle;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -145,6 +146,40 @@ class PanelTest {
         assertEquals(2, commands.size());
         assertInstanceOf(MeshCommand.class, commands.get(0));
         assertInstanceOf(MeshCommand.class, commands.get(1));
+    }
+
+    @Test
+    void smallCustomCornersFollowTheArcWithoutFacets() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
+        manager.resize(VIEWPORT);
+        Panel panel = new Panel();
+        panel.setBounds(new Rect(0, 0, 200, 100));
+        panel.setCorners(new Panel.Corners(4, 0, 4, 0));
+        manager.add(panel);
+
+        manager.render();
+
+        MeshCommand background = assertInstanceOf(MeshCommand.class,
+                backend.lastDrawList().commands().getFirst());
+        float radius = 4;
+        List<Double> angles = new ArrayList<>();
+        for (MeshVertex vertex : background.vertices()) {
+            double dx = vertex.x() - radius;
+            double dy = vertex.y() - radius;
+            if (Math.abs(Math.hypot(dx, dy) - radius) < 0.01) {
+                double angle = Math.atan2(dy, dx);
+                angles.add(angle < 0 ? angle + Math.PI * 2 : angle);
+            }
+        }
+        angles.sort(Double::compare);
+
+        assertTrue(angles.size() >= 4, "The corner arc was not tessellated.");
+        double maxGap = 0;
+        for (int index = 1; index < angles.size(); index++) {
+            maxGap = Math.max(maxGap, angles.get(index) - angles.get(index - 1));
+        }
+        assertTrue(maxGap <= Math.PI / 8 + 0.001, "Corner facets are too coarse: " + maxGap);
     }
 
     @Test

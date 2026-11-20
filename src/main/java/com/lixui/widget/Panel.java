@@ -19,6 +19,9 @@ import java.util.Objects;
  * {@link #setCorners(Corners)}. Children are positioned freely and drawn after the panel background.
  */
 public class Panel extends Widget {
+    private static final float CORNER_TOLERANCE = 0.1f;
+    private static final float MIN_CORNER_RADIUS = 0.0001f;
+
     private Corners corners;
 
     /**
@@ -171,12 +174,22 @@ public class Panel extends Widget {
 
     private static void appendArc(List<Point> points, float centerX, float centerY, float radius,
                                   float startAngle) {
-        int segments = Math.clamp((int) Math.ceil(radius / 4), 2, 16);
+        int segments = cornerSegments(radius);
         for (int index = 0; index <= segments; index++) {
             float angle = startAngle + (float) (Math.PI / 2) * index / segments;
             points.add(new Point(centerX + (float) Math.cos(angle) * radius,
                     centerY + (float) Math.sin(angle) * radius));
         }
+    }
+
+    /**
+     * Keeps a quarter circle under the sagitta tolerance so small custom corner radii do not turn
+     * into two or three visible facets. The formula matches the shared rounded rectangle tessellator.
+     */
+    private static int cornerSegments(float radius) {
+        float ratio = Math.min(CORNER_TOLERANCE / Math.max(radius, MIN_CORNER_RADIUS), 0.9f);
+        double step = 2 * Math.acos(1 - ratio);
+        return Math.clamp((int) Math.ceil(Math.PI / 2 / step), 3, 48);
     }
 
     /**
