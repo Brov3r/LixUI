@@ -5,6 +5,7 @@ import com.lixui.platform.UiPlatform;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.system.MemoryUtil;
 
+import java.nio.ByteBuffer;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Objects;
@@ -56,7 +57,15 @@ public final class GlfwPlatform implements UiPlatform, AutoCloseable {
     @Override
     public void setClipboardText(String text) {
         ensureOpen();
-        GLFW.glfwSetClipboardString(window, Objects.requireNonNull(text, "text"));
+        String value = Objects.requireNonNull(text, "text");
+        // The high-level binding encodes the string on the thread-local memory stack, whose default
+        // size is too small for large selections. Encode on the heap instead.
+        ByteBuffer encoded = MemoryUtil.memUTF8(value);
+        try {
+            GLFW.nglfwSetClipboardString(window, MemoryUtil.memAddress(encoded));
+        } finally {
+            MemoryUtil.memFree(encoded);
+        }
     }
 
     /**
