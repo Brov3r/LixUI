@@ -20,11 +20,16 @@ import java.util.Objects;
  * active transform feedback and conditional-render scopes.
  */
 public final class OpenGlLayer implements RenderBackend {
+    private static final int DEFAULT_SAMPLES = 4;
+
     private OpenGlBackend backend;
     private Viewport viewport;
     private int framebuffer;
+    private int resolveFramebuffer;
+    private int colorBuffer;
     private int colorTexture;
     private int stencilBuffer;
+    private int samples = 1;
     private int width;
     private int height;
     private int program;
@@ -38,6 +43,21 @@ public final class OpenGlLayer implements RenderBackend {
      * @throws IllegalStateException if shader or backend initialization fails
      */
     public OpenGlLayer() {
+        this(DEFAULT_SAMPLES);
+    }
+
+    /**
+     * Creates an isolated UI renderer that antialiases its private target with the requested number
+     * of samples, clamped to the driver's limit.
+     *
+     * @param samples preferred multisample count for the private render target
+     * @throws IllegalArgumentException if the sample count is not positive
+     * @throws IllegalStateException if shader or backend initialization fails
+     */
+    public OpenGlLayer(int samples) {
+        if (samples < 1) {
+            throw new IllegalArgumentException("Sample count must be positive.");
+        }
         try (OpenGlState state = new OpenGlState()) {
             state.prepareUpload();
             try {
@@ -46,6 +66,8 @@ public final class OpenGlLayer implements RenderBackend {
                 vertexArray = GL30.glGenVertexArrays();
                 GL20.glUseProgram(program);
                 GL20.glUniform1i(GL20.glGetUniformLocation(program, "uTexture"), 0);
+                int limit = GL11.glGetInteger(GL30.GL_MAX_SAMPLES);
+                this.samples = Math.clamp(samples, 1, Math.max(limit, 1));
             } catch (RuntimeException | Error exception) {
                 close();
                 throw exception;
@@ -107,6 +129,11 @@ public final class OpenGlLayer implements RenderBackend {
             GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
             backend.draw(drawList);
             drawCalls = backend.drawCallCount();
+
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, framebuffer);
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, resolveFramebuffer);
+            GL30.glBlitFramebuffer(0, 0, width, height, 0, 0, width, height,
+                    GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
 
             GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, state.drawFramebuffer());
             state.prepareDrawing();
@@ -198,40 +225,71 @@ public final class OpenGlLayer implements RenderBackend {
             return;
         }
         destroyTarget();
-        try {
-            colorTexture = GL11.glGenTextures();
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTexture);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
-            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, nextWidth, nextHeight, 0,
-                    GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, 0L);
-            stencilBuffer = GL30.glGenRenderbuffers();
-            GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, stencilBuffer);
-            GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL30.GL_DEPTH24_STENCIL8, nextWidth, nextHeight);
-            framebuffer = GL30.glGenFramebuffers();
-            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, framebuffer);
-            GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
-                    GL11.GL_TEXTURE_2D, colorTexture, 0);
-            GL30.glFramebufferRenderbuffer(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_DEPTH_STENCIL_ATTACHMENT,
-                    GL30.GL_RENDERBUFFER, stencilBuffer);
-            if (GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER) != GL30.GL_FRAMEBUFFER_COMPLETE) {
-                throw new IllegalStateException("Cannot create the isolated UI framebuffer.");
+        while (true) {
+            try {
+                createTarget(nextWidth, nextHeight);
+                return;
+            } catch (IllegalStateException exception) {
+                destroyTarget();
+                if (samples <= 1) {
+                    throw exception;
+                }
+                samples = Math.max(1, samples / 2);
+            } catch (RuntimeException | Error exception) {
+                destroyTarget();
+                throw exception;
             }
-            width = nextWidth;
-            height = nextHeight;
-        } catch (RuntimeException | Error exception) {
-            destroyTarget();
-            throw exception;
         }
+    }
+
+    private void createTarget(int nextWidth, int nextHeight) {
+        colorTexture = GL11.glGenTextures();
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTexture);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, nextWidth, nextHeight, 0,
+                GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, 0L);
+
+        resolveFramebuffer = GL30.glGenFramebuffers();
+        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, resolveFramebuffer);
+        GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
+                GL11.GL_TEXTURE_2D, colorTexture, 0);
+        if (GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER) != GL30.GL_FRAMEBUFFER_COMPLETE) {
+            throw new IllegalStateException("Cannot create the resolved UI framebuffer.");
+        }
+
+        colorBuffer = GL30.glGenRenderbuffers();
+        GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, colorBuffer);
+        GL30.glRenderbufferStorageMultisample(GL30.GL_RENDERBUFFER, samples,
+                GL11.GL_RGBA8, nextWidth, nextHeight);
+        stencilBuffer = GL30.glGenRenderbuffers();
+        GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, stencilBuffer);
+        GL30.glRenderbufferStorageMultisample(GL30.GL_RENDERBUFFER, samples,
+                GL30.GL_DEPTH24_STENCIL8, nextWidth, nextHeight);
+        framebuffer = GL30.glGenFramebuffers();
+        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, framebuffer);
+        GL30.glFramebufferRenderbuffer(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
+                GL30.GL_RENDERBUFFER, colorBuffer);
+        GL30.glFramebufferRenderbuffer(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_DEPTH_STENCIL_ATTACHMENT,
+                GL30.GL_RENDERBUFFER, stencilBuffer);
+        if (GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER) != GL30.GL_FRAMEBUFFER_COMPLETE) {
+            throw new IllegalStateException("Cannot create the isolated UI framebuffer.");
+        }
+        width = nextWidth;
+        height = nextHeight;
     }
 
     private void destroyTarget() {
         GL30.glDeleteFramebuffers(framebuffer);
+        GL30.glDeleteFramebuffers(resolveFramebuffer);
+        GL30.glDeleteRenderbuffers(colorBuffer);
         GL30.glDeleteRenderbuffers(stencilBuffer);
         GL11.glDeleteTextures(colorTexture);
         framebuffer = 0;
+        resolveFramebuffer = 0;
+        colorBuffer = 0;
         stencilBuffer = 0;
         colorTexture = 0;
         width = 0;

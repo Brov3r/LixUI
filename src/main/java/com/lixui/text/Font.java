@@ -267,11 +267,15 @@ public final class Font {
             int minShift = 0;
             int maxShift = 0;
             if (italic) {
+                float minExact = 0;
+                float maxExact = 0;
                 for (int row = 0; row < rawHeight; row++) {
-                    int shift = Math.round(-ITALIC_SLANT * (draft.y0() + row));
-                    minShift = Math.min(minShift, shift);
-                    maxShift = Math.max(maxShift, shift);
+                    float shift = -ITALIC_SLANT * (draft.y0() + row);
+                    minExact = Math.min(minExact, shift);
+                    maxExact = Math.max(maxExact, shift);
                 }
+                minShift = (int) Math.floor(minExact);
+                maxShift = (int) Math.ceil(maxExact);
             }
             styled.add(new StyledDraft(draft,
                     draft.x0() + minShift,
@@ -914,52 +918,13 @@ public final class Font {
             source[index] = coverage.get(index);
         }
         if (italic) {
-            int shearedWidth = draft.width() - boldOffset;
-            byte[] sheared = new byte[shearedWidth * rawHeight];
-            for (int row = 0; row < rawHeight; row++) {
-                int shift = Math.round(-ITALIC_SLANT * (draft.raw().y0() + row))
-                        - draft.italicShift();
-                int sourceRow = row * rawWidth;
-                int targetRow = row * shearedWidth;
-                for (int column = 0; column < rawWidth; column++) {
-                    int value = source[sourceRow + column] & 0xFF;
-                    if (value == 0) {
-                        continue;
-                    }
-                    int target = targetRow + column + shift;
-                    if ((sheared[target] & 0xFF) < value) {
-                        sheared[target] = (byte) value;
-                    }
-                }
-            }
-            source = sheared;
-            sourceWidth = shearedWidth;
+            source = shear(source, sourceWidth, rawHeight, draft.width() - boldOffset,
+                    -ITALIC_SLANT * draft.raw().y0() - draft.italicShift());
+            sourceWidth = draft.width() - boldOffset;
         }
         if (bold) {
-            int styledWidth = draft.width();
-            int styledHeight = draft.height();
-            byte[] thickened = new byte[styledWidth * styledHeight];
-            for (int row = 0; row < rawHeight; row++) {
-                int sourceRow = row * sourceWidth;
-                int targetRow = row * styledWidth;
-                for (int column = 0; column < sourceWidth; column++) {
-                    int value = source[sourceRow + column] & 0xFF;
-                    if (value == 0) {
-                        continue;
-                    }
-                    if ((thickened[targetRow + column] & 0xFF) < value) {
-                        thickened[targetRow + column] = (byte) value;
-                    }
-                    for (int offsetX = 1; offsetX <= boldOffset; offsetX++) {
-                        int target = targetRow + column + offsetX;
-                        if ((thickened[target] & 0xFF) < value) {
-                            thickened[target] = (byte) value;
-                        }
-                    }
-                }
-            }
-            source = thickened;
-            sourceWidth = styledWidth;
+            source = thicken(source, sourceWidth, draft.width(), draft.height(), boldOffset);
+            sourceWidth = draft.width();
         }
 
         int styledHeight = draft.height();
@@ -970,6 +935,61 @@ public final class Font {
                 pixels[offset + 3] = (byte) alpha;
             }
         }
+    }
+
+    /**
+     * Shears a glyph bitmap for the synthetic italic style.
+     * Every row is sampled between source columns by {@code topShift - ITALIC_SLANT * row}: rounding
+     * the shift to whole pixels instead would turn slanted edges into a staircase.
+     */
+    static byte[] shear(byte[] source, int sourceWidth, int height, int targetWidth, float topShift) {
+        byte[] sheared = new byte[targetWidth * height];
+        for (int row = 0; row < height; row++) {
+            float shift = topShift - ITALIC_SLANT * row;
+            int sourceRow = row * sourceWidth;
+            int targetRow = row * targetWidth;
+            for (int column = 0; column < targetWidth; column++) {
+                float sourceColumn = column - shift;
+                int left = (int) Math.floor(sourceColumn);
+                float fraction = sourceColumn - left;
+                int first = left >= 0 && left < sourceWidth
+                        ? source[sourceRow + left] & 0xFF : 0;
+                int second = left + 1 >= 0 && left + 1 < sourceWidth
+                        ? source[sourceRow + left + 1] & 0xFF : 0;
+                int value = Math.round(first * (1 - fraction) + second * fraction);
+                if (value > 0) {
+                    sheared[targetRow + column] = (byte) value;
+                }
+            }
+        }
+        return sheared;
+    }
+
+    /**
+     * Widens glyph coverage to the right by {@code boldOffset} pixels.
+     * The shifted copies accumulate instead of replacing each other: a thin stem is usually split
+     * over several partially covered pixels, and only adding that coverage up produces a solid
+     * stroke. Taking the maximum instead would leave a translucent ghost beside the original stem.
+     */
+    static byte[] thicken(byte[] source, int sourceWidth, int targetWidth, int height,
+                          int boldOffset) {
+        byte[] thickened = new byte[targetWidth * height];
+        for (int row = 0; row < height; row++) {
+            int sourceRow = row * sourceWidth;
+            int targetRow = row * targetWidth;
+            for (int column = 0; column < sourceWidth; column++) {
+                int value = source[sourceRow + column] & 0xFF;
+                if (value == 0) {
+                    continue;
+                }
+                for (int offsetX = 0; offsetX <= boldOffset; offsetX++) {
+                    int target = targetRow + column + offsetX;
+                    int combined = thickened[target] & 0xFF;
+                    thickened[target] = (byte) Math.min(255, combined + value);
+                }
+            }
+        }
+        return thickened;
     }
 
     private static int[] buildDefaultCodepoints() {

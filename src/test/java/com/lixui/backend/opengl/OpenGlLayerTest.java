@@ -24,9 +24,15 @@ import java.nio.FloatBuffer;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OpenGlLayerTest {
+    @Test
+    void rejectsNonPositiveSampleCounts() {
+        assertThrows(IllegalArgumentException.class, () -> new OpenGlLayer(0));
+    }
+
     @Test
     void compositesPremultipliedUiWithoutChangingHostDepthStencilOrState() {
         Assumptions.assumeTrue(GLFW.glfwInit(), "GLFW display unavailable.");

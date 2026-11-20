@@ -16,11 +16,14 @@ import java.util.List;
 final class ShapeTessellator {
     private static final float TWO_PI = (float) (Math.PI * 2);
     private static final float EPSILON = 0.0001f;
+    private static final double RELATIVE_TOLERANCE = 1e-12;
     private static final int MIN_CIRCLE_SEGMENTS = 12;
     private static final int MAX_CIRCLE_SEGMENTS = 256;
     private static final int MAX_GRADIENT_STEPS = 64;
     private static final int MIN_RINGS = 4;
     private static final int MAX_RINGS = 24;
+    private static final float MITER_LIMIT = 4;
+    private static final float CORNER_TOLERANCE = 0.1f;
     private static float quality = 1;
 
     private ShapeTessellator() {
@@ -195,53 +198,137 @@ final class ShapeTessellator {
     private static List<MeshVertex> strokePath(List<Point> input, boolean closed,
                                                float width, Paint paint) {
         validateWidth(width);
-        List<Point> points = dedupeConsecutive(input);
+        List<Point> points = removeShortSegments(dedupeConsecutive(input), closed);
         if (points.size() < 2) {
             throw new IllegalArgumentException("A path requires at least two distinct points.");
-        }
-        if (closed && points.size() > 1 && points.get(0).equals(points.get(points.size() - 1))) {
-            points = new ArrayList<>(points.subList(0, points.size() - 1));
         }
         if (closed && points.size() < 3) {
             throw new IllegalArgumentException("A closed path requires at least three distinct points.");
         }
 
         float halfWidth = width / 2;
+        List<Point> left = new ArrayList<>(points.size());
+        List<Point> right = new ArrayList<>(points.size());
+        for (int index = 0; index < points.size(); index++) {
+            offsetPoint(points, index, closed, halfWidth, left, right);
+        }
+
         List<MeshVertex> vertices = new ArrayList<>();
         int segmentCount = closed ? points.size() : points.size() - 1;
         for (int index = 0; index < segmentCount; index++) {
-            Point start = points.get(index);
-            Point end = points.get((index + 1) % points.size());
-            addSegment(vertices, start, end, halfWidth, paint);
+            int next = (index + 1) % points.size();
+            addQuad(vertices, left.get(index), left.get(next),
+                    right.get(next), right.get(index), paint);
         }
-        for (Point point : points) {
-            addDisc(vertices, point, halfWidth, paint);
+        if (!closed) {
+            int last = points.size() - 1;
+            addCap(vertices, points.get(0), left.get(0), points.get(1), paint);
+            addCap(vertices, points.get(last), left.get(last), points.get(last - 1), paint);
         }
         return vertices;
     }
 
-    private static void addSegment(List<MeshVertex> vertices, Point start, Point end,
-                                   float halfWidth, Paint paint) {
-        float dx = end.x() - start.x();
-        float dy = end.y() - start.y();
-        float length = (float) Math.hypot(dx, dy);
-        if (length < EPSILON) {
-            return;
+    /**
+     * Computes the mitered offsets of one path vertex. Adjacent segments share the same offset
+     * points, so the stroke stays a single band without overlapping geometry; overlapping pieces
+     * would double-blend translucent paint and show up as stacked rectangles.
+     */
+    private static void offsetPoint(List<Point> points, int index, boolean closed, float halfWidth,
+                                    List<Point> left, List<Point> right) {
+        int count = points.size();
+        Point current = points.get(index);
+        boolean hasPrevious = closed || index > 0;
+        boolean hasNext = closed || index < count - 1;
+
+        float previousX = 0;
+        float previousY = 0;
+        if (hasPrevious) {
+            Point previous = points.get((index - 1 + count) % count);
+            float length = distance(previous, current);
+            previousX = (previous.y() - current.y()) / length;
+            previousY = (current.x() - previous.x()) / length;
         }
-        float normalX = -dy / length * halfWidth;
-        float normalY = dx / length * halfWidth;
-        addQuad(vertices,
-                new Point(start.x() + normalX, start.y() + normalY),
-                new Point(end.x() + normalX, end.y() + normalY),
-                new Point(end.x() - normalX, end.y() - normalY),
-                new Point(start.x() - normalX, start.y() - normalY),
-                paint);
+        float nextX = 0;
+        float nextY = 0;
+        if (hasNext) {
+            Point next = points.get((index + 1) % count);
+            float length = distance(current, next);
+            nextX = (current.y() - next.y()) / length;
+            nextY = (next.x() - current.x()) / length;
+        }
+        if (!hasPrevious) {
+            previousX = nextX;
+            previousY = nextY;
+        } else if (!hasNext) {
+            nextX = previousX;
+            nextY = previousY;
+        }
+
+        float sumX = previousX + nextX;
+        float sumY = previousY + nextY;
+        float sumLength = (float) Math.hypot(sumX, sumY);
+        float offsetX;
+        float offsetY;
+        if (sumLength < EPSILON) {
+            offsetX = previousX * halfWidth;
+            offsetY = previousY * halfWidth;
+        } else {
+            float miterLength = Math.min(2f * halfWidth / sumLength, MITER_LIMIT * halfWidth);
+            offsetX = sumX / sumLength * miterLength;
+            offsetY = sumY / sumLength * miterLength;
+        }
+        left.add(new Point(current.x() + offsetX, current.y() + offsetY));
+        right.add(new Point(current.x() - offsetX, current.y() - offsetY));
     }
 
-    private static void addDisc(List<MeshVertex> vertices, Point center, float radius, Paint paint) {
-        int segments = circleSegments(radius);
-        List<Point> path = ellipsePath(center, radius, radius, segments);
-        addClosedFan(vertices, center, path, paint);
+    /**
+     * Fills a round cap with a half disc that only touches the stroke band instead of covering it.
+     */
+    private static void addCap(List<MeshVertex> vertices, Point center, Point first,
+                               Point toward, Paint paint) {
+        float radius = distance(center, first);
+        float outwardX = center.x() - toward.x();
+        float outwardY = center.y() - toward.y();
+        float outwardLength = (float) Math.hypot(outwardX, outwardY);
+        if (radius < EPSILON || outwardLength < EPSILON) {
+            return;
+        }
+        outwardX /= outwardLength;
+        outwardY /= outwardLength;
+        float edgeX = (first.x() - center.x()) / radius;
+        float edgeY = (first.y() - center.y()) / radius;
+        int segments = capSegments(radius);
+        List<Point> arc = new ArrayList<>(segments + 1);
+        for (int index = 0; index <= segments; index++) {
+            float angle = (float) (Math.PI * index / segments);
+            float cosine = (float) Math.cos(angle);
+            float sine = (float) Math.sin(angle);
+            arc.add(new Point(center.x() + radius * (cosine * edgeX + sine * outwardX),
+                    center.y() + radius * (cosine * edgeY + sine * outwardY)));
+        }
+        addOpenFan(vertices, center, arc, paint);
+    }
+
+    private static List<Point> removeShortSegments(List<Point> points, boolean closed) {
+        List<Point> result = new ArrayList<>(points.size());
+        for (Point point : points) {
+            if (result.isEmpty() || distance(result.get(result.size() - 1), point) >= EPSILON) {
+                result.add(point);
+            }
+        }
+        if (closed && result.size() > 1
+                && distance(result.get(0), result.get(result.size() - 1)) < EPSILON) {
+            result.remove(result.size() - 1);
+        }
+        return result;
+    }
+
+    private static float distance(Point first, Point second) {
+        return (float) Math.hypot(second.x() - first.x(), second.y() - first.y());
+    }
+
+    private static int capSegments(float radius) {
+        return Math.clamp((int) Math.ceil(radius * 2 * quality), 4, 32);
     }
 
     private static void addClosedFan(List<MeshVertex> vertices, Point center,
@@ -359,6 +446,7 @@ final class ShapeTessellator {
         }
 
         List<MeshVertex> vertices = new ArrayList<>();
+        double tolerance = areaTolerance(points);
         int guard = points.size() * points.size();
         while (indices.size() > 3 && guard-- > 0) {
             boolean earFound = false;
@@ -366,7 +454,7 @@ final class ShapeTessellator {
                 int previous = indices.get((index - 1 + indices.size()) % indices.size());
                 int current = indices.get(index);
                 int next = indices.get((index + 1) % indices.size());
-                if (!isEar(points, indices, previous, current, next)) {
+                if (!isEar(points, indices, previous, current, next, tolerance)) {
                     continue;
                 }
                 addTriangle(vertices, points.get(previous), points.get(current), points.get(next), paint);
@@ -386,34 +474,55 @@ final class ShapeTessellator {
         return vertices;
     }
 
+    /**
+     * Picks an area tolerance relative to the polygon size.
+     * A fixed tolerance cannot serve both large polygons, where floating point noise produces
+     * non-zero areas, and sub-pixel slivers such as thin arc masks, whose triangles are valid but tiny.
+     */
+    private static double areaTolerance(List<Point> points) {
+        float minX = Float.POSITIVE_INFINITY;
+        float minY = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY;
+        float maxY = Float.NEGATIVE_INFINITY;
+        for (Point point : points) {
+            minX = Math.min(minX, point.x());
+            minY = Math.min(minY, point.y());
+            maxX = Math.max(maxX, point.x());
+            maxY = Math.max(maxY, point.y());
+        }
+        double extent = Math.max(maxX - (double) minX, maxY - (double) minY);
+        return Math.max(1e-12, RELATIVE_TOLERANCE * extent * extent);
+    }
+
     private static boolean isEar(List<Point> points, List<Integer> indices,
-                                 int previous, int current, int next) {
+                                 int previous, int current, int next, double tolerance) {
         Point a = points.get(previous);
         Point b = points.get(current);
         Point c = points.get(next);
-        if (cross(a, b, c) <= EPSILON) {
+        if (cross(a, b, c) <= tolerance) {
             return false;
         }
         for (int index : indices) {
             if (index == previous || index == current || index == next) {
                 continue;
             }
-            if (pointInTriangle(points.get(index), a, b, c)) {
+            if (pointInTriangle(points.get(index), a, b, c, tolerance)) {
                 return false;
             }
         }
         return true;
     }
 
-    private static boolean pointInTriangle(Point point, Point a, Point b, Point c) {
-        float first = cross(a, b, point);
-        float second = cross(b, c, point);
-        float third = cross(c, a, point);
-        return first >= -EPSILON && second >= -EPSILON && third >= -EPSILON;
+    private static boolean pointInTriangle(Point point, Point a, Point b, Point c, double tolerance) {
+        double first = cross(a, b, point);
+        double second = cross(b, c, point);
+        double third = cross(c, a, point);
+        return first >= -tolerance && second >= -tolerance && third >= -tolerance;
     }
 
-    private static float cross(Point a, Point b, Point c) {
-        return (b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x());
+    private static double cross(Point a, Point b, Point c) {
+        return (double) (b.x() - a.x()) * (c.y() - a.y())
+                - (double) (b.y() - a.y()) * (c.x() - a.x());
     }
 
     private static List<Point> normalizePolygon(List<Point> input) {
@@ -471,7 +580,7 @@ final class ShapeTessellator {
         float top = bounds.y();
         float right = bounds.right();
         float bottom = bounds.bottom();
-        int segments = Math.clamp((int) Math.ceil(clamped / 6 * quality), 2, 16);
+        int segments = cornerSegments(clamped);
         List<Point> points = new ArrayList<>();
         points.add(new Point(left + clamped, top));
         points.add(new Point(right - clamped, top));
@@ -532,9 +641,15 @@ final class ShapeTessellator {
         return Math.clamp(steps, 4, MAX_GRADIENT_STEPS);
     }
 
-    private static int circleSegments(float radius) {
-        int segments = (int) Math.ceil(radius * 1.5f * quality);
-        return Math.clamp(segments, MIN_CIRCLE_SEGMENTS, MAX_CIRCLE_SEGMENTS);
+    /**
+     * Keeps a quarter circle under the sagitta tolerance, so small corner radii no longer turn
+     * into two or three visible facets.
+     */
+    private static int cornerSegments(float radius) {
+        float ratio = Math.min(CORNER_TOLERANCE / (Math.max(radius, EPSILON) * quality), 0.9f);
+        double step = 2 * Math.acos(1 - ratio);
+        int segments = (int) Math.ceil(Math.PI / 2 / step);
+        return Math.clamp(segments, 3, 48);
     }
 
     private static int ellipseSegments(float radiusX, float radiusY, float sweep) {

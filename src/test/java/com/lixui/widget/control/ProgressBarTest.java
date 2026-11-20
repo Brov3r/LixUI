@@ -182,6 +182,28 @@ class ProgressBarTest {
     }
 
     @Test
+    void drawsSubPixelCircularProgress() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            ProgressBar bar = new ProgressBar(0.002f);
+            bar.setBounds(new Rect(0, 0, 100, 100));
+            bar.setAnimationRate(0);
+            bar.setShape(ProgressBar.Shape.CIRCLE);
+            manager.add(bar);
+            manager.render();
+
+            bar.setAppearance(ProgressBar.Appearance.RADIAL);
+            bar.setValue(0.0001f);
+            manager.render();
+
+            assertEquals(1, backend.lastDrawList().commands().stream()
+                    .filter(MaskBeginCommand.class::isInstance).count());
+            assertEquals(1, backend.lastDrawList().commands().stream()
+                    .filter(MaskEndCommand.class::isInstance).count());
+        }
+    }
+
+    @Test
     void rejectsInvalidSettings() {
         ProgressBar bar = new ProgressBar();
         assertThrows(IllegalArgumentException.class, () -> bar.setValue(Float.NaN));

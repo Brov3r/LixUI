@@ -299,24 +299,11 @@ final class VulkanRenderer implements AutoCloseable {
     }
 
     private boolean supportsSwapchain(VkPhysicalDevice candidate) {
+        if (!hasDeviceExtension(candidate, KHRSwapchain.VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
+            return false;
+        }
         try (MemoryStack stack = MemoryStack.stackPush()) {
             IntBuffer count = stack.mallocInt(1);
-            check(VK10.vkEnumerateDeviceExtensionProperties(candidate, (String) null, count, null),
-                    "Count device extensions");
-            VkExtensionProperties.Buffer extensions = VkExtensionProperties.malloc(count.get(0), stack);
-            check(VK10.vkEnumerateDeviceExtensionProperties(candidate, (String) null, count, extensions),
-                    "Enumerate device extensions");
-            boolean supported = false;
-            for (int i = 0; i < count.get(0); i++) {
-                if (KHRSwapchain.VK_KHR_SWAPCHAIN_EXTENSION_NAME.equals(extensions.get(i).extensionNameString())) {
-                    supported = true;
-                    break;
-                }
-            }
-            if (!supported) {
-                return false;
-            }
-
             VkSurfaceCapabilitiesKHR capabilities = VkSurfaceCapabilitiesKHR.malloc(stack);
             check(KHRSurface.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(candidate, surface, capabilities),
                     "Query surface capabilities");
@@ -324,6 +311,44 @@ final class VulkanRenderer implements AutoCloseable {
                     "Count surface formats");
             return count.get(0) > 0
                     && (capabilities.supportedUsageFlags() & VK10.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0;
+        }
+    }
+
+    /**
+     * Checks whether the physical device exposes a device extension.
+     *
+     * <p>Drivers can report several hundred extensions, so the property array is allocated on the heap
+     * instead of the memory stack, whose default size is too small for drivers with large extension lists.</p>
+     */
+    private static boolean hasDeviceExtension(VkPhysicalDevice candidate, String extensionName) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            IntBuffer count = stack.mallocInt(1);
+            VkExtensionProperties.Buffer extensions = null;
+            try {
+                int result;
+                while (true) {
+                    check(VK10.vkEnumerateDeviceExtensionProperties(candidate, (String) null, count, null),
+                            "Count device extensions");
+                    extensions = VkExtensionProperties.calloc(count.get(0));
+                    result = VK10.vkEnumerateDeviceExtensionProperties(candidate, (String) null, count, extensions);
+                    if (result != VK10.VK_INCOMPLETE) {
+                        break;
+                    }
+                    extensions.free();
+                    extensions = null;
+                }
+                check(result, "Enumerate device extensions");
+                for (int i = 0; i < count.get(0); i++) {
+                    if (extensionName.equals(extensions.get(i).extensionNameString())) {
+                        return true;
+                    }
+                }
+                return false;
+            } finally {
+                if (extensions != null) {
+                    extensions.free();
+                }
+            }
         }
     }
 

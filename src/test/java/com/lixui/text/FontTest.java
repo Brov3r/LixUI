@@ -354,8 +354,8 @@ class FontTest {
         double[] italicInk = inkProfile(italic, italicGlyph);
         double[] combinedInk = inkProfile(boldItalic, boldItalicGlyph);
         assertTrue(boldInk[0] > plainInk[0]);
-        assertEquals(plainInk[0], italicInk[0]);
-        assertEquals(boldInk[0], combinedInk[0]);
+        assertEquals(plainInk[0], italicInk[0], plainInk[0] * 0.01);
+        assertTrue(combinedInk[0] >= boldInk[0]);
         assertTrue(italicInk[1] > plainInk[1]);
         assertTrue(combinedInk[1] > boldInk[1]);
 
@@ -363,6 +363,31 @@ class FontTest {
         Font spacedPair = Font.load(data, 32, new int[]{'A', 'B'}, FontStyle.BOLD, 2);
         assertEquals(2, spacedPair.letterSpacing(), 0.0001f);
         assertEquals(regularPair.measure("AB").width() + 2, spacedPair.measure("AB").width(), 0.01f);
+    }
+
+    @Test
+    void shearsGlyphRowsWithSubpixelSampling() {
+        byte[] column = {0, (byte) 255, 0};
+
+        byte[] sheared = Font.shear(column, 3, 1, 4, 0.5f);
+
+        assertEquals(0, Byte.toUnsignedInt(sheared[0]));
+        assertEquals(128, Byte.toUnsignedInt(sheared[1]));
+        assertEquals(128, Byte.toUnsignedInt(sheared[2]));
+        assertEquals(0, Byte.toUnsignedInt(sheared[3]));
+    }
+
+    @Test
+    void syntheticBoldSaturatesTheCoverageOfThinStems() {
+        byte[] stem = {0, (byte) 128, (byte) 128, 0, 0};
+
+        byte[] thickened = Font.thicken(stem, 5, 6, 1, 1);
+
+        assertEquals(128, Byte.toUnsignedInt(thickened[1]));
+        assertEquals(255, Byte.toUnsignedInt(thickened[2]));
+        assertEquals(128, Byte.toUnsignedInt(thickened[3]));
+        assertEquals(0, Byte.toUnsignedInt(thickened[4]));
+        assertEquals(0, Byte.toUnsignedInt(thickened[5]));
     }
 
     @Test
