@@ -6,7 +6,6 @@ import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
 import com.lixui.platform.Cursor;
 import com.lixui.text.TextDecoration;
-import com.lixui.theme.WidgetState;
 import com.lixui.theme.WidgetStyle;
 import com.lixui.widget.UiContext;
 import org.slf4j.Logger;
@@ -17,11 +16,14 @@ import java.util.Objects;
 /**
  * A label that opens a URI in the default browser when activated.
  * The link displays underlined text in the theme primary color unless an explicit color is set.
+ * Hovering brightens the text and pressing it darkens the text, so the link reacts before activation.
  * It activates on a completed left click, a double click or Enter, and requests the pointing hand
  * cursor while hovered.
  */
 public class Hyperlink extends Label {
     private static final Logger LOGGER = LoggerFactory.getLogger(Hyperlink.class);
+    private static final float HOVER_TINT = 0.3f;
+    private static final float PRESSED_SHADE = 0.25f;
 
     private String uri;
 
@@ -107,22 +109,32 @@ public class Hyperlink extends Label {
     }
 
     /**
-     * Uses the theme primary color until an explicit text color is assigned.
-     * Disabled links keep the disabled style text color.
+     * Uses the theme primary color until an explicit text color is assigned and lightens it on hover
+     * and darkens it while pressed. Disabled links keep the disabled style text color.
      *
      * @param widgetStyle resolved widget style
      * @return the link text color
      */
     @Override
     protected Color resolveTextColor(WidgetStyle widgetStyle) {
-        if (textColor() != null) {
-            return textColor();
+        Color base = textColor();
+        if (base == null) {
+            UiContext current = context();
+            if (current == null || !isEnabled()) {
+                return widgetStyle.text(state());
+            }
+            base = current.theme().primary();
         }
-        UiContext current = context();
-        if (current == null || state() == WidgetState.DISABLED) {
-            return widgetStyle.text(state());
+        if (!isEnabled()) {
+            return base;
         }
-        return current.theme().primary();
+        if (isPressed()) {
+            return Color.mix(base, Color.BLACK, PRESSED_SHADE);
+        }
+        if (isHovered()) {
+            return Color.mix(base, Color.WHITE, HOVER_TINT);
+        }
+        return base;
     }
 
     /**

@@ -7,6 +7,7 @@ import com.lixui.input.Key;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
 import com.lixui.input.event.KeyPressed;
+import com.lixui.input.event.PointerMoved;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.platform.Cursor;
@@ -30,6 +31,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HyperlinkTest {
     private static final String URI = "https://example.com/docs";
@@ -99,6 +101,55 @@ class HyperlinkTest {
             link.setTextColor(explicit);
             manager.render();
             assertEquals(explicit, textColor(backend.lastDrawList().commands()));
+        }
+    }
+
+    @Test
+    void brightensOnHoverAndDarkensWhilePressed() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
+            manager.resize(TestViewports.LOGICAL);
+            manager.setDefaultFont(font(manager, 16));
+            Hyperlink link = new Hyperlink("Docs", URI);
+            link.setBounds(new Rect(0, 0, 120, 30));
+            manager.add(link);
+
+            manager.render();
+            Color normal = textColor(backend.lastDrawList().commands());
+
+            manager.handle(new PointerMoved(10, 10));
+            manager.render();
+            Color hovered = textColor(backend.lastDrawList().commands());
+
+            manager.handle(new PointerPressed(10, 10, MouseButton.LEFT, Modifiers.NONE));
+            manager.render();
+            Color pressed = textColor(backend.lastDrawList().commands());
+
+            assertTrue(hovered.luminance() > normal.luminance());
+            assertTrue(pressed.luminance() < normal.luminance());
+        }
+    }
+
+    @Test
+    void appliesTheFeedbackToExplicitTextColors() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
+            manager.resize(TestViewports.LOGICAL);
+            manager.setDefaultFont(font(manager, 16));
+            Hyperlink link = new Hyperlink("Docs", URI);
+            link.setBounds(new Rect(0, 0, 120, 30));
+            link.setTextColor(Color.hex("#808080"));
+            manager.add(link);
+
+            manager.render();
+            Color normal = textColor(backend.lastDrawList().commands());
+            assertEquals(Color.hex("#808080"), normal);
+
+            manager.handle(new PointerMoved(10, 10));
+            manager.render();
+            Color hovered = textColor(backend.lastDrawList().commands());
+
+            assertTrue(hovered.luminance() > normal.luminance());
         }
     }
 
