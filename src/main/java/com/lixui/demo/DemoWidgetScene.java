@@ -51,6 +51,7 @@ import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.container.Window;
 import com.lixui.widget.layout.Flow;
+import com.lixui.widget.layout.FormField;
 import com.lixui.widget.layout.Grid;
 import com.lixui.widget.layout.GridTrack;
 import com.lixui.widget.layout.HBox;
@@ -143,6 +144,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(decoratedLabel).add(justifiedLabel).add(richLabel);
         innerTabs = createInnerTabs();
         outerTabs = new TabPanel();
+        bindIcon("user-list.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Form", createFormPage())::setIcon);
         bindIcon("grid.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Layouts", createLayoutsPage())::setIcon);
         bindIcon("progress.svg", outerTabs.iconSize(),
@@ -218,6 +221,43 @@ final class DemoWidgetScene implements AutoCloseable {
         tabs.setTabClosable(tabList.get(0), false);
         tabs.setTabMovable(tabList.get(11), false);
         return tabs;
+    }
+
+    private VBox createFormPage() {
+        Input name = new Input("Aria");
+        name.setPlaceholder("Player name");
+
+        Input email = new Input("aria@example.com");
+        email.setPlaceholder("you@example.com");
+
+        Dropdown role = new Dropdown();
+        role.setPlaceholder("Choose a class");
+        role.addOption("Knight");
+        role.addOption("Ranger");
+        role.addOption("Mage");
+        role.setSelectedIndex(0);
+
+        CheckBox updates = new CheckBox("Send me patch notes");
+        updates.setChecked(true);
+
+        FormField nameField = new FormField("Display name", name,
+                "Shown to other players in the party.");
+        FormField emailField = new FormField("Email", email,
+                "Used for account recovery only.");
+        FormField roleField = new FormField("Class", role,
+                "Determines the starting abilities.");
+        FormField updatesField = new FormField("Notifications", updates,
+                "You can change this at any time.");
+
+        CheckBox showError = new CheckBox("Show validation error");
+        showError.setOnChange(checked -> emailField.setError(checked
+                ? "Enter a valid email address." : ""));
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(10);
+        page.add(nameField).add(emailField).add(roleField).add(updatesField).add(showError);
+        return page;
     }
 
     private VBox createLayoutsPage() {
