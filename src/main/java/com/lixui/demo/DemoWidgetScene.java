@@ -738,7 +738,8 @@ final class DemoWidgetScene implements AutoCloseable {
     }
 
     private Widget createCodePage() {
-        Label status = new Label("Tab indents, Shift+Tab outdents, Ctrl+Tab moves focus.");
+        Label status = new Label("Tab indents, Shift+Tab outdents, Ctrl+/ comments, "
+                + "Enter auto-indents, Ctrl+Tab moves focus.");
         status.setFontFamily(fontFamily);
         status.setAutoSize(false);
         status.setWrap(true);
@@ -752,6 +753,7 @@ final class DemoWidgetScene implements AutoCloseable {
                 + "    }\n"
                 + "}\n");
         code.setPlaceholder("// Write Java code...");
+        code.setLineColumnPlacement(InputCode.LineColumnPlacement.BOTTOM);
         code.setGrow(1);
         code.setOnChange(value -> {
             String raw = code.rawText();

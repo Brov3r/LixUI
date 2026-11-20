@@ -6,6 +6,7 @@ import com.lixui.geometry.Size;
 import com.lixui.graphics.Color;
 import com.lixui.input.Key;
 import com.lixui.input.Modifiers;
+import com.lixui.input.MouseButton;
 import com.lixui.render.RenderManager;
 import com.lixui.text.Font;
 import com.lixui.text.HorizontalAlignment;
@@ -32,12 +33,21 @@ import java.util.Set;
  * Wrapping is disabled by default so logical lines stay aligned with the gutter. The highlighter
  * understands Java and C-like comments, strings, numbers, annotations, type and method names,
  * constants and operators, with a configurable keyword set and per-category colors. Tab inserts
- * indentation and Shift+Tab outdents the selected lines, while Ctrl+Tab keeps focus traversal.
- * Gutter padding, colors and every visual feature can be replaced independently.
+ * indentation and Shift+Tab outdents the selected lines, Enter copies the current indentation and
+ * Ctrl+/ toggles line comments, while Ctrl+Tab keeps focus traversal. Pressing a line number selects
+ * its line. Indent guides, matching bracket highlights and a caret line/column indicator can be
+ * enabled, disabled or recolored independently.
  */
 public class InputCode extends InputArea {
     private static final float DEFAULT_GUTTER_PADDING = 8;
+    private static final float GUTTER_GAP = 6;
+    private static final float INDICATOR_PADDING = 6;
     private static final float DEFAULT_CURRENT_LINE_ALPHA = 0.08f;
+    private static final float DEFAULT_CURRENT_LINE_NUMBER_ALPHA = 0.16f;
+    private static final float DEFAULT_INDENT_GUIDE_ALPHA = 0.35f;
+    private static final float DEFAULT_BRACKET_ALPHA = 0.28f;
+    private static final float GUIDE_WIDTH = 1;
+    private static final float BRACKET_PADDING = 1;
     private static final Set<String> DEFAULT_KEYWORDS = Set.of(
             "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char",
             "class", "const", "continue", "default", "do", "double", "else", "enum",
@@ -47,6 +57,18 @@ public class InputCode extends InputArea {
             "return", "sealed", "short", "static", "strictfp", "super", "switch",
             "synchronized", "this", "throw", "throws", "transient", "try", "var", "void",
             "volatile", "while", "yield", "true", "false", "null");
+
+    /**
+     * Placement of the caret line and column indicator.
+     */
+    public enum LineColumnPlacement {
+        /** The indicator is hidden. */
+        NONE,
+        /** The indicator sits at the bottom of the line-number gutter. */
+        GUTTER,
+        /** The indicator sits at the bottom right corner of the editor. */
+        BOTTOM
+    }
 
     /**
      * Colors used by the syntax highlighter.
@@ -131,16 +153,34 @@ public class InputCode extends InputArea {
     private boolean showLineNumbers = true;
     private boolean syntaxHighlighting = true;
     private boolean currentLineHighlight = true;
+    private boolean autoIndent = true;
+    private boolean lineNumberClick = true;
+    private boolean highlightCurrentLineNumber = true;
+    private boolean bracketHighlight = true;
+    private boolean indentGuides = true;
     private boolean tabInsertsIndentation = true;
     private boolean useSpacesForTabs = true;
     private int tabSize = 4;
     private float gutterPadding = DEFAULT_GUTTER_PADDING;
+    private String lineComment = "//";
+    private LineColumnPlacement lineColumnPlacement = LineColumnPlacement.NONE;
     private Set<String> keywords = new LinkedHashSet<>(DEFAULT_KEYWORDS);
     private SyntaxColors syntaxColors;
     private Color lineNumberColor;
     private Color currentLineNumberColor;
+    private Color currentLineNumberBackgroundColor;
     private Color currentLineColor;
     private Color gutterBackgroundColor;
+    private Color indentGuideColor;
+    private Color bracketHighlightColor;
+    private Color lineColumnColor;
+    private String tokenizedText;
+    private List<CodeSpan> tokenizedSpans = List.of();
+    private String ignoredText;
+    private boolean[] ignoredCache;
+    private String matchedText;
+    private int matchedCaret = -1;
+    private int[] matchedPair;
 
     /**
      * Creates an empty code editor.
@@ -214,6 +254,208 @@ public class InputCode extends InputArea {
      */
     public final void setCurrentLineHighlight(boolean currentLineHighlight) {
         this.currentLineHighlight = currentLineHighlight;
+    }
+
+    /**
+     * Reports whether a new line copies the indentation of the current one.
+     *
+     * @return true when Enter keeps the leading whitespace
+     */
+    public final boolean isAutoIndent() {
+        return autoIndent;
+    }
+
+    /**
+     * Enables or disables copying the current indentation to a new line.
+     *
+     * @param autoIndent true to keep the leading whitespace on Enter
+     */
+    public final void setAutoIndent(boolean autoIndent) {
+        this.autoIndent = autoIndent;
+    }
+
+    /**
+     * Returns the prefix inserted and removed by the line comment shortcut.
+     *
+     * @return the line comment prefix, or an empty string when the shortcut is disabled
+     */
+    public final String lineComment() {
+        return lineComment;
+    }
+
+    /**
+     * Assigns the line comment prefix used by Ctrl+/.
+     * An empty prefix disables the shortcut.
+     *
+     * @param lineComment line comment prefix
+     * @throws NullPointerException if {@code lineComment} is null
+     */
+    public final void setLineComment(String lineComment) {
+        this.lineComment = Objects.requireNonNull(lineComment, "lineComment");
+    }
+
+    /**
+     * Reports whether pressing a line number selects its line.
+     *
+     * @return true when gutter presses select lines
+     */
+    public final boolean isLineNumberClick() {
+        return lineNumberClick;
+    }
+
+    /**
+     * Enables or disables selecting a line by pressing its number.
+     *
+     * @param lineNumberClick true to select lines from the gutter
+     */
+    public final void setLineNumberClick(boolean lineNumberClick) {
+        this.lineNumberClick = lineNumberClick;
+    }
+
+    /**
+     * Reports whether the current line number is highlighted.
+     *
+     * @return true when the caret line number receives a background marker
+     */
+    public final boolean isHighlightCurrentLineNumber() {
+        return highlightCurrentLineNumber;
+    }
+
+    /**
+     * Enables or disables the current line number background marker.
+     *
+     * @param highlightCurrentLineNumber true to highlight the caret line number
+     */
+    public final void setHighlightCurrentLineNumber(boolean highlightCurrentLineNumber) {
+        this.highlightCurrentLineNumber = highlightCurrentLineNumber;
+    }
+
+    /**
+     * Returns the explicit current line number background color.
+     *
+     * @return the marker color, or null when the translucent accent is used
+     */
+    public final Color currentLineNumberBackgroundColor() {
+        return currentLineNumberBackgroundColor;
+    }
+
+    /**
+     * Assigns the current line number background marker color.
+     *
+     * @param currentLineNumberBackgroundColor marker color, or null for a translucent accent
+     */
+    public final void setCurrentLineNumberBackgroundColor(Color currentLineNumberBackgroundColor) {
+        this.currentLineNumberBackgroundColor = currentLineNumberBackgroundColor;
+    }
+
+    /**
+     * Reports whether matching brackets are highlighted around the caret.
+     *
+     * @return true when bracket pairs are highlighted
+     */
+    public final boolean isBracketHighlight() {
+        return bracketHighlight;
+    }
+
+    /**
+     * Enables or disables matching bracket highlighting.
+     *
+     * @param bracketHighlight true to highlight the bracket pair at the caret
+     */
+    public final void setBracketHighlight(boolean bracketHighlight) {
+        this.bracketHighlight = bracketHighlight;
+    }
+
+    /**
+     * Returns the explicit bracket highlight color.
+     *
+     * @return the highlight color, or null when a translucent accent is used
+     */
+    public final Color bracketHighlightColor() {
+        return bracketHighlightColor;
+    }
+
+    /**
+     * Assigns the bracket highlight color.
+     *
+     * @param bracketHighlightColor highlight color, or null for a translucent accent
+     */
+    public final void setBracketHighlightColor(Color bracketHighlightColor) {
+        this.bracketHighlightColor = bracketHighlightColor;
+    }
+
+    /**
+     * Reports whether indentation guides are painted.
+     *
+     * @return true when indent guides are drawn
+     */
+    public final boolean isIndentGuides() {
+        return indentGuides;
+    }
+
+    /**
+     * Enables or disables indentation guides.
+     *
+     * @param indentGuides true to draw a guide per indentation level
+     */
+    public final void setIndentGuides(boolean indentGuides) {
+        this.indentGuides = indentGuides;
+    }
+
+    /**
+     * Returns the explicit indentation guide color.
+     *
+     * @return the guide color, or null when a translucent border color is used
+     */
+    public final Color indentGuideColor() {
+        return indentGuideColor;
+    }
+
+    /**
+     * Assigns the indentation guide color.
+     *
+     * @param indentGuideColor guide color, or null for a translucent border color
+     */
+    public final void setIndentGuideColor(Color indentGuideColor) {
+        this.indentGuideColor = indentGuideColor;
+    }
+
+    /**
+     * Returns the caret line and column indicator placement.
+     *
+     * @return the indicator placement
+     */
+    public final LineColumnPlacement lineColumnPlacement() {
+        return lineColumnPlacement;
+    }
+
+    /**
+     * Places the caret line and column indicator in the gutter, at the bottom right corner or
+     * hides it. The indicator occupies a footer strip that does not overlap the text.
+     *
+     * @param lineColumnPlacement indicator placement
+     * @throws NullPointerException if {@code lineColumnPlacement} is null
+     */
+    public final void setLineColumnPlacement(LineColumnPlacement lineColumnPlacement) {
+        this.lineColumnPlacement = Objects.requireNonNull(lineColumnPlacement, "lineColumnPlacement");
+    }
+
+    /**
+     * Returns the explicit indicator text color.
+     *
+     * @return the indicator color, or null when the muted text color is used
+     */
+    public final Color lineColumnColor() {
+        return lineColumnColor;
+    }
+
+    /**
+     * Assigns the caret line and column indicator text color.
+     *
+     * @param lineColumnColor indicator color, or null for the muted text color
+     */
+    public final void setLineColumnColor(Color lineColumnColor) {
+        this.lineColumnColor = lineColumnColor;
     }
 
     /**
@@ -436,9 +678,15 @@ public class InputCode extends InputArea {
         if (!isEnabled()) {
             return false;
         }
+        boolean command = modifiers.superKey() || (modifiers.control() && !modifiers.alt());
+        if (key == Key.SLASH && command && !modifiers.shift()) {
+            return toggleLineComment();
+        }
+        if ((key == Key.ENTER || key == Key.KEYPAD_ENTER) && !command) {
+            insertLineBreak();
+            return true;
+        }
         if (key == Key.TAB) {
-            boolean command = modifiers.superKey()
-                    || (modifiers.control() && !modifiers.alt());
             if (!tabInsertsIndentation || command) {
                 return false;
             }
@@ -453,6 +701,24 @@ public class InputCode extends InputArea {
     }
 
     /**
+     * Inserts a line break typed as a character.
+     *
+     * @param codepoint typed code point
+     * @return true when the event is consumed
+     */
+    @Override
+    protected boolean onCharTyped(int codepoint) {
+        if (codepoint == '\r' || codepoint == '\n') {
+            if (!isEnabled()) {
+                return true;
+            }
+            insertLineBreak();
+            return true;
+        }
+        return super.onCharTyped(codepoint);
+    }
+
+    /**
      * Measures the text area and adds the line-number gutter width.
      *
      * @param constraints available and required dimensions
@@ -461,7 +727,9 @@ public class InputCode extends InputArea {
     @Override
     protected Size onMeasure(LayoutConstraints constraints) {
         Size base = super.onMeasure(constraints);
-        return new Size(base.width() + gutterWidth(font(), resolvedStyle()), base.height());
+        Font font = font();
+        return new Size(base.width() + gutterInset(font, resolvedStyle()),
+                base.height() + footerHeight(font));
     }
 
     /**
@@ -473,12 +741,14 @@ public class InputCode extends InputArea {
     @Override
     protected Rect textRect(WidgetStyle widgetStyle) {
         Rect content = super.textRect(widgetStyle);
-        float gutter = gutterWidth(font(), widgetStyle);
-        if (gutter <= 0 || content.isEmpty()) {
+        if (content.isEmpty()) {
             return content;
         }
+        float gutter = gutterInset(font(), widgetStyle);
+        float footer = footerHeight(font());
         return new Rect(content.x() + gutter, content.y(),
-                Math.max(0, content.width() - gutter), content.height());
+                Math.max(0, content.width() - gutter),
+                Math.max(0, content.height() - footer));
     }
 
     /**
@@ -491,6 +761,38 @@ public class InputCode extends InputArea {
     protected void onDraw(RenderManager renderer, FrameInfo frame) {
         super.onDraw(renderer, frame);
         drawGutter(renderer);
+        drawLineColumnIndicator(renderer);
+    }
+
+    /**
+     * Selects the whole line when the pointer presses its number.
+     *
+     * @param x horizontal pointer position relative to the widget
+     * @param y vertical pointer position relative to the widget
+     * @param button pressed button
+     * @param modifiers active modifiers
+     * @return true when the press was consumed by the gutter
+     */
+    @Override
+    protected boolean onPointerPress(float x, float y, MouseButton button, Modifiers modifiers) {
+        if (button == MouseButton.LEFT && lineNumberClick && showLineNumbers) {
+            WidgetStyle widgetStyle = resolvedStyle();
+            Font font = font();
+            if (widgetStyle != null && font != null) {
+                Rect content = contentRect(widgetStyle);
+                float gutter = gutterWidth(font, widgetStyle);
+                if (!content.isEmpty() && gutter > 0
+                        && x >= content.x() && x < content.x() + gutter
+                        && y >= content.y() && y < content.bottom()) {
+                    Rect body = textRect(widgetStyle);
+                    if (!body.isEmpty() && y < body.bottom()) {
+                        selectLineAt(font, body, y);
+                    }
+                    return true;
+                }
+            }
+        }
+        return super.onPointerPress(x, y, button, modifiers);
     }
 
     /**
@@ -507,22 +809,217 @@ public class InputCode extends InputArea {
     protected void drawTextBackground(RenderManager renderer, TextLayout layout,
                                       WidgetStyle widgetStyle, Rect content,
                                       float textLeft, float textTop) {
-        if (!currentLineHighlight || !isEnabled() || !isFocused() || content.isEmpty()) {
+        if (content.isEmpty()) {
             return;
         }
-        Color color = currentLineColor;
-        if (color == null) {
-            Theme theme = context() == null ? null : context().theme();
-            color = theme == null ? null : theme.primary().withAlpha(DEFAULT_CURRENT_LINE_ALPHA);
+        Theme theme = context() == null ? null : context().theme();
+        if (currentLineHighlight && isEnabled() && isFocused()) {
+            Color color = currentLineColor;
+            if (color == null && theme != null) {
+                color = theme.primary().withAlpha(DEFAULT_CURRENT_LINE_ALPHA);
+            }
+            if (color != null) {
+                int lineIndex = lineIndexAt(layout,
+                        layout.caretPosition(displayIndexForRaw(caretIndex())).y());
+                TextLine line = layout.lines().get(lineIndex);
+                renderer.rect(new Rect(textLeft, textTop + line.y(), content.width(),
+                        layout.lineHeight()), color);
+            }
         }
-        if (color == null) {
+        if (indentGuides) {
+            drawIndentGuides(renderer, layout, content, textLeft, textTop, theme);
+        }
+        if (bracketHighlight) {
+            drawBracketHighlight(renderer, layout, textLeft, textTop, theme);
+        }
+    }
+
+    /**
+     * Draws a vertical guide for every indentation level of each logical line.
+     */
+    private void drawIndentGuides(RenderManager renderer, TextLayout layout, Rect content,
+                                  float textLeft, float textTop, Theme theme) {
+        Font font = font();
+        if (font == null) {
             return;
         }
-        int lineIndex = lineIndexAt(layout,
-                layout.caretPosition(displayIndexForRaw(caretIndex())).y());
-        TextLine line = layout.lines().get(lineIndex);
-        renderer.rect(new Rect(textLeft, textTop + line.y(), content.width(),
-                layout.lineHeight()), color);
+        Color color = indentGuideColor;
+        if (color == null) {
+            if (theme == null) {
+                return;
+            }
+            color = theme.border().withAlpha(DEFAULT_INDENT_GUIDE_ALPHA);
+        }
+        String raw = rawText();
+        float indentWidth = Math.max(1, font.advance(' ') * tabSize);
+        int[] visible = visibleLineRange(layout, content, textTop);
+        for (int lineIndex = visible[0]; lineIndex < visible[1]; lineIndex++) {
+            TextLine line = layout.lines().get(lineIndex);
+            int rawStart = rawIndexForDisplay(line.start());
+            if (rawStart > 0 && (rawStart >= raw.length() || raw.charAt(rawStart - 1) != '\n')) {
+                continue;
+            }
+            int levels = indentationAt(raw, rawStart) / tabSize;
+            float y = textTop + line.y();
+            for (int level = 1; level <= levels; level++) {
+                renderer.rect(new Rect(textLeft + level * indentWidth, y, GUIDE_WIDTH,
+                        layout.lineHeight()), color);
+            }
+        }
+    }
+
+    /**
+     * Highlights the bracket at the caret and its matching partner.
+     */
+    private void drawBracketHighlight(RenderManager renderer, TextLayout layout,
+                                      float textLeft, float textTop, Theme theme) {
+        Font font = font();
+        if (font == null || mask() != null || isSecret()) {
+            return;
+        }
+        String raw = rawText();
+        int[] pair = matchingBrackets(raw);
+        if (pair == null) {
+            return;
+        }
+        Color color = bracketHighlightColor;
+        if (color == null) {
+            if (theme == null) {
+                return;
+            }
+            color = theme.primary().withAlpha(DEFAULT_BRACKET_ALPHA);
+        }
+        for (int index : pair) {
+            float width = font.advance(raw.charAt(index));
+            if (width <= 0) {
+                continue;
+            }
+            Point caret = layout.caretPosition(displayIndexForRaw(index));
+            renderer.rect(new Rect(textLeft + caret.x() - BRACKET_PADDING, textTop + caret.y(),
+                    width + BRACKET_PADDING * 2, layout.lineHeight()), color);
+        }
+    }
+
+    /**
+     * Returns the bracket at or before the caret and its matching partner, skipping strings and
+     * comments.
+     */
+    private int[] matchingBrackets(String raw) {
+        int caret = caretIndex();
+        if (raw == matchedText && caret == matchedCaret) {
+            return matchedPair;
+        }
+        matchedText = raw;
+        matchedCaret = caret;
+        matchedPair = findMatchingBrackets(raw, caret);
+        return matchedPair;
+    }
+
+    private int[] findMatchingBrackets(String raw, int caret) {
+        int position = -1;
+        if (caret < raw.length() && isBracket(raw.charAt(caret))) {
+            position = caret;
+        } else if (caret > 0 && isBracket(raw.charAt(caret - 1))) {
+            position = caret - 1;
+        }
+        if (position < 0) {
+            return null;
+        }
+        char bracket = raw.charAt(position);
+        char counterpart = counterpart(bracket);
+        boolean forward = bracket == '(' || bracket == '[' || bracket == '{';
+        boolean[] ignored = ignoredPositions(raw);
+        int depth = 0;
+        for (int index = position; index >= 0 && index < raw.length(); index += forward ? 1 : -1) {
+            if (ignored[index]) {
+                continue;
+            }
+            char current = raw.charAt(index);
+            if (current == bracket) {
+                depth++;
+            } else if (current == counterpart) {
+                depth--;
+                if (depth == 0) {
+                    return new int[]{position, index};
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean[] ignoredPositions(String raw) {
+        if (raw == ignoredText && ignoredCache != null) {
+            return ignoredCache;
+        }
+        boolean[] ignored = new boolean[raw.length()];
+        for (CodeSpan span : spansFor(raw)) {
+            if (span.kind() != TokenKind.STRING && span.kind() != TokenKind.COMMENT) {
+                continue;
+            }
+            int end = Math.min(span.end(), ignored.length);
+            for (int index = span.start(); index < end; index++) {
+                ignored[index] = true;
+            }
+        }
+        ignoredText = raw;
+        ignoredCache = ignored;
+        return ignored;
+    }
+
+    /**
+     * Returns the token spans of the display text, reusing the previous result while the text
+     * instance is unchanged so typing does not retokenize the whole document every frame.
+     */
+    private List<CodeSpan> spansFor(String text) {
+        if (text != tokenizedText) {
+            tokenizedText = text;
+            tokenizedSpans = tokenize(text);
+        }
+        return tokenizedSpans;
+    }
+
+    /**
+     * Returns the first visible line and the exclusive last visible line of the layout.
+     */
+    private static int[] visibleLineRange(TextLayout layout, Rect content, float textTop) {
+        int size = layout.lines().size();
+        int first = lineIndexAt(layout, content.y() - textTop);
+        int last = lineIndexAt(layout, Math.max(content.y() - textTop,
+                content.bottom() - textTop - 1)) + 1;
+        last = Math.min(size, Math.max(first + 1, last));
+        return new int[]{Math.min(first, size - 1), last};
+    }
+
+    private static boolean isBracket(char character) {
+        return character == '(' || character == ')' || character == '['
+                || character == ']' || character == '{' || character == '}';
+    }
+
+    private static char counterpart(char bracket) {
+        return switch (bracket) {
+            case '(' -> ')';
+            case ')' -> '(';
+            case '[' -> ']';
+            case ']' -> '[';
+            case '{' -> '}';
+            case '}' -> '{';
+            default -> bracket;
+        };
+    }
+
+    private int indentationAt(String text, int start) {
+        int spaces = 0;
+        for (int index = start; index < text.length(); index++) {
+            char character = text.charAt(index);
+            if (character == ' ') {
+                spaces++;
+            } else if (character == '\t') {
+                spaces += tabSize;
+            } else {
+                break;
+            }
+        }
+        return spaces;
     }
 
     /**
@@ -554,9 +1051,19 @@ public class InputCode extends InputArea {
             return;
         }
         SyntaxColors colors = syntaxColors == null ? SyntaxColors.defaults(theme) : syntaxColors;
-        List<CodeSpan> spans = tokenize(display);
+        List<CodeSpan> spans = spansFor(display);
+        WidgetStyle widgetStyle = resolvedStyle();
+        Rect content = widgetStyle == null ? localBounds() : textRect(widgetStyle);
+        int[] visible = visibleLineRange(layout, content, textTop);
         int spanIndex = 0;
-        for (TextLine line : layout.lines()) {
+        if (visible[0] < layout.lines().size()) {
+            int firstStart = layout.lines().get(visible[0]).start();
+            while (spanIndex < spans.size() && spans.get(spanIndex).end() <= firstStart) {
+                spanIndex++;
+            }
+        }
+        for (int lineIndex = visible[0]; lineIndex < visible[1]; lineIndex++) {
+            TextLine line = layout.lines().get(lineIndex);
             int lineStart = line.start();
             int lineEnd = line.end();
             if (lineStart >= lineEnd) {
@@ -597,12 +1104,13 @@ public class InputCode extends InputArea {
             return;
         }
         Rect content = contentRect(widgetStyle);
+        Rect body = textRect(widgetStyle);
         float gutter = gutterWidth(font, widgetStyle);
-        if (content.isEmpty() || gutter <= 0) {
+        if (content.isEmpty() || body.isEmpty() || gutter <= 0) {
             return;
         }
         Theme theme = context() == null ? null : context().theme();
-        Rect gutterRect = new Rect(content.x(), content.y(), gutter, content.height());
+        Rect gutterRect = new Rect(content.x(), content.y(), gutter, body.height());
         Color background = gutterBackgroundColor;
         if (background == null && theme != null) {
             background = theme.background().withAlpha(0.30f);
@@ -611,11 +1119,10 @@ public class InputCode extends InputArea {
             renderer.rect(gutterRect, background);
         }
         if (theme != null) {
-            renderer.rect(new Rect(gutterRect.right(), content.y(), 1, content.height()),
+            renderer.rect(new Rect(gutterRect.right(), content.y(), 1, gutterRect.height()),
                     theme.border().withAlpha(0.8f));
         }
-        Rect text = textRect(widgetStyle);
-        TextLayout layout = font.layoutBlockRelative(displayText(), textStyle(text));
+        TextLayout layout = font.layoutBlockRelative(displayText(), textStyle(body));
         float textTop = content.y() - verticalScrollOffset();
         int currentLine = lineIndexAt(layout,
                 layout.caretPosition(displayIndexForRaw(caretIndex())).y());
@@ -641,18 +1148,110 @@ public class InputCode extends InputArea {
         }
         Color normalColor = normal;
         Color currentColor = current;
+        Color markerColor = null;
+        if (highlightCurrentLineNumber && isFocused() && isEnabled()) {
+            markerColor = currentLineNumberBackgroundColor;
+            if (markerColor == null && theme != null) {
+                markerColor = theme.primary().withAlpha(DEFAULT_CURRENT_LINE_NUMBER_ALPHA);
+            }
+        }
+        Color marker = markerColor;
+        int[] visible = visibleLineRange(layout, body, textTop);
         Point origin = absolutePosition();
         Rect clip = new Rect(origin.x() + gutterRect.x(), origin.y() + gutterRect.y(),
                 gutterRect.width(), gutterRect.height());
         renderer.withClip(clip, () -> {
-            for (int index = 0; index < layout.lines().size(); index++) {
+            for (int index = visible[0]; index < visible[1]; index++) {
                 TextLine line = layout.lines().get(index);
-                Color color = isFocused() && index == currentLine ? currentColor : normalColor;
-                renderer.text(font, Integer.toString(index + 1),
-                        gutterRect.right() - gutterPadding, textTop + line.y(), color,
+                String number = Integer.toString(index + 1);
+                boolean active = isFocused() && index == currentLine;
+                if (active && marker != null) {
+                    float width = font.measure(number).width();
+                    renderer.rect(new Rect(gutterRect.right() - gutterPadding - width - 2,
+                            textTop + line.y(), width + 4, layout.lineHeight()), marker);
+                }
+                renderer.text(font, number, gutterRect.right() - gutterPadding,
+                        textTop + line.y(), active ? currentColor : normalColor,
                         HorizontalAlignment.RIGHT, VerticalAlignment.TOP);
             }
         });
+    }
+
+    private void drawLineColumnIndicator(RenderManager renderer) {
+        if (lineColumnPlacement == LineColumnPlacement.NONE) {
+            return;
+        }
+        Font font = font();
+        WidgetStyle widgetStyle = resolvedStyle();
+        if (font == null || widgetStyle == null) {
+            return;
+        }
+        Rect content = contentRect(widgetStyle);
+        Rect body = textRect(widgetStyle);
+        float height = footerHeight(font);
+        if (content.isEmpty() || height <= 0) {
+            return;
+        }
+        float top = content.y() + body.height();
+        Rect footer = new Rect(content.x(), top, content.width(),
+                Math.min(height, Math.max(0, content.bottom() - top)));
+        if (footer.isEmpty()) {
+            return;
+        }
+        Theme theme = context() == null ? null : context().theme();
+        Color background = gutterBackgroundColor;
+        if (background == null && theme != null) {
+            background = theme.background().withAlpha(0.30f);
+        }
+        if (background != null) {
+            renderer.rect(footer, background);
+        }
+        if (theme != null) {
+            renderer.rect(new Rect(footer.x(), footer.y(), footer.width(), 1),
+                    theme.border().withAlpha(0.8f));
+        }
+        Color color = lineColumnColor;
+        if (color == null && theme != null) {
+            color = theme.textMuted();
+        }
+        if (color == null) {
+            return;
+        }
+        boolean gutter = lineColumnPlacement == LineColumnPlacement.GUTTER;
+        renderer.text(font, caretPositionLabel(), gutter
+                        ? content.x() + gutterPadding : footer.right() - INDICATOR_PADDING,
+                footer.y() + footer.height() / 2, color,
+                gutter ? HorizontalAlignment.LEFT : HorizontalAlignment.RIGHT,
+                VerticalAlignment.CENTER);
+    }
+
+    private String caretPositionLabel() {
+        String raw = rawText();
+        int caret = caretIndex();
+        int line = 1;
+        int lineStart = 0;
+        for (int index = 0; index < caret && index < raw.length(); index++) {
+            if (raw.charAt(index) == '\n') {
+                line++;
+                lineStart = index + 1;
+            }
+        }
+        return "Ln " + line + ", Col " + (caret - lineStart + 1);
+    }
+
+    private float footerHeight(Font font) {
+        return font == null || lineColumnPlacement == LineColumnPlacement.NONE
+                ? 0 : font.lineHeight() + INDICATOR_PADDING;
+    }
+
+    private void selectLineAt(Font font, Rect body, float y) {
+        TextLayout layout = font.layoutBlockRelative(displayText(), textStyle(body));
+        float textTop = body.y() - verticalScrollOffset();
+        int lineIndex = lineIndexAt(layout, y - textTop);
+        TextLine line = layout.lines().get(lineIndex);
+        String raw = rawText();
+        int index = rawIndexForDisplay(line.start());
+        setSelection(lineStart(raw, index), lineEnd(raw, index));
     }
 
     private float gutterWidth(Font font, WidgetStyle widgetStyle) {
@@ -667,10 +1266,132 @@ public class InputCode extends InputArea {
         return digits * digitWidth + gutterPadding * 2;
     }
 
+    /**
+     * Returns the gutter width plus the breathing space before the code text.
+     */
+    private float gutterInset(Font font, WidgetStyle widgetStyle) {
+        float gutter = gutterWidth(font, widgetStyle);
+        return gutter <= 0 ? 0 : gutter + GUTTER_GAP;
+    }
+
     private int logicalLineCount() {
         String raw = rawText();
         long count = raw.chars().filter(character -> character == '\n').count() + 1;
         return (int) Math.min(Integer.MAX_VALUE, count);
+    }
+
+    /**
+     * Inserts a newline that keeps the leading whitespace of the current line.
+     */
+    private void insertLineBreak() {
+        if (!autoIndent || mask() != null || !allows(' ')) {
+            insertText("\n", false);
+            return;
+        }
+        String raw = rawText();
+        int start = lineStart(raw, selectionStart());
+        int end = start;
+        while (end < raw.length() && (raw.charAt(end) == ' ' || raw.charAt(end) == '\t')) {
+            end++;
+        }
+        insertText("\n" + raw.substring(start, end), false);
+    }
+
+    /**
+     * Comments out or uncomments every line touched by the selection.
+     *
+     * @return true when the shortcut is enabled and the edit was attempted
+     */
+    private boolean toggleLineComment() {
+        if (!isEnabled() || isReadOnly() || lineComment.isEmpty()) {
+            return false;
+        }
+        String raw = rawText();
+        int start = selectionStart();
+        int end = selectionEnd();
+        int effectiveEnd = end > start && raw.charAt(end - 1) == '\n' ? end - 1 : end;
+        int firstLineStart = lineStart(raw, start);
+        int lastLineEnd = lineEnd(raw, Math.max(start, effectiveEnd));
+        List<Integer> lineStarts = new ArrayList<>();
+        for (int position = firstLineStart; ; ) {
+            lineStarts.add(position);
+            int currentEnd = lineEnd(raw, position);
+            if (currentEnd >= lastLineEnd) {
+                break;
+            }
+            position = currentEnd + 1;
+        }
+        boolean allCommented = true;
+        boolean anyContent = false;
+        for (int position : lineStarts) {
+            int currentEnd = lineEnd(raw, position);
+            int contentStart = skipWhitespace(raw, position, currentEnd);
+            if (contentStart >= currentEnd) {
+                continue;
+            }
+            anyContent = true;
+            if (!raw.startsWith(lineComment, contentStart)) {
+                allCommented = false;
+                break;
+            }
+        }
+        String prefix = lineComment.endsWith(" ") ? lineComment : lineComment + " ";
+        boolean commentOut = !anyContent || !allCommented;
+        StringBuilder updated = new StringBuilder(raw.length() + prefix.length() * lineStarts.size());
+        List<int[]> edits = new ArrayList<>();
+        int cursor = 0;
+        for (int position : lineStarts) {
+            int currentEnd = lineEnd(raw, position);
+            int contentStart = skipWhitespace(raw, position, currentEnd);
+            updated.append(raw, cursor, contentStart);
+            if (contentStart < currentEnd) {
+                if (commentOut) {
+                    updated.append(prefix);
+                    edits.add(new int[]{contentStart, prefix.length()});
+                    updated.append(raw, contentStart, currentEnd);
+                } else {
+                    int afterPrefix = contentStart + lineComment.length();
+                    if (afterPrefix < currentEnd && raw.charAt(afterPrefix) == ' ') {
+                        afterPrefix++;
+                    }
+                    edits.add(new int[]{contentStart, contentStart - afterPrefix});
+                    updated.append(raw, afterPrefix, currentEnd);
+                }
+            }
+            cursor = currentEnd;
+        }
+        updated.append(raw, cursor, raw.length());
+        int caret = caretIndex();
+        int anchor = caret == start ? end : start;
+        replaceValue(updated.toString(), adjustIndex(caret, edits, updated.length()),
+                adjustIndex(anchor, edits, updated.length()));
+        return true;
+    }
+
+    private static int skipWhitespace(String text, int start, int end) {
+        int index = start;
+        while (index < end && (text.charAt(index) == ' ' || text.charAt(index) == '\t')) {
+            index++;
+        }
+        return index;
+    }
+
+    private static int adjustIndex(int index, List<int[]> edits, int length) {
+        int shifted = index;
+        for (int[] edit : edits) {
+            int position = edit[0];
+            int delta = edit[1];
+            if (delta > 0) {
+                if (index >= position) {
+                    shifted += delta;
+                }
+            } else if (index >= position - delta) {
+                shifted += delta;
+            } else if (index > position) {
+                shifted += position - index;
+            }
+        }
+        return Math.clamp(shifted, 0, length);
     }
 
     private void indentSelection() {
