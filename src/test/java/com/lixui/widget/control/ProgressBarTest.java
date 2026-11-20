@@ -3,12 +3,16 @@ package com.lixui.widget.control;
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
+import com.lixui.graphics.GradientStop;
+import com.lixui.graphics.Paint;
 import com.lixui.input.InputState;
+import com.lixui.render.MeshVertex;
 import com.lixui.render.command.DrawCommand;
 import com.lixui.render.command.MaskBeginCommand;
 import com.lixui.render.command.MaskEndCommand;
 import com.lixui.render.command.MeshCommand;
 import com.lixui.render.command.RoundedRectCommand;
+import com.lixui.render.command.ShapeCommand;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.testsupport.TestViewports;
@@ -17,6 +21,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -67,6 +73,68 @@ class ProgressBarTest {
             assertTrue(commands.stream().anyMatch(command -> command.bounds().width() == 100));
             assertTrue(commands.stream().anyMatch(command -> command.bounds().width() == 50));
             assertEquals(5, commands.getFirst().radius(), 0.001f);
+        }
+    }
+
+    @Test
+    void drawsAFillGradientAcrossTheIndicator() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            ProgressBar bar = new ProgressBar(0.5f);
+            bar.setBounds(new Rect(0, 0, 100, 10));
+            bar.setAnimationRate(0);
+            bar.setShape(ProgressBar.Shape.ROUNDED);
+            bar.setCornerRadius(5);
+            bar.setFillGradient(Color.rgb(255, 0, 0), Color.rgb(0, 0, 255));
+            manager.add(bar);
+            manager.render();
+
+            assertEquals(Color.rgb(255, 0, 0), bar.fillGradientStart());
+            assertEquals(Color.rgb(0, 0, 255), bar.fillGradientEnd());
+            MeshCommand fill = backend.lastDrawList().commands().stream()
+                    .filter(MeshCommand.class::isInstance)
+                    .map(MeshCommand.class::cast)
+                    .findFirst()
+                    .orElseThrow();
+            assertTrue(fill.vertices().stream().map(MeshVertex::color).distinct().count() > 1);
+
+            bar.clearFillGradient();
+            assertNull(bar.fillGradientStart());
+            assertNull(bar.fillGradientEnd());
+        }
+    }
+
+    @Test
+    void ringFeatherCarriesItsOwnColorInsteadOfBlack() {
+        TestBackend backend = new TestBackend();
+        backend.setAnalytic(true);
+        try (WidgetManager manager = manager(backend)) {
+            ProgressBar bar = new ProgressBar(0.61f);
+            bar.setBounds(new Rect(0, 0, 64, 64));
+            bar.setAnimationRate(0);
+            bar.setShape(ProgressBar.Shape.CIRCLE);
+            bar.setThickness(8);
+            bar.setFillColor(Color.hex("#E39A5B"));
+            manager.add(bar);
+            manager.render();
+
+            List<Paint.RadialGradient> gradients = backend.lastDrawList().commands().stream()
+                    .filter(ShapeCommand.class::isInstance)
+                    .map(ShapeCommand.class::cast)
+                    .map(ShapeCommand::paint)
+                    .filter(Paint.RadialGradient.class::isInstance)
+                    .map(Paint.RadialGradient.class::cast)
+                    .toList();
+
+            assertFalse(gradients.isEmpty());
+            for (Paint.RadialGradient gradient : gradients) {
+                Color edge = gradient.stops().getLast().color();
+                for (GradientStop stop : gradient.stops()) {
+                    if (stop.color().a() == 0) {
+                        assertEquals(edge.toRgb(), stop.color().toRgb());
+                    }
+                }
+            }
         }
     }
 

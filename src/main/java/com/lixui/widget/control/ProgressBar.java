@@ -21,9 +21,10 @@ import java.util.Objects;
 
 /**
  * A value indicator drawn as a horizontal bar or a circular ring.
- * Horizontal bars can be sharp, rounded or pill-shaped and can be filled or outline-only.
- * Circular progress is drawn as an antialiased ring with rounded ends. Value changes are animated
- * with an exponential transition, and percentage text can be shown in the bar or ring center.
+ * Horizontal bars can be sharp, rounded or pill-shaped, can be filled or outline-only, and can use
+ * a horizontal fill gradient. Circular progress is drawn as an antialiased ring with rounded ends.
+ * Value changes are animated with an exponential transition, and percentage text can be shown in
+ * the bar or ring center.
  */
 public class ProgressBar extends Widget {
     /**
@@ -77,6 +78,8 @@ public class ProgressBar extends Widget {
     private float cornerRadius = DEFAULT_CORNER_RADIUS;
     private Color trackColor;
     private Color fillColor;
+    private Color gradientStart;
+    private Color gradientEnd;
     private Color textColor;
     private List<Point> polygon = List.of();
     private boolean showText;
@@ -376,6 +379,46 @@ public class ProgressBar extends Widget {
     }
 
     /**
+     * Returns the fill gradient start color.
+     *
+     * @return the left gradient color, or null when the fill is solid
+     */
+    public Color fillGradientStart() {
+        return gradientStart;
+    }
+
+    /**
+     * Returns the fill gradient end color.
+     *
+     * @return the right gradient color, or null when the fill is solid
+     */
+    public Color fillGradientEnd() {
+        return gradientEnd;
+    }
+
+    /**
+     * Paints the progress with a horizontal gradient across the indicator bounds.
+     * The gradient takes precedence over {@link #setFillColor(Color)}. Circular rings use the
+     * gradient color at the circle center because they are rendered with a fading radial mask.
+     *
+     * @param start color on the left edge
+     * @param end color on the right edge
+     * @throws NullPointerException if a color is null
+     */
+    public void setFillGradient(Color start, Color end) {
+        gradientStart = Objects.requireNonNull(start, "start");
+        gradientEnd = Objects.requireNonNull(end, "end");
+    }
+
+    /**
+     * Removes the fill gradient and restores the solid progress color.
+     */
+    public void clearFillGradient() {
+        gradientStart = null;
+        gradientEnd = null;
+    }
+
+    /**
      * Returns the explicit percentage text color.
      *
      * @return the text color, or null when the theme text color is used
@@ -473,7 +516,7 @@ public class ProgressBar extends Widget {
         Rect area = localBounds();
         float radius = barRadius(area.height());
         Color track = resolvedTrackColor(theme);
-        Color fill = resolvedFillColor(theme);
+        Paint fill = resolvedFillPaint(theme, area);
         if (appearance == Appearance.OUTLINE) {
             drawOutlineBar(renderer, area, radius, progress, track, fill);
             return;
@@ -489,11 +532,11 @@ public class ProgressBar extends Widget {
         }
         float progressRadius = Math.min(radius, width / 2);
         renderer.fillRoundedRect(new Rect(area.x(), area.y(), width, area.height()),
-                progressRadius, Paint.solid(fill));
+                progressRadius, fill);
     }
 
     private void drawOutlineBar(RenderManager renderer, Rect area, float radius, float progress,
-                                Color track, Color fill) {
+                                Color track, Paint fill) {
         float inset = thickness / 2;
         Rect stroke = inset(area, inset);
         if (stroke.isEmpty()) {
@@ -508,12 +551,12 @@ public class ProgressBar extends Widget {
         Rect progressBounds = new Rect(area.x() + inset, area.y() + inset,
                 width - thickness, Math.max(0, area.height() - thickness));
         if (!progressBounds.isEmpty()) {
-            renderer.strokeRoundedRect(progressBounds, strokeRadius, thickness, Paint.solid(fill));
+            renderer.strokeRoundedRect(progressBounds, strokeRadius, thickness, fill);
         }
     }
 
     private void drawPerimeterBar(RenderManager renderer, Rect area, float progress,
-                                  Color track, Color fill) {
+                                  Color track, Paint fill) {
         float inset = thickness / 2;
         Rect trackBounds = inset(area, inset);
         if (trackBounds.isEmpty()) {
@@ -534,33 +577,33 @@ public class ProgressBar extends Widget {
             return;
         }
         Color track = resolvedTrackColor(theme);
-        Color fill = resolvedFillColor(theme);
+        Rect area = localBounds();
+        Paint fill = resolvedFillPaint(theme, area);
         if (appearance == Appearance.RADIAL) {
             drawRadialPolygon(renderer, theme, progress);
             return;
         }
         if (appearance == Appearance.FILLED) {
-            List<Point> points = polygonPoints(localBounds());
+            List<Point> points = polygonPoints(area);
             renderer.fillPolygon(points, Paint.solid(track));
             if (progress <= 0) {
                 return;
             }
             if (progress >= 0.999f) {
-                renderer.fillPolygon(points, Paint.solid(fill));
+                renderer.fillPolygon(points, fill);
                 return;
             }
-            Rect area = localBounds();
             renderer.pushMaskRect(new Rect(area.x(), area.y(), area.width() * progress,
                     area.height()));
             try {
-                renderer.fillPolygon(points, Paint.solid(fill));
+                renderer.fillPolygon(points, fill);
             } finally {
                 renderer.popMask();
             }
             return;
         }
         float inset = thickness / 2;
-        List<Point> path = polygonPoints(inset(localBounds(), inset));
+        List<Point> path = polygonPoints(inset(area, inset));
         renderer.strokePolygon(path, thickness, Paint.solid(track));
         if (progress <= 0) {
             return;
@@ -570,14 +613,15 @@ public class ProgressBar extends Widget {
     }
 
     private void drawRadialPolygon(RenderManager renderer, Theme theme, float progress) {
-        List<Point> points = polygonPoints(localBounds());
+        Rect area = localBounds();
+        List<Point> points = polygonPoints(area);
         renderer.fillPolygon(points, Paint.solid(resolvedTrackColor(theme)));
         if (progress <= 0) {
             return;
         }
-        Color fill = resolvedFillColor(theme);
+        Paint fill = resolvedFillPaint(theme, area);
         if (progress >= 0.999f) {
-            renderer.fillPolygon(points, Paint.solid(fill));
+            renderer.fillPolygon(points, fill);
             return;
         }
         Point center = polygonCenter(points);
@@ -589,15 +633,16 @@ public class ProgressBar extends Widget {
         float sweep = (float) (Math.PI * 2 * progress);
         renderer.pushMaskPolygon(wedgeMask(center, radius + 2, startAngle, sweep));
         try {
-            renderer.fillPolygon(points, Paint.solid(fill));
+            renderer.fillPolygon(points, fill);
         } finally {
             renderer.popMask();
         }
+        Color edgeColor = fill.colorAt(center);
         float edgeThickness = Math.max(0.5f, 1f / context().density());
         renderer.pushMaskPolygon(points);
         try {
-            drawCutEdge(renderer, center, radius + 2, startAngle, edgeThickness, fill);
-            drawCutEdge(renderer, center, radius + 2, startAngle + sweep, edgeThickness, fill);
+            drawCutEdge(renderer, center, radius + 2, startAngle, edgeThickness, edgeColor);
+            drawCutEdge(renderer, center, radius + 2, startAngle + sweep, edgeThickness, edgeColor);
         } finally {
             renderer.popMask();
         }
@@ -628,7 +673,8 @@ public class ProgressBar extends Widget {
         if (appearance != Appearance.OUTLINE) {
             drawRing(renderer, center, radius, ring, resolvedTrackColor(theme));
         }
-        drawArc(renderer, center, radius, ring, progress, resolvedFillColor(theme));
+        drawArc(renderer, center, radius, ring, progress,
+                resolvedFillPaint(theme, area).colorAt(center));
     }
 
     private void drawRadialCircle(RenderManager renderer, Theme theme, Rect area, float radius,
@@ -638,28 +684,29 @@ public class ProgressBar extends Widget {
         if (progress <= 0) {
             return;
         }
-        Color fill = resolvedFillColor(theme);
+        Paint fill = resolvedFillPaint(theme, area);
         if (progress >= 0.999f) {
-            renderer.fillCircle(center, radius, Paint.solid(fill));
+            renderer.fillCircle(center, radius, fill);
             return;
         }
         float startAngle = (float) (-Math.PI / 2);
         float sweep = (float) (Math.PI * 2 * progress);
         renderer.pushMaskPolygon(wedgeMask(center, radius + 2, startAngle, sweep));
         try {
-            renderer.fillCircle(center, radius, Paint.solid(fill));
+            renderer.fillCircle(center, radius, fill);
         } finally {
             renderer.popMask();
         }
+        Color edgeColor = fill.colorAt(center);
         float edgeThickness = Math.max(0.5f, 1f / context().density());
-        drawCutEdge(renderer, center, radius, startAngle, edgeThickness, fill);
-        drawCutEdge(renderer, center, radius, startAngle + sweep, edgeThickness, fill);
+        drawCutEdge(renderer, center, radius, startAngle, edgeThickness, edgeColor);
+        drawCutEdge(renderer, center, radius, startAngle + sweep, edgeThickness, edgeColor);
     }
 
     private void drawCutEdge(RenderManager renderer, Point center, float radius, float angle,
                              float thickness, Color color) {
         Point end = capPoint(center, radius, angle);
-        drawPath(renderer, List.of(center, end), thickness, color);
+        drawPath(renderer, List.of(center, end), thickness, Paint.solid(color));
     }
 
     private static List<Point> wedgeMask(Point center, float radius, float startAngle,
@@ -690,9 +737,11 @@ public class ProgressBar extends Widget {
         float inner = innerRadius / radius;
         float start = Math.max(0, inner - feather / 2);
         float end = Math.min(1, inner + feather / 2);
+        // A transparent black stop would darken the feather band once the color is premultiplied.
+        Color transparent = color.withAlpha(0);
         List<GradientStop> stops = List.of(
-                new GradientStop(0, Color.TRANSPARENT),
-                new GradientStop(start, Color.TRANSPARENT),
+                new GradientStop(0, transparent),
+                new GradientStop(start, transparent),
                 new GradientStop(end, color),
                 new GradientStop(1, color));
         renderer.fillEllipse(center, radius, radius, Paint.radial(center, radius, stops));
@@ -849,11 +898,11 @@ public class ProgressBar extends Widget {
      * Strokes the path as one band. Drawing overlapping capsules per segment would double-blend
      * translucent fills at every join.
      */
-    private void drawPath(RenderManager renderer, List<Point> path, float thickness, Color color) {
-        if (path.size() < 2 || color.a() <= 0) {
+    private void drawPath(RenderManager renderer, List<Point> path, float thickness, Paint paint) {
+        if (path.size() < 2 || paint instanceof Paint.Solid solid && solid.color().a() <= 0) {
             return;
         }
-        renderer.strokePolyline(path, thickness, Paint.solid(color));
+        renderer.strokePolyline(path, thickness, paint);
     }
 
     private static float distance(Point first, Point second) {
@@ -873,8 +922,14 @@ public class ProgressBar extends Widget {
         return trackColor != null ? trackColor : theme.border().withAlpha(0.65f);
     }
 
-    private Color resolvedFillColor(Theme theme) {
-        return fillColor != null ? fillColor : theme.primary();
+    private Paint resolvedFillPaint(Theme theme, Rect area) {
+        if (gradientStart != null) {
+            float centerY = area.y() + area.height() / 2;
+            return Paint.linear(new Point(area.x(), centerY), new Point(area.right(), centerY),
+                    List.of(new GradientStop(0, gradientStart),
+                            new GradientStop(1, gradientEnd)));
+        }
+        return Paint.solid(fillColor != null ? fillColor : theme.primary());
     }
 
     private Color resolvedTextColor(Theme theme) {

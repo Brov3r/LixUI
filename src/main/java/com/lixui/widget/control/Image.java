@@ -556,9 +556,11 @@ public class Image extends Widget {
         float inner = innerRadius / radius;
         float start = Math.max(0, inner - feather / 2);
         float end = Math.min(1, inner + feather / 2);
+        // A transparent black stop would darken the feather band once the color is premultiplied.
+        Color transparent = borderColor.withAlpha(0);
         List<GradientStop> stops = List.of(
-                new GradientStop(0, Color.TRANSPARENT),
-                new GradientStop(start, Color.TRANSPARENT),
+                new GradientStop(0, transparent),
+                new GradientStop(start, transparent),
                 new GradientStop(end, borderColor),
                 new GradientStop(1, borderColor));
         renderer.fillEllipse(center, radius, radius, Paint.radial(center, radius, stops));

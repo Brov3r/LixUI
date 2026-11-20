@@ -2,12 +2,15 @@ package com.lixui.widget.control;
 
 import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
+import com.lixui.graphics.GradientStop;
+import com.lixui.graphics.Paint;
 import com.lixui.input.InputState;
 import com.lixui.render.ImageData;
 import com.lixui.render.ImageFit;
 import com.lixui.render.ImageStyle;
 import com.lixui.render.Texture;
 import com.lixui.render.command.ImageCommand;
+import com.lixui.render.command.ShapeCommand;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.image.ImageHandle;
 import com.lixui.widget.image.ImageLoader;
@@ -18,9 +21,11 @@ import com.lixui.widget.testsupport.TestViewports;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
+import java.util.List;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -79,6 +84,39 @@ class ImageTest {
             ImageCommand command = imageCommand(backend, texture);
             assertEquals(new Rect(20, 0, 60, 60), command.bounds());
             assertEquals(30, command.radius(), 0.001f);
+        }
+    }
+
+    @Test
+    void circularBorderFeatherCarriesItsOwnColorInsteadOfBlack() {
+        TestBackend backend = new TestBackend();
+        backend.setAnalytic(true);
+        try (WidgetManager manager = manager(backend)) {
+            Image image = new Image(texture(manager, 2, 2));
+            image.setBounds(new Rect(0, 0, 100, 60));
+            image.setCircular(true);
+            image.setBorderColor(Color.rgb(200, 100, 50));
+            image.setBorderWidth(4);
+            manager.add(image);
+            manager.render();
+
+            List<Paint.RadialGradient> gradients = backend.lastDrawList().commands().stream()
+                    .filter(ShapeCommand.class::isInstance)
+                    .map(ShapeCommand.class::cast)
+                    .map(ShapeCommand::paint)
+                    .filter(Paint.RadialGradient.class::isInstance)
+                    .map(Paint.RadialGradient.class::cast)
+                    .toList();
+
+            assertFalse(gradients.isEmpty());
+            for (Paint.RadialGradient gradient : gradients) {
+                Color edge = gradient.stops().getLast().color();
+                for (GradientStop stop : gradient.stops()) {
+                    if (stop.color().a() == 0) {
+                        assertEquals(edge.toRgb(), stop.color().toRgb());
+                    }
+                }
+            }
         }
     }
 
