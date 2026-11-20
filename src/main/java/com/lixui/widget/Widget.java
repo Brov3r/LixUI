@@ -1063,6 +1063,14 @@ public abstract class Widget {
     }
 
     /**
+     * Called when this top-level widget lies completely outside the viewport and the manager is
+     * about to remove it because the user can no longer reach it. The default implementation does
+     * nothing; subclasses can close themselves or notify their listeners before the removal.
+     */
+    protected void onOffscreen() {
+    }
+
+    /**
      * Called after the context viewport, display scale, theme or default font changes.
      * Parents receive the callback before their children.
      */

@@ -45,16 +45,19 @@ public class Window extends ScrollPanel {
     private static final float TITLE_RIGHT_GAP = 10;
     private static final float RESIZE_SIZE = 18;
     private static final float COLLAPSE_SECONDS = 0.2f;
+    private static final float MAXIMIZE_SECONDS = 0.2f;
+    private static final float RECOVERY_SECONDS = 0.2f;
     private static final float DEFAULT_MINIMUM_WIDTH = 160;
     private static final float DEFAULT_MINIMUM_HEIGHT = 80;
 
     private final Header header;
     private final ResizeHandle resizeHandle;
     private final Button pinButton = new Button();
+    private final Button maximizeButton = new Button();
     private final Button collapseButton = new Button();
     private final Button closeButton = new Button();
     private final IconSet icons = new IconSet("pushpin.svg", "unlock.svg", "minus.svg",
-            "plus.svg", "cross.svg", "cursor-diagonal-resize.svg");
+            "plus.svg", "cross.svg", "cursor-diagonal-resize.svg", "expand.svg", "restore.svg");
 
     private String title = "";
     private Texture headerIcon;
@@ -72,9 +75,14 @@ public class Window extends ScrollPanel {
     private boolean collapsible = true;
     private boolean pinnable = true;
     private boolean closable = true;
+    private boolean maximizable = true;
     private boolean pinned;
     private boolean collapsed;
+    private boolean maximized;
+    private Rect restoreBounds = Rect.EMPTY;
     private final AnimationSlot heightAnimation = new AnimationSlot();
+    private final AnimationSlot maximizeAnimation = new AnimationSlot();
+    private final AnimationSlot recoveryAnimation = new AnimationSlot();
     private Runnable onClose;
 
     /**
@@ -85,9 +93,10 @@ public class Window extends ScrollPanel {
         setRaiseOnFocus(true);
         header = new Header();
         resizeHandle = new ResizeHandle();
-        header.add(pinButton).add(collapseButton).add(closeButton);
+        header.add(pinButton).add(maximizeButton).add(collapseButton).add(closeButton);
         add(header).add(resizeHandle);
         pinButton.setOnAction(this::togglePinned);
+        maximizeButton.setOnAction(this::toggleMaximized);
         collapseButton.setOnAction(this::toggleCollapsed);
         closeButton.setOnAction(this::close);
         updateButtonVisibility();
@@ -366,6 +375,78 @@ public class Window extends ScrollPanel {
     }
 
     /**
+     * Returns whether the window can be maximized.
+     *
+     * @return true when maximizing is enabled
+     */
+    public boolean isMaximizable() {
+        return maximizable;
+    }
+
+    /**
+     * Enables or disables maximizing and hides the maximize button when disabled.
+     * Disabling the action restores a currently maximized window.
+     *
+     * @param maximizable true to allow maximizing
+     */
+    public void setMaximizable(boolean maximizable) {
+        this.maximizable = maximizable;
+        if (!maximizable && maximized) {
+            setMaximized(false);
+        }
+        updateButtonVisibility();
+    }
+
+    /**
+     * Reports whether the window currently fills the viewport.
+     *
+     * @return true while the window is maximized
+     */
+    public boolean isMaximized() {
+        return maximized;
+    }
+
+    /**
+     * Expands the window to the whole viewport or restores its previous bounds with a smooth
+     * animation. Maximizing is ignored while the window is collapsed, pinned, detached, has no size
+     * or is not {@link #setMaximizable(boolean) maximizable}.
+     *
+     * @param maximized true to fill the viewport, false to restore the previous bounds
+     */
+    public void setMaximized(boolean maximized) {
+        if (this.maximized == maximized) {
+            return;
+        }
+        if (maximized && (!maximizable || pinned || collapsed || bounds().isEmpty())) {
+            return;
+        }
+        if (!maximized && restoreBounds.isEmpty()) {
+            return;
+        }
+        Rect viewport = context() == null ? Rect.EMPTY : context().viewport();
+        if (maximized && viewport.isEmpty()) {
+            return;
+        }
+        if (maximized) {
+            heightAnimation.cancel();
+            recoveryAnimation.cancel();
+            restoreBounds = bounds();
+        }
+        this.maximized = maximized;
+        updateButtonIcons();
+        updateButtonVisibility();
+        updateResizeHandleVisibility();
+        Rect target = maximized ? viewport : restoreBounds;
+        Rect start = bounds();
+        if (context() == null) {
+            setBounds(target);
+            return;
+        }
+        maximizeAnimation.start(context().animator(), 0, 1, MAXIMIZE_SECONDS, Easing.EASE_IN_OUT,
+                progress -> setBounds(interpolate(start, target, progress)), null);
+    }
+
+    /**
      * Returns whether the window is currently pinned.
      *
      * @return true when pinned
@@ -473,6 +554,8 @@ public class Window extends ScrollPanel {
     @Override
     protected void onDetached() {
         super.onDetached();
+        maximizeAnimation.cancel();
+        recoveryAnimation.cancel();
         boolean settlingHeight = heightAnimation.isActive();
         heightAnimation.cancel();
         if (settlingHeight) {
@@ -525,7 +608,20 @@ public class Window extends ScrollPanel {
      */
     @Override
     protected void onLayout() {
-        if (!heightAnimation.isActive() && !collapsed && bounds().height() > headerHeight) {
+        if (context() != null && !maximizeAnimation.isActive()) {
+            Rect viewport = context().viewport();
+            if (!viewport.isEmpty()) {
+                if (maximized) {
+                    setBounds(viewport);
+                } else if (isInteracting()) {
+                    recoveryAnimation.cancel();
+                } else if (!recoveryAnimation.isActive()) {
+                    keepHeaderReachable(viewport);
+                }
+            }
+        }
+        if (!heightAnimation.isActive() && !maximizeAnimation.isActive()
+                && !collapsed && bounds().height() > headerHeight) {
             expandedHeight = bounds().height();
         }
         updateContentInsets();
@@ -536,8 +632,72 @@ public class Window extends ScrollPanel {
         resizeHandle.setBounds(new Rect(bounds().width() - RESIZE_SIZE, bounds().height() - RESIZE_SIZE,
                 RESIZE_SIZE, RESIZE_SIZE));
         resizeHandle.layout(resizeHandle.bounds());
-        setVisibleIfChanged(resizeHandle, isResizable() && !collapsed);
+        updateResizeHandleVisibility();
         updateButtonVisibility();
+    }
+
+    /**
+     * Closes the window when the manager discards it because it left the viewport completely.
+     */
+    @Override
+    protected void onOffscreen() {
+        close();
+    }
+
+    /**
+     * Animates the window into the nearest viewport area when its header slid out of view but the
+     * body is still visible. A window that is entirely outside the viewport is left to the manager.
+     * The move starts only when the pointer no longer interacts with the window, so dragging does
+     * not fight the animation.
+     */
+    private void keepHeaderReachable(Rect viewport) {
+        Rect current = bounds();
+        if (current.isEmpty() || current.intersect(viewport).isEmpty()) {
+            return;
+        }
+        float headerTop = Math.min(headerHeight, current.height());
+        Rect header = new Rect(current.x(), current.y(), current.width(), headerTop);
+        if (!header.intersect(viewport).isEmpty()) {
+            return;
+        }
+        float x = Math.clamp(current.x(), viewport.x(),
+                Math.max(viewport.x(), viewport.right() - current.width()));
+        float y = Math.clamp(current.y(), viewport.y(),
+                Math.max(viewport.y(), viewport.bottom() - headerTop));
+        Rect target = new Rect(x, y, current.width(), current.height());
+        if (target.equals(current)) {
+            return;
+        }
+        if (context() == null) {
+            setBounds(target);
+            return;
+        }
+        recoveryAnimation.start(context().animator(), 0, 1, RECOVERY_SECONDS, Easing.EASE_OUT,
+                progress -> setBounds(interpolate(current, target, progress)), null);
+    }
+
+    private boolean isInteracting() {
+        return isPressed(this);
+    }
+
+    private static boolean isPressed(Widget widget) {
+        if (widget.isPressed()) {
+            return true;
+        }
+        for (Widget child : widget.children()) {
+            if (isPressed(child)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Rect interpolate(Rect start, Rect target, float progress) {
+        return new Rect(
+                start.x() + (target.x() - start.x()) * progress,
+                start.y() + (target.y() - start.y()) * progress,
+                start.width() + (target.width() - start.width()) * progress,
+                start.height() + (target.height() - start.height()) * progress);
     }
 
     /**
@@ -593,6 +753,12 @@ public class Window extends ScrollPanel {
         }
     }
 
+    private void toggleMaximized() {
+        if (maximizable && !pinned && !collapsed) {
+            setMaximized(!maximized);
+        }
+    }
+
     private void collapseTo(boolean value) {
         if (collapsed == value) {
             return;
@@ -635,19 +801,23 @@ public class Window extends ScrollPanel {
 
     private void updateButtonIcons() {
         pinButton.setIcon(pinned ? icons.get(0) : icons.get(1));
+        maximizeButton.setIcon(maximized ? icons.get(7) : icons.get(6));
         collapseButton.setIcon(collapsed ? icons.get(3) : icons.get(2));
         closeButton.setIcon(icons.get(4));
     }
 
     private void updateButtonVisibility() {
         setVisibleIfChanged(pinButton, pinnable);
+        setVisibleIfChanged(maximizeButton, maximizable);
         setVisibleIfChanged(collapseButton, collapsible);
         setVisibleIfChanged(closeButton, closable);
-        collapseButton.setEnabled(!pinned);
+        pinButton.setEnabled(!maximized);
+        maximizeButton.setEnabled(!pinned && !collapsed);
+        collapseButton.setEnabled(!pinned && !maximized);
     }
 
     private void updateResizeHandleVisibility() {
-        setVisibleIfChanged(resizeHandle, isResizable() && !collapsed);
+        setVisibleIfChanged(resizeHandle, isResizable() && !collapsed && !maximized);
     }
 
     private void updateButtonStyles() {
@@ -659,12 +829,13 @@ public class Window extends ScrollPanel {
                 Color.TRANSPARENT, Color.TRANSPARENT, theme.textMuted(),
                 theme.textMuted().withAlpha(0.4f), Color.TRANSPARENT, Color.TRANSPARENT,
                 6, 3, 0);
-        for (Button button : List.of(pinButton, collapseButton, closeButton)) {
+        for (Button button : List.of(pinButton, maximizeButton, collapseButton, closeButton)) {
             button.setStyle(style);
             button.setIconSize(ICON_SIZE);
             button.setFocusOutlineEnabled(false);
         }
         tintButton(pinButton, theme.primary());
+        tintButton(maximizeButton, theme.focusRing());
         tintButton(collapseButton, theme.focusRing());
         tintButton(closeButton, Color.hex("#E9B4B4"));
         updateButtonIcons();
@@ -689,7 +860,7 @@ public class Window extends ScrollPanel {
         protected void onLayout() {
             float x = bounds().width() - HEADER_PADDING - BUTTON_SIZE;
             float y = (bounds().height() - BUTTON_SIZE) / 2;
-            for (Button button : List.of(closeButton, collapseButton, pinButton)) {
+            for (Button button : List.of(closeButton, maximizeButton, collapseButton, pinButton)) {
                 if (button.isVisible()) {
                     layoutButton(button, x, y);
                     x -= BUTTON_SIZE + BUTTON_GAP;
@@ -723,12 +894,13 @@ public class Window extends ScrollPanel {
         }
 
         private boolean hasActionButtons() {
-            return pinButton.isVisible() || collapseButton.isVisible() || closeButton.isVisible();
+            return pinButton.isVisible() || maximizeButton.isVisible()
+                    || collapseButton.isVisible() || closeButton.isVisible();
         }
 
         private float buttonsLeft() {
             float x = bounds().width() - HEADER_PADDING;
-            for (Button button : List.of(closeButton, collapseButton, pinButton)) {
+            for (Button button : List.of(closeButton, maximizeButton, collapseButton, pinButton)) {
                 if (button.isVisible()) {
                     x = Math.min(x, button.bounds().x());
                 }
@@ -738,18 +910,19 @@ public class Window extends ScrollPanel {
 
         @Override
         protected boolean onPointerPress(float x, float y, MouseButton button, Modifiers modifiers) {
-            if (button != MouseButton.LEFT || !movable || hitTest(x, y) != this) {
+            if (button != MouseButton.LEFT || !movable || maximized || hitTest(x, y) != this) {
                 return false;
             }
             pressX = x;
             pressY = y;
+            recoveryAnimation.cancel();
             capturePointer(button);
             return true;
         }
 
         @Override
         protected boolean onDrag(float x, float y, MouseButton button, Modifiers modifiers) {
-            if (button != MouseButton.LEFT || !movable) {
+            if (button != MouseButton.LEFT || !movable || maximized) {
                 return false;
             }
             Window.this.setPosition(Window.this.bounds().x() + x - pressX,
@@ -798,18 +971,19 @@ public class Window extends ScrollPanel {
 
         @Override
         protected boolean onPointerPress(float x, float y, MouseButton button, Modifiers modifiers) {
-            if (button != MouseButton.LEFT || !isResizable() || collapsed) {
+            if (button != MouseButton.LEFT || !isResizable() || collapsed || maximized) {
                 return false;
             }
             pressX = x;
             pressY = y;
+            recoveryAnimation.cancel();
             capturePointer(button);
             return true;
         }
 
         @Override
         protected boolean onDrag(float x, float y, MouseButton button, Modifiers modifiers) {
-            if (button != MouseButton.LEFT || !isResizable() || collapsed) {
+            if (button != MouseButton.LEFT || !isResizable() || collapsed || maximized) {
                 return false;
             }
             float width = Window.this.bounds().width();

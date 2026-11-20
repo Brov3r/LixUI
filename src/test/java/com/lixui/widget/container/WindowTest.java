@@ -43,7 +43,7 @@ class WindowTest {
             collectButtons(first, firstButtons);
             collectButtons(second, secondButtons);
 
-            assertEquals(6, backend.created().size());
+            assertEquals(8, backend.created().size());
             assertEquals(28, firstButtons.getFirst().icon().width());
             assertSame(firstButtons.getFirst().icon(), secondButtons.getFirst().icon());
 
@@ -53,13 +53,13 @@ class WindowTest {
 
             manager.resize(TestViewports.LOGICAL);
             assertEquals(14, secondButtons.getFirst().icon().width());
-            assertEquals(12, backend.created().size());
-            assertEquals(6, backend.destroyed().size());
+            assertEquals(16, backend.created().size());
+            assertEquals(8, backend.destroyed().size());
 
             manager.remove(second);
-            assertEquals(12, backend.destroyed().size());
+            assertEquals(16, backend.destroyed().size());
         }
-        assertEquals(12, backend.destroyed().size());
+        assertEquals(16, backend.destroyed().size());
     }
 
     @Test
@@ -75,9 +75,9 @@ class WindowTest {
 
             backend.setFailAfter(Integer.MAX_VALUE);
             manager.add(window);
-            assertEquals(8, backend.created().size());
+            assertEquals(10, backend.created().size());
         }
-        assertEquals(8, backend.destroyed().size());
+        assertEquals(10, backend.destroyed().size());
     }
 
     @Test
@@ -136,6 +136,7 @@ class WindowTest {
             Window window = createWindow(manager);
             window.setClosable(false);
             window.setCollapsible(false);
+            window.setMaximizable(false);
             manager.layout();
             List<Button> buttons = new ArrayList<>();
             collectButtons(window, buttons);
@@ -184,17 +185,17 @@ class WindowTest {
         WidgetManager manager = manager();
         Window window = createWindow(manager);
 
-        click(manager, 255, 25);
+        click(manager, 231, 25);
         manager.update(0.3f);
         assertTrue(window.isCollapsed());
         assertEquals(34, window.bounds().height(), 0.001f);
 
-        click(manager, 255, 25);
+        click(manager, 231, 25);
         manager.update(0.3f);
         assertFalse(window.isCollapsed());
         assertEquals(240, window.bounds().height(), 0.001f);
 
-        click(manager, 235, 25);
+        click(manager, 203, 25);
         manager.update(0.3f);
         assertTrue(window.isPinned());
         assertFalse(window.isCollapsed());
@@ -206,13 +207,13 @@ class WindowTest {
         assertTrue(window.isCollapsed());
         assertEquals(34, window.bounds().height(), 0.001f);
 
-        manager.handle(new PointerMoved(235, 25));
+        manager.handle(new PointerMoved(203, 25));
         manager.update(0.01f);
         manager.update(0.3f);
         assertFalse(window.isCollapsed());
         assertEquals(240, window.bounds().height(), 0.001f);
 
-        click(manager, 235, 25);
+        click(manager, 203, 25);
         manager.update(0.3f);
         assertFalse(window.isPinned());
         assertFalse(window.isCollapsed());
@@ -247,6 +248,7 @@ class WindowTest {
         window.setCollapsible(false);
         window.setPinnable(false);
         window.setClosable(false);
+        window.setMaximizable(false);
         manager.render();
         assertEquals(0, visibleButtons(window));
     }
@@ -295,6 +297,99 @@ class WindowTest {
         click(manager, 287, 25);
         assertFalse(window.isVisible());
         assertTrue(closed[0]);
+    }
+
+    @Test
+    void closesAndRemovesWindowsThatLeaveTheViewportCompletely() {
+        WidgetManager manager = manager();
+        Window window = createWindow(manager);
+        boolean[] closed = {false};
+        window.setOnClose(() -> closed[0] = true);
+
+        window.setPosition(-400, 0);
+        manager.layout();
+
+        assertTrue(closed[0]);
+        assertFalse(window.isVisible());
+        assertNull(window.context());
+        assertTrue(manager.widgets().isEmpty());
+    }
+
+    @Test
+    void movesWindowsBackWhenOnlyTheirBodyStaysVisible() {
+        WidgetManager manager = manager();
+        Window window = createWindow(manager);
+
+        window.setPosition(10, -100);
+        manager.layout();
+        assertEquals(-100, window.bounds().y(), 0.001f);
+
+        manager.update(0.3f);
+
+        assertEquals(10, window.bounds().x(), 0.001f);
+        assertEquals(0, window.bounds().y(), 0.001f);
+    }
+
+    @Test
+    void waitsForPointerInteractionBeforeRecoveringTheHeader() {
+        WidgetManager manager = manager();
+        Window window = createWindow(manager);
+
+        manager.handle(new PointerPressed(20, 20, MouseButton.LEFT, Modifiers.NONE));
+        manager.handle(new PointerMoved(20, -100));
+        manager.layout();
+        assertEquals(-110, window.bounds().y(), 0.001f);
+
+        manager.handle(new PointerReleased(20, -100, MouseButton.LEFT, Modifiers.NONE));
+        manager.layout();
+        assertEquals(-110, window.bounds().y(), 0.001f);
+
+        manager.update(0.3f);
+        assertEquals(0, window.bounds().y(), 0.001f);
+    }
+
+    @Test
+    void maximizesToTheViewportAndRestoresPreviousBounds() {
+        WidgetManager manager = manager();
+        Window window = createWindow(manager);
+
+        click(manager, 259, 25);
+        assertTrue(window.isMaximized());
+        manager.update(0.3f);
+        manager.render();
+        assertEquals(new Rect(0, 0, 800, 600), window.bounds());
+        assertFalse(resizeHandle(window).isVisible());
+
+        click(manager, 749, 25);
+        assertFalse(window.isMaximized());
+        manager.update(0.3f);
+        manager.render();
+        assertEquals(WINDOW_BOUNDS, window.bounds());
+    }
+
+    @Test
+    void maximizedWindowsFollowViewportChanges() {
+        WidgetManager manager = manager();
+        Window window = createWindow(manager);
+        click(manager, 259, 25);
+        manager.update(0.3f);
+        manager.render();
+
+        manager.resize(new Viewport(1200, 900, 600, 450));
+        manager.render();
+
+        assertEquals(new Rect(0, 0, 600, 450), window.bounds());
+    }
+
+    @Test
+    void hidesTheMaximizeActionWhenItIsDisabled() {
+        WidgetManager manager = manager();
+        Window window = createWindow(manager);
+
+        window.setMaximizable(false);
+        manager.render();
+
+        assertEquals(3, visibleButtons(window));
     }
 
     private static Window createWindow(WidgetManager manager) {

@@ -420,6 +420,32 @@ class WidgetManagerTest {
     }
 
     @Test
+    void removesVisibleTopLevelWidgetsThatLieCompletelyOutsideTheViewport() {
+        Probe outside = new Probe("outside", new ArrayList<>());
+        Probe reachable = new Probe("reachable", new ArrayList<>());
+        outside.setBounds(new Rect(900, 0, 100, 100));
+        reachable.setBounds(new Rect(-50, 0, 100, 100));
+        WidgetManager manager = manager(new TestBackend(), outside, reachable);
+
+        manager.layout();
+
+        assertEquals(List.of(reachable), manager.widgets());
+        assertNull(outside.context());
+    }
+
+    @Test
+    void keepsHiddenWidgetsBeyondTheViewport() {
+        Probe hidden = new Probe("hidden", new ArrayList<>());
+        hidden.setBounds(new Rect(900, 0, 100, 100));
+        hidden.setVisible(false);
+        WidgetManager manager = manager(new TestBackend(), hidden);
+
+        manager.layout();
+
+        assertEquals(List.of(hidden), manager.widgets());
+    }
+
+    @Test
     void nestedWidgetsDrawParentFirstAndHitTestTheChildFirst() {
         TestBackend backend = new TestBackend();
         List<String> log = new ArrayList<>();

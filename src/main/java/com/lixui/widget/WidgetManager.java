@@ -349,6 +349,8 @@ public final class WidgetManager implements AutoCloseable {
      * Top-level widgets with {@link Widget#isFillViewport()} cover the viewport, auto-sized widgets
      * are measured against it at their current position, and all others keep their current bounds.
      * Containers rearrange their children through {@link Widget#layout(Rect)}.
+     * Visible top-level widgets that end up completely outside the viewport are removed, because the
+     * user cannot reach them anymore.
      * {@link #render()} calls this method automatically before drawing.
      *
      * @throws IllegalStateException if the manager is closed
@@ -369,8 +371,31 @@ public final class WidgetManager implements AutoCloseable {
                 widget.layout(widget.bounds());
             }
         }
+        pruneOffscreenWidgets(viewport);
         updateHover();
         refreshCursor();
+    }
+
+    /**
+     * Removes visible top-level widgets that lie completely outside the viewport.
+     * Bounds are final after the layout pass, so a widget that cannot be reached or shown is
+     * meaningless and would only keep resources alive.
+     */
+    private void pruneOffscreenWidgets(Rect viewport) {
+        if (viewport.isEmpty()) {
+            return;
+        }
+        for (Widget widget : List.copyOf(widgets)) {
+            if (widget.context() != context || !widget.isVisible() || widget.bounds().isEmpty()
+                    || !widget.bounds().intersect(viewport).isEmpty()) {
+                continue;
+            }
+            try {
+                widget.onOffscreen();
+            } finally {
+                remove(widget);
+            }
+        }
     }
 
     /**
