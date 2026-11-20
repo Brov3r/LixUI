@@ -68,8 +68,8 @@ final class DemoWidgetScene implements AutoCloseable {
     private static final int THEME_ICON_SIZE = 18;
     private static final float STATS_GAP = 8;
     private static final double FPS_UPDATE_SECONDS = 0.25;
-    private static final float WINDOW_WIDTH = 560;
-    private static final float WINDOW_HEIGHT = 500;
+    private static final float WINDOW_WIDTH = 620;
+    private static final float WINDOW_HEIGHT = 560;
     private static final float CONTENT_PADDING = 10;
     private static final float CONTENT_GAP = 8;
     private static final Color BLUE = Color.hex("#7EA6F5");
@@ -526,6 +526,10 @@ final class DemoWidgetScene implements AutoCloseable {
         polygonRadial.setAppearance(ProgressBar.Appearance.RADIAL);
         polygonRadial.setFillColor(PURPLE);
         polygonRadial.setShowText(true);
+        ProgressBar gradient = progressBar(ProgressBar.Shape.ROUNDED, 0.82f);
+        gradient.setBounds(new Rect(0, 0, 190, 18));
+        gradient.setCornerRadius(9);
+        gradient.setFillGradient(GREEN, BLUE);
 
         bars.add(rounded);
         bars.add(sharp);
@@ -539,8 +543,12 @@ final class DemoWidgetScene implements AutoCloseable {
         bars.add(polygon);
         bars.add(polygonFill);
         bars.add(polygonRadial);
+        bars.add(gradient);
 
         HBox filledRow = progressRow(rounded, sharp);
+        gradient.setGrow(1);
+        HBox gradientRow = new HBox();
+        gradientRow.add(gradient);
         HBox outlineRow = progressRow(pill, outline);
         HBox perimeterRow = progressRow(perimeterRounded, perimeterSharp);
         HBox shapesTop = shapeRow(circle, circleOutline, circleRadial);
@@ -566,6 +574,8 @@ final class DemoWidgetScene implements AutoCloseable {
         page.add(hyperlink)
                 .add(sliderCaption("Filled bars"))
                 .add(filledRow)
+                .add(sliderCaption("Gradient fill"))
+                .add(gradientRow)
                 .add(sliderCaption("Outline bar"))
                 .add(outlineRow)
                 .add(sliderCaption("Perimeter edge"))
