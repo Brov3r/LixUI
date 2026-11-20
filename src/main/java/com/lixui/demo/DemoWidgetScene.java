@@ -1,6 +1,7 @@
 package com.lixui.demo;
 
 import com.lixui.geometry.Rect;
+import com.lixui.geometry.Size;
 import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
 import com.lixui.platform.UiPlatform;
@@ -25,6 +26,7 @@ import com.lixui.widget.control.CheckBox;
 import com.lixui.widget.control.Dropdown;
 import com.lixui.widget.control.Hyperlink;
 import com.lixui.widget.FrameInfo;
+import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.control.Input;
 import com.lixui.widget.control.InputArea;
 import com.lixui.widget.control.InputCode;
@@ -43,6 +45,7 @@ import com.lixui.widget.control.Slider;
 import com.lixui.widget.control.Spacer;
 import com.lixui.widget.control.SplitButton;
 import com.lixui.widget.container.Accordion;
+import com.lixui.widget.container.GroupBox;
 import com.lixui.widget.container.SplitPanel;
 import com.lixui.widget.container.Table;
 import com.lixui.widget.container.TabPanel;
@@ -50,6 +53,7 @@ import com.lixui.widget.control.ToggleGroup;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.container.Window;
+import com.lixui.widget.layout.Anchor;
 import com.lixui.widget.layout.Flow;
 import com.lixui.widget.layout.FormField;
 import com.lixui.widget.layout.Grid;
@@ -99,6 +103,7 @@ final class DemoWidgetScene implements AutoCloseable {
     private final DemoStatsPanel statsPanel;
     private Button randomizeProgressButton;
     private final List<IconSlot> iconSlots = new ArrayList<>();
+    private final List<GroupBox> groupBoxes = new ArrayList<>();
     private Texture lightThemeIcon;
     private Texture darkThemeIcon;
     private final FontFamily fontFamily;
@@ -148,6 +153,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 outerTabs.addTab("Form", createFormPage())::setIcon);
         bindIcon("grid.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Layouts", createLayoutsPage())::setIcon);
+        bindIcon("frame.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Containers", createContainersPage())::setIcon);
         bindIcon("progress.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Progress", createProgressPage())::setIcon);
         bindIcon("keyboard.svg", outerTabs.iconSize(),
@@ -332,6 +339,97 @@ final class DemoWidgetScene implements AutoCloseable {
         LayoutDemoBox cell = new LayoutDemoBox(text, accent);
         cell.setBounds(bounds);
         return cell;
+    }
+
+    private Widget createContainersPage() {
+        Label groupStatus = new Label("The title sits on the upper border and the content follows it.");
+        groupStatus.setFontFamily(fontFamily);
+        groupStatus.setAutoSize(false);
+        groupStatus.setWrap(true);
+
+        CheckBox shadows = new CheckBox("Draw shadows");
+        shadows.setChecked(true);
+        shadows.setOnChange(checked -> groupStatus.setText("Shadows "
+                + (checked ? "enabled." : "disabled.")));
+        CheckBox transitions = new CheckBox("Animate transitions");
+        transitions.setOnChange(checked -> groupStatus.setText("Transitions "
+                + (checked ? "enabled." : "disabled.")));
+
+        VBox groupContent = new VBox();
+        groupContent.setGap(6);
+        groupContent.add(sliderCaption("The frame carries a title on its upper border."))
+                .add(shadows).add(transitions).add(groupStatus);
+
+        GroupBox groupBox = new GroupBox("Group box");
+        groupBox.setContentPadding(12);
+        groupBox.setContent(groupContent);
+        groupBoxes.add(groupBox);
+
+        LayoutDemoBox cell = layoutCell("child", BLUE);
+        cell.setBounds(new Rect(0, 0, 90, 40));
+        Anchor anchor = new Anchor(Anchor.Alignment.CENTER);
+        anchor.setPadding(14);
+        anchor.setChild(cell);
+
+        GroupBox stage = new AnchorStage();
+        stage.setContent(anchor);
+        groupBoxes.add(stage);
+
+        SegmentedButton positions = new SegmentedButton();
+        positions.setSelectionMode(SegmentedButton.SelectionMode.SINGLE);
+        positions.setTooltipText("Places the child in one of the nine anchor positions.");
+        for (String label : List.of("TL", "TC", "TR", "CL", "C", "CR", "BL", "BC", "BR")) {
+            positions.addSegment(label);
+        }
+        positions.setSelectedIndex(4);
+
+        CheckBox fillX = new CheckBox("fillX");
+        fillX.setTooltipText("Stretches the child across the available width.");
+        CheckBox fillY = new CheckBox("fillY");
+        fillY.setTooltipText("Stretches the child across the available height.");
+
+        Label anchorStatus = new Label();
+        anchorStatus.setFontFamily(fontFamily);
+        anchorStatus.setAutoSize(false);
+        anchorStatus.setWrap(true);
+        Runnable updateAnchorStatus = () -> anchorStatus.setText("Alignment: "
+                + anchor.alignment() + ", fillX " + (anchor.isFillX() ? "on" : "off")
+                + ", fillY " + (anchor.isFillY() ? "on" : "off") + ".");
+        positions.setOnSelectionChange(index -> {
+            anchor.setAlignment(Anchor.Alignment.values()[index]);
+            updateAnchorStatus.run();
+        });
+        fillX.setOnChange(checked -> {
+            anchor.setFillX(checked);
+            updateAnchorStatus.run();
+        });
+        fillY.setOnChange(checked -> {
+            anchor.setFillY(checked);
+            updateAnchorStatus.run();
+        });
+        updateAnchorStatus.run();
+
+        HBox anchorControls = new HBox();
+        anchorControls.setGap(12);
+        anchorControls.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        anchorControls.add(positions).add(fillX).add(fillY);
+
+        VBox anchorContent = new VBox();
+        anchorContent.setGap(8);
+        anchorContent.add(sliderCaption("Choose a position (T top, B bottom, L left, R right, "
+                        + "C center). Fill stretches the child across that axis."))
+                .add(anchorControls).add(stage).add(anchorStatus);
+
+        GroupBox anchorBox = new GroupBox("Anchor");
+        anchorBox.setContentPadding(12);
+        anchorBox.setContent(anchorContent);
+        groupBoxes.add(anchorBox);
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(10);
+        page.add(groupBox).add(anchorBox);
+        return page;
     }
 
     private VBox createControlsPage() {
@@ -1205,6 +1303,9 @@ final class DemoWidgetScene implements AutoCloseable {
         statsPanel.setStyle(withRadius(theme.panelStyle(), 8));
         outerTabs.setStyle(transparentPanelStyle(theme));
         innerTabs.setStyle(withRadius(theme.panelStyle(), 8));
+        for (GroupBox groupBox : groupBoxes) {
+            groupBox.setStyle(groupBoxStyle(theme));
+        }
         if (randomizeProgressButton != null) {
             randomizeProgressButton.setStyle(withRadius(theme.primaryStyle(), 8));
             randomizeProgressButton.setIconTint(theme.onPrimary());
@@ -1233,6 +1334,12 @@ final class DemoWidgetScene implements AutoCloseable {
         return new WidgetStyle(Color.TRANSPARENT, Color.TRANSPARENT, Color.TRANSPARENT,
                 Color.TRANSPARENT, theme.text(), theme.textMuted(), theme.border(),
                 theme.focusRing(), 0, 0, 0);
+    }
+
+    private static WidgetStyle groupBoxStyle(Theme theme) {
+        return new WidgetStyle(Color.TRANSPARENT, Color.TRANSPARENT, Color.TRANSPARENT,
+                Color.TRANSPARENT, theme.text(), theme.textMuted(), theme.border(),
+                theme.focusRing(), 10, 12, 1);
     }
 
     private static boolean isLight(Theme theme) {
@@ -1335,6 +1442,25 @@ final class DemoWidgetScene implements AutoCloseable {
         return new WidgetStyle(style.background(), style.hoverBackground(), style.pressedBackground(),
                 style.disabledBackground(), style.text(), style.disabledText(), style.border(),
                 style.focusBorder(), radius, style.padding(), style.borderWidth());
+    }
+
+    private final class AnchorStage extends GroupBox {
+        private static final float PREFERRED_HEIGHT = 180;
+
+        private AnchorStage() {
+            setContentPadding(0);
+        }
+
+        /**
+         * Reports a fixed stage height so the anchored child has visible travel.
+         *
+         * @param constraints available and required dimensions
+         * @return the preferred stage size
+         */
+        @Override
+        protected Size onMeasure(LayoutConstraints constraints) {
+            return new Size(constraints.maxWidth(), PREFERRED_HEIGHT);
+        }
     }
 
     private final class LayoutDemoBox extends Panel {
