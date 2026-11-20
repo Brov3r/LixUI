@@ -2,7 +2,9 @@ package com.lixui.widget.control;
 
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
+import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
+import com.lixui.render.command.DrawCommand;
 import com.lixui.render.command.MaskBeginCommand;
 import com.lixui.render.command.MaskEndCommand;
 import com.lixui.render.command.MeshCommand;
@@ -101,6 +103,47 @@ class ProgressBarTest {
 
             assertTrue(backend.lastDrawList().commands().stream()
                     .filter(MeshCommand.class::isInstance).count() >= 2);
+        }
+    }
+
+    @Test
+    void strokesPerimeterProgressAsOneBand() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            ProgressBar bar = new ProgressBar(0.5f);
+            bar.setBounds(new Rect(0, 0, 120, 60));
+            bar.setAnimationRate(0);
+            bar.setShape(ProgressBar.Shape.ROUNDED);
+            bar.setCornerRadius(12);
+            bar.setAppearance(ProgressBar.Appearance.PERIMETER);
+            bar.setThickness(4);
+            bar.setFillColor(Color.WHITE.withAlpha(0.6f));
+            manager.add(bar);
+            manager.render();
+
+            List<DrawCommand> commands = backend.lastDrawList().commands();
+            assertEquals(2, commands.stream()
+                    .filter(MeshCommand.class::isInstance).count());
+            assertTrue(commands.stream()
+                    .noneMatch(RoundedRectCommand.class::isInstance));
+        }
+    }
+
+    @Test
+    void skipsPerimeterProgressBelowThePathTolerance() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            ProgressBar bar = new ProgressBar(1e-9f);
+            bar.setBounds(new Rect(0, 0, 120, 60));
+            bar.setAnimationRate(0);
+            bar.setShape(ProgressBar.Shape.ROUNDED);
+            bar.setAppearance(ProgressBar.Appearance.PERIMETER);
+            bar.setThickness(4);
+            manager.add(bar);
+            manager.render();
+
+            assertEquals(1, backend.lastDrawList().commands().stream()
+                    .filter(MeshCommand.class::isInstance).count());
         }
     }
 

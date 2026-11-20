@@ -3,7 +3,6 @@ package com.lixui.widget.control;
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
-import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
 import com.lixui.graphics.GradientStop;
 import com.lixui.graphics.Paint;
@@ -65,6 +64,7 @@ public class ProgressBar extends Widget {
     private static final float DEFAULT_BAR_HEIGHT = 12;
     private static final float DEFAULT_CIRCLE_SIZE = 72;
     private static final float ANIMATION_SNAP = 0.001f;
+    private static final float PATH_EPSILON = 0.0001f;
 
     private float minimum;
     private float maximum = 1;
@@ -526,7 +526,7 @@ public class ProgressBar extends Widget {
         }
         List<Point> path = roundedRectPath(trackBounds, radius);
         List<Point> partial = partialPath(path, progress, true);
-        drawAnalyticPath(renderer, partial, thickness, fill);
+        drawPath(renderer, partial, thickness, fill);
     }
 
     private void drawPolygon(RenderManager renderer, Theme theme, float progress) {
@@ -566,7 +566,7 @@ public class ProgressBar extends Widget {
             return;
         }
         List<Point> partial = partialPath(path, progress, true);
-        drawAnalyticPath(renderer, partial, thickness, fill);
+        drawPath(renderer, partial, thickness, fill);
     }
 
     private void drawRadialPolygon(RenderManager renderer, Theme theme, float progress) {
@@ -659,7 +659,7 @@ public class ProgressBar extends Widget {
     private void drawCutEdge(RenderManager renderer, Point center, float radius, float angle,
                              float thickness, Color color) {
         Point end = capPoint(center, radius, angle);
-        drawAnalyticPath(renderer, List.of(center, end), thickness, color);
+        drawPath(renderer, List.of(center, end), thickness, color);
     }
 
     private static List<Point> wedgeMask(Point center, float radius, float startAngle,
@@ -820,6 +820,9 @@ public class ProgressBar extends Widget {
             total += distance(path.get(index), path.get((index + 1) % path.size()));
         }
         float remaining = total * fraction;
+        if (remaining < PATH_EPSILON) {
+            return List.of();
+        }
         List<Point> result = new ArrayList<>();
         result.add(path.getFirst());
         for (int index = 0; index < segments; index++) {
@@ -827,7 +830,7 @@ public class ProgressBar extends Widget {
             Point end = path.get((index + 1) % path.size());
             float length = distance(start, end);
             if (remaining <= length) {
-                if (length > 0.0001f) {
+                if (length > PATH_EPSILON) {
                     float amount = remaining / length;
                     result.add(new Point(start.x() + (end.x() - start.x()) * amount,
                             start.y() + (end.y() - start.y()) * amount));
@@ -842,31 +845,15 @@ public class ProgressBar extends Widget {
         return result.size() >= 2 ? List.copyOf(result) : List.of();
     }
 
-    private void drawAnalyticPath(RenderManager renderer, List<Point> path, float thickness,
-                                  Color color) {
+    /**
+     * Strokes the path as one band. Drawing overlapping capsules per segment would double-blend
+     * translucent fills at every join.
+     */
+    private void drawPath(RenderManager renderer, List<Point> path, float thickness, Color color) {
         if (path.size() < 2 || color.a() <= 0) {
             return;
         }
-        float radius = thickness / 2;
-        for (int index = 0; index < path.size() - 1; index++) {
-            Point start = path.get(index);
-            Point end = path.get(index + 1);
-            float dx = end.x() - start.x();
-            float dy = end.y() - start.y();
-            float length = (float) Math.hypot(dx, dy);
-            if (length <= 0.0001f) {
-                continue;
-            }
-            float angle = (float) Math.atan2(dy, dx);
-            float centerX = (start.x() + end.x()) / 2;
-            float centerY = (start.y() + end.y()) / 2;
-            Transform transform = Transform.translation(centerX, centerY)
-                    .multiply(Transform.rotation(angle));
-            Rect segment = new Rect(-(length + thickness) / 2, -radius,
-                    length + thickness, thickness);
-            renderer.withTransform(transform,
-                    () -> renderer.fillRoundedRect(segment, radius, Paint.solid(color)));
-        }
+        renderer.strokePolyline(path, thickness, Paint.solid(color));
     }
 
     private static float distance(Point first, Point second) {
