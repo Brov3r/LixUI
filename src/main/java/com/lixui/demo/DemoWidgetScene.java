@@ -50,7 +50,11 @@ import com.lixui.widget.control.ToggleGroup;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.container.Window;
+import com.lixui.widget.layout.Flow;
+import com.lixui.widget.layout.Grid;
+import com.lixui.widget.layout.GridTrack;
 import com.lixui.widget.layout.HBox;
+import com.lixui.widget.layout.Stack;
 import com.lixui.widget.layout.VBox;
 import com.lixui.widget.overlay.ContextMenu;
 
@@ -139,6 +143,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(decoratedLabel).add(justifiedLabel).add(richLabel);
         innerTabs = createInnerTabs();
         outerTabs = new TabPanel();
+        bindIcon("grid.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Layouts", createLayoutsPage())::setIcon);
         bindIcon("progress.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Progress", createProgressPage())::setIcon);
         bindIcon("keyboard.svg", outerTabs.iconSize(),
@@ -212,6 +218,80 @@ final class DemoWidgetScene implements AutoCloseable {
         tabs.setTabClosable(tabList.get(0), false);
         tabs.setTabMovable(tabList.get(11), false);
         return tabs;
+    }
+
+    private VBox createLayoutsPage() {
+        Grid grid = new Grid();
+        grid.setPadding(6);
+        grid.setGap(6);
+        grid.setColumns(GridTrack.fixed(92), GridTrack.proportional(1), GridTrack.proportional(2));
+        grid.setRows(GridTrack.fixed(28), GridTrack.proportional(1), GridTrack.proportional(1));
+        String[] gridLabels = {"fixed 92", "1×", "2×", "fixed 28", "cell", "cell",
+                "weighted", "cell", "cell"};
+        for (int index = 0; index < gridLabels.length; index++) {
+            grid.add(layoutCell(gridLabels[index], layoutColor(index)));
+        }
+        grid.setGrow(1);
+
+        Flow flow = new Flow();
+        flow.setPadding(6);
+        flow.setGap(6);
+        for (int index = 0; index < 10; index++) {
+            LayoutDemoBox cell = layoutCell("Item " + (index + 1), layoutColor(index));
+            cell.setBounds(new Rect(0, 0, 62 + (index % 3) * 18, 26));
+            flow.add(cell);
+        }
+
+        Stack manual = new Stack();
+        manual.setGrow(1);
+        manual.add(layoutCell("1", BLUE, new Rect(0, 0, 150, 70)));
+        manual.add(layoutCell("2", GREEN, new Rect(22, 14, 150, 70)));
+        manual.add(layoutCell("3", ORANGE, new Rect(44, 28, 150, 70)));
+
+        Stack fill = new Stack();
+        fill.setFill(true);
+        fill.setPadding(6);
+        fill.setGrow(1);
+        fill.add(layoutCell("base layer", PURPLE)
+                .alignLabel(HorizontalAlignment.LEFT, VerticalAlignment.BOTTOM));
+        fill.add(layoutCell("fill overlay", ORANGE.withAlpha(0.5f))
+                .alignLabel(HorizontalAlignment.RIGHT, VerticalAlignment.TOP));
+
+        HBox stackRow = new HBox();
+        stackRow.setGap(10);
+        stackRow.add(manual).add(fill);
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(8);
+        page.add(sliderCaption("Grid: fixed 92 px, proportional 1× and 2× columns, "
+                        + "fixed and weighted rows"))
+                .add(grid)
+                .add(sliderCaption("Flow: wraps at the available width and keeps every item "
+                        + "at its natural size"))
+                .add(flow)
+                .add(sliderCaption("Stack: manual bounds on the left, fill on the right"))
+                .add(stackRow);
+        return page;
+    }
+
+    private Color layoutColor(int index) {
+        return switch (index % 4) {
+            case 0 -> BLUE;
+            case 1 -> GREEN;
+            case 2 -> ORANGE;
+            default -> PURPLE;
+        };
+    }
+
+    private LayoutDemoBox layoutCell(String text, Color accent) {
+        return new LayoutDemoBox(text, accent);
+    }
+
+    private LayoutDemoBox layoutCell(String text, Color accent, Rect bounds) {
+        LayoutDemoBox cell = new LayoutDemoBox(text, accent);
+        cell.setBounds(bounds);
+        return cell;
     }
 
     private VBox createControlsPage() {
@@ -1215,6 +1295,41 @@ final class DemoWidgetScene implements AutoCloseable {
         return new WidgetStyle(style.background(), style.hoverBackground(), style.pressedBackground(),
                 style.disabledBackground(), style.text(), style.disabledText(), style.border(),
                 style.focusBorder(), radius, style.padding(), style.borderWidth());
+    }
+
+    private final class LayoutDemoBox extends Panel {
+        private static final float INSET = 5;
+        private final Label label;
+
+        private LayoutDemoBox(String text, Color accent) {
+            label = new Label(text);
+            label.setFontFamily(fontFamily);
+            label.setAutoSize(false);
+            label.setAlignment(HorizontalAlignment.CENTER);
+            label.setVerticalAlignment(VerticalAlignment.CENTER);
+            label.setTextColor(Color.BLACK.withAlpha(0.78f));
+            add(label);
+            setStyle(new WidgetStyle(accent, accent, accent, accent.withAlpha(0.5f),
+                    Color.BLACK, Color.BLACK.withAlpha(0.6f), Color.TRANSPARENT,
+                    Color.TRANSPARENT, 6, 0, 0));
+        }
+
+        /**
+         * Places the label inside the box inset.
+         */
+        @Override
+        protected void onLayout() {
+            label.layout(new Rect(INSET, INSET,
+                    Math.max(0, bounds().width() - INSET * 2),
+                    Math.max(0, bounds().height() - INSET * 2)));
+        }
+
+        private LayoutDemoBox alignLabel(HorizontalAlignment horizontal,
+                                         VerticalAlignment vertical) {
+            label.setAlignment(horizontal);
+            label.setVerticalAlignment(vertical);
+            return this;
+        }
     }
 
     private final class SplitDemoPane extends Panel {
