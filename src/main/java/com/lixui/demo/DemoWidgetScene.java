@@ -1494,6 +1494,7 @@ final class DemoWidgetScene implements AutoCloseable {
         TabPanel dataTabs = new TabPanel();
         dataTabs.addTab("Tables", tables);
         dataTabs.addTab("Virtual list", VirtualListDemo.create(fontFamily));
+        dataTabs.addTab("Tree", TreeViewDemo.create(fontFamily));
         return dataTabs;
     }
 
