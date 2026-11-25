@@ -695,6 +695,7 @@ public final class WidgetManager implements AutoCloseable {
         }
         if (previous != null && previous != widget) {
             clearPressedIfUncaptured(previous);
+            cancelDragForCapture(button, previous);
         }
         widget.setPressed(true);
         if (previous != null && previous != widget) {
@@ -712,11 +713,18 @@ public final class WidgetManager implements AutoCloseable {
     public void releasePointerCapture(MouseButton button) {
         Objects.requireNonNull(button, "button");
         ensureOpen();
+        DragSession session = context.activeDrag();
+        Widget dragSource = session != null && session.button() == button
+                ? session.source() : null;
+        cancelDragForCapture(button, null);
         Widget target = captures.remove(button);
         presses.remove(button);
         resetClickSequence();
         if (target != null) {
             clearPressedIfUncaptured(target);
+        }
+        if (dragSource != null) {
+            dragSource.onPointerCaptureCancelled(button);
         }
     }
 
@@ -845,6 +853,7 @@ public final class WidgetManager implements AutoCloseable {
         if (previous != null && previous != target) {
             presses.remove(pressed.button());
             clearPressedIfUncaptured(previous);
+            cancelDragForCapture(pressed.button(), previous);
         }
         presses.put(pressed.button(), new PressState(target, pointerX, pointerY,
                 eventTime, pressed.modifiers()));
@@ -953,6 +962,14 @@ public final class WidgetManager implements AutoCloseable {
             }
         }
         return null;
+    }
+
+    private void cancelDragForCapture(MouseButton button, Widget source) {
+        DragSession session = context.activeDrag();
+        if (session != null && session.button() == button
+                && (source == null || session.source() == source)) {
+            context.cancelDrag();
+        }
     }
 
     private void cancelActiveDrag() {

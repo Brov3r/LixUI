@@ -291,6 +291,99 @@ class DragDropTest {
     }
 
     @Test
+    void altTabFocusLossCancelsTheDragBeforeReleaseAndClearsGhost() {
+        WidgetManager manager = manager();
+        DragSource source = new DragSource(KIND, "value");
+        DropZone zone = new DropZone(KIND);
+        source.setBounds(SOURCE_BOUNDS);
+        zone.setBounds(ZONE_BOUNDS);
+        List<String> drops = new ArrayList<>();
+        zone.setOnDrop((dragSource, kind, payload) -> {
+            drops.add(kind);
+            return true;
+        });
+        manager.add(source).add(zone);
+
+        startDrag(manager, 250, 40);
+        DragSession session = source.session;
+        manager.handle(new FocusChanged(false));
+
+        assertFalse(session.isActive());
+        assertNull(manager.context().dragSession());
+        assertEquals(1, source.captureCancellations);
+        assertEquals(2, manager.widgets().size());
+
+        manager.handle(new PointerReleased(250, 40, MouseButton.LEFT, Modifiers.NONE));
+
+        assertTrue(drops.isEmpty());
+        assertEquals(0, source.clicks);
+        assertEquals(2, manager.widgets().size());
+    }
+
+    @Test
+    void sameButtonRecaptureCancelsTheDragWithoutDropOrGhost() {
+        WidgetManager manager = manager();
+        DragSource source = new DragSource(KIND, "value");
+        DropZone zone = new DropZone(KIND);
+        CaptureProbe other = new CaptureProbe();
+        source.setBounds(SOURCE_BOUNDS);
+        zone.setBounds(ZONE_BOUNDS);
+        other.setBounds(new Rect(400, 200, 80, 40));
+        List<String> drops = new ArrayList<>();
+        zone.setOnDrop((dragSource, kind, payload) -> {
+            drops.add(kind);
+            return true;
+        });
+        manager.add(source).add(zone).add(other);
+
+        startDrag(manager, 250, 40);
+        DragSession session = source.session;
+        manager.handle(new PointerPressed(420, 220, MouseButton.LEFT, Modifiers.NONE));
+
+        assertFalse(session.isActive());
+        assertNull(manager.context().dragSession());
+        assertEquals(1, source.captureCancellations);
+        assertTrue(other.isPressed());
+        assertEquals(3, manager.widgets().size());
+
+        manager.handle(new PointerReleased(420, 220, MouseButton.LEFT, Modifiers.NONE));
+
+        assertTrue(drops.isEmpty());
+        assertEquals(1, other.releases);
+        assertFalse(other.isPressed());
+        assertEquals(0, source.clicks);
+    }
+
+    @Test
+    void releasingCaptureCancelsTheDragAndNotifiesTheSource() {
+        WidgetManager manager = manager();
+        DragSource source = new DragSource(KIND, "value");
+        DropZone zone = new DropZone(KIND);
+        source.setBounds(SOURCE_BOUNDS);
+        zone.setBounds(ZONE_BOUNDS);
+        List<String> drops = new ArrayList<>();
+        zone.setOnDrop((dragSource, kind, payload) -> {
+            drops.add(kind);
+            return true;
+        });
+        manager.add(source).add(zone);
+
+        startDrag(manager, 250, 40);
+        DragSession session = source.session;
+        manager.releasePointerCapture(MouseButton.LEFT);
+
+        assertFalse(session.isActive());
+        assertNull(manager.context().dragSession());
+        assertEquals(1, source.captureCancellations);
+        assertEquals(2, manager.widgets().size());
+
+        manager.handle(new PointerReleased(250, 40, MouseButton.LEFT, Modifiers.NONE));
+
+        assertTrue(drops.isEmpty());
+        assertEquals(0, source.clicks);
+    }
+
+    @Test
     void detachingTheSourceCancelsTheDrag() {
         WidgetManager manager = manager();
         DragSource source = new DragSource(KIND, "value");
@@ -366,6 +459,7 @@ class DragDropTest {
         private DragSession session;
         private boolean dragEnded;
         private boolean dragEndHandled;
+        private int captureCancellations;
         private int clicks;
 
         private DragSource(String kind, Object payload) {
@@ -384,6 +478,11 @@ class DragDropTest {
             dragEnded = true;
             dragEndHandled = session != null && session.isHandled();
             return true;
+        }
+
+        @Override
+        protected void onPointerCaptureCancelled(MouseButton button) {
+            captureCancellations++;
         }
 
         @Override
