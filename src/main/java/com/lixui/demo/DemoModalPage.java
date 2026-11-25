@@ -13,7 +13,7 @@ import com.lixui.widget.overlay.ModalDialog;
 import com.lixui.widget.overlay.PromptDialog;
 
 /**
- * Builds the modal dialog samples shown in the Popup tab.
+ * Builds the modal dialog samples shown on the Modals page of the Overlays tab.
  * Every button opens an independent dialog variant and reports its result in a shared status line.
  */
 final class DemoModalPage {

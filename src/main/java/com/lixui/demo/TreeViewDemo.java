@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Builds the tree view demo shown on the data tab.
+ * Builds the tree view demo shown on the Tree page of the Data tab.
  */
 final class TreeViewDemo {
     private static final String[] REGIONS = {"Emberfall", "Silverwood", "Hollow Coast"};

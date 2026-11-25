@@ -217,6 +217,7 @@ final class DemoWidgetScene implements AutoCloseable {
         forms.addTab("Sliders", new DemoScrollPage(createSlidersPage()));
         forms.addTab("Pickers", createPickersPage());
         forms.addTab("Select", new DemoSelectPage(fontFamily, this::bindIcon).create());
+        forms.addTab("Queries", createQueriesPage());
 
         TabPanel data = createGroupTabs();
         data.addTab("Tables", createTablePage());
@@ -229,14 +230,16 @@ final class DemoWidgetScene implements AutoCloseable {
         TabPanel feedback = createGroupTabs();
         feedback.addTab("Progress", new DemoScrollPage(createProgressPage()));
         feedback.addTab("Steps", new StepperDemoPage(fontFamily, this::bindIcon).build());
-        feedback.addTab("Donut", new DonutChartDemoPage(fontFamily).build());
+        feedback.addTab("Donut", new DemoScrollPage(
+                new DonutChartDemoPage(fontFamily).build()));
         feedback.addTab("Chart", new ChartDemoPage(fontFamily).build());
         feedback.addTab("Toasts", new DemoScrollPage(createToastPage()));
 
         TabPanel navigation = createGroupTabs();
         navigation.addTab("Menu bar", new DemoMenuPage(fontFamily, this::bindIcon).create());
         navigation.addTab("Breadcrumbs", new DemoBreadcrumbsPage(fontFamily).create());
-        navigation.addTab("Radial", new RadialMenuDemoPage(fontFamily, this::bindIcon).build());
+        navigation.addTab("Radial", new DemoScrollPage(
+                new RadialMenuDemoPage(fontFamily, this::bindIcon).build()));
 
         TabPanel overlays = createGroupTabs();
         overlays.addTab("Dropdowns", createDropdownsPage());
@@ -622,6 +625,15 @@ final class DemoWidgetScene implements AutoCloseable {
         page.add(nameField).add(emailField).add(roleField).add(updatesField).add(showError)
                 .add(DemoFormWidgets.tagInputs())
                 .add(DemoFormWidgets.propertyGrids());
+        return new DemoScrollPage(page);
+    }
+
+    private Widget createQueriesPage() {
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(10);
+        page.add(DemoFormWidgets.filterBars())
+                .add(DemoFormWidgets.queryBuilders());
         return new DemoScrollPage(page);
     }
 
@@ -1399,8 +1411,6 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(sliderCaption("Split button"))
                 .add(split)
                 .add(splitStatus)
-                .add(DemoFormWidgets.filterBars())
-                .add(DemoFormWidgets.queryBuilders())
                 .add(status);
         return new DemoScrollPage(page);
     }

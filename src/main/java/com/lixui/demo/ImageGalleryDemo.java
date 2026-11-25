@@ -10,7 +10,7 @@ import com.lixui.widget.image.ImageSource;
 import com.lixui.widget.layout.VBox;
 
 /**
- * Builds the image gallery demos shown on the gallery tab.
+ * Builds the image gallery demos shown on the Gallery page of the Data tab.
  */
 final class ImageGalleryDemo {
     private static final String[][] ICONS = {

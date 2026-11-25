@@ -10,7 +10,7 @@ import com.lixui.widget.container.Timeline;
 import com.lixui.widget.layout.VBox;
 
 /**
- * Builds the timeline demo shown on its own tab.
+ * Builds the timeline demo shown on the Timeline page of the Data tab.
  */
 final class TimelineDemo {
     private static final Color BLUE = Color.hex("#7EA6F5");

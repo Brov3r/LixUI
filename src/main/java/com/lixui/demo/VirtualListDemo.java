@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Builds the virtual list demos shown on the data tab.
+ * Builds the virtual list demos shown on the Virtual list page of the Data tab.
  */
 final class VirtualListDemo {
     private static final int FEED_SIZE = 800;
