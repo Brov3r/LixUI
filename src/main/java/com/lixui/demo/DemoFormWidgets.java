@@ -5,6 +5,7 @@ import com.lixui.widget.Widget;
 import com.lixui.widget.control.FilterBar;
 import com.lixui.widget.control.Label;
 import com.lixui.widget.control.PropertyGrid;
+import com.lixui.widget.control.QueryBuilder;
 import com.lixui.widget.control.TagInput;
 import com.lixui.widget.layout.HBox;
 import com.lixui.widget.layout.VBox;
@@ -135,6 +136,47 @@ final class DemoFormWidgets {
 
     private static String tagStatus(List<String> tags) {
         return "Tags: " + tags.size() + " - " + String.join(", ", tags);
+    }
+
+    /**
+     * Builds two query builder variations.
+     *
+     * @return the query builder section
+     */
+    static Widget queryBuilders() {
+        Label status = status("Change a rule to see the state here.");
+        QueryBuilder and = new QueryBuilder();
+        and.addField("Status", "is", "is not");
+        and.addField("Level", ">=", "<=", "=");
+        and.setRules(List.of(
+                new QueryBuilder.Rule("Status", "is", "online"),
+                new QueryBuilder.Rule("Level", ">=", "10")));
+        and.setOnChange((rules, combinator) -> status.setText(describe(rules, combinator)));
+
+        QueryBuilder or = new QueryBuilder();
+        or.addField("Region", "equals", "not equals");
+        or.addField("Score", ">", "<");
+        or.setCombinator(QueryBuilder.Combinator.OR);
+        or.setRules(List.of(
+                new QueryBuilder.Rule("Region", "equals", "Europe"),
+                new QueryBuilder.Rule("Score", ">", "80")));
+        or.setOnChange((rules, combinator) -> status.setText(describe(rules, combinator)));
+
+        VBox group = new VBox();
+        group.setGap(GAP);
+        group.add(caption("Query builder: field, operator and value rows joined with AND"))
+                .add(and)
+                .add(caption("OR mode with two rules"))
+                .add(or)
+                .add(status);
+        return group;
+    }
+
+    private static String describe(List<QueryBuilder.Rule> rules,
+                                   QueryBuilder.Combinator combinator) {
+        return rules.size() + " rule(s) joined with " + combinator
+                + (rules.isEmpty() ? "" : "    first: " + rules.get(0).field()
+                + " " + rules.get(0).operator() + " " + rules.get(0).value());
     }
 
     private static Label status(String text) {

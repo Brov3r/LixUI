@@ -1356,6 +1356,7 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(split)
                 .add(splitStatus)
                 .add(DemoFormWidgets.filterBars())
+                .add(DemoFormWidgets.queryBuilders())
                 .add(status);
         return new DemoScrollPage(page);
     }
