@@ -211,6 +211,8 @@ final class DemoWidgetScene implements AutoCloseable {
         bindIcon("circle-ring.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Donut",
                         new DonutChartDemoPage(fontFamily).build())::setIcon);
+        bindIcon("linear.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Chart", new ChartDemoPage(fontFamily).build())::setIcon);
         bindIcon("keyboard.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Input", createInputPage())::setIcon);
         bindIcon("a-to-z.svg", outerTabs.iconSize(),
