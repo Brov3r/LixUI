@@ -478,9 +478,7 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(sliderCaption("Drag and drop: matching kinds and swapping widgets"))
                 .add(DemoDragDrop.create(status))
                 .add(status);
-        ScrollPanel scroll = new ScrollPanel();
-        scroll.setContent(page);
-        return scroll;
+        return new DemoScrollPage(page);
     }
 
     private Widget createElementsPage() {
