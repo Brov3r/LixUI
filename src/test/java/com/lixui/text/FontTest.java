@@ -195,6 +195,17 @@ class FontTest {
     }
 
     @Test
+    void wrapsAtAHyphenKeepingItsWidth() {
+        TextStyle style = new TextStyle(15, 0, 0, TextOverflow.CLIP,
+                HorizontalAlignment.LEFT, VerticalAlignment.TOP);
+
+        TextLayout layout = testFont().layoutBlockRelative("A-A", style);
+
+        assertEquals(List.of(new TextLine(0, 2, 0, 0, 13),
+                new TextLine(2, 3, 0, 18, 10)), layout.lines());
+    }
+
+    @Test
     void hardBreaksWordsThatExceedTheMaximumWidth() {
         Font font = testFont();
         TextStyle style = new TextStyle(12, 0, 0, TextOverflow.CLIP,
@@ -267,6 +278,19 @@ class FontTest {
         assertEquals(10, font.measure("A").width(), 0.0001f);
         assertEquals(24, font.measure("\t").width(), 0.0001f);
         assertEquals(2, font.letterSpacing());
+    }
+
+    @Test
+    void wrappedWidthsStayNonNegativeWithNegativeLetterSpacing() {
+        Font font = testFont(-25);
+        TextStyle style = new TextStyle(12, 0, 0, TextOverflow.CLIP,
+                HorizontalAlignment.LEFT, VerticalAlignment.TOP);
+
+        TextLayout layout = font.layoutBlockRelative("AB", style);
+
+        assertEquals(1, layout.lines().size());
+        assertEquals(font.measure("AB").width(), layout.lines().getFirst().width(), 0.0001f);
+        assertEquals(0, layout.size().width(), 0.0001f);
     }
 
     @Test
@@ -466,6 +490,7 @@ class FontTest {
         Map<Integer, Glyph> glyphs = new HashMap<>();
         glyphs.put((int) ' ', new Glyph(' ', Rect.EMPTY, 0, 0, 0, 0, 4));
         glyphs.put((int) '.', new Glyph('.', Rect.EMPTY, 0, 0, 0, 0, 4));
+        glyphs.put((int) '-', new Glyph('-', Rect.EMPTY, 0, 0, 0, 0, 3));
         glyphs.put((int) 'A', new Glyph('A', UV, 1, -10, 8, 12, 10));
         glyphs.put((int) 'B', new Glyph('B', UV, 0, -8, 6, 10, 7));
         Map<Long, Float> kerning = Map.of(((long) 'A' << 32) | 'B', -1.5f);

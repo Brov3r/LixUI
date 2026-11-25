@@ -1,28 +1,14 @@
 package com.lixui.widget.overlay;
 
-import com.lixui.animation.Animation;
-import com.lixui.animation.Easing;
-import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
 import com.lixui.graphics.Color;
-import com.lixui.render.ImageStyle;
-import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
-import com.lixui.text.Font;
-import com.lixui.text.HorizontalAlignment;
 import com.lixui.text.TextLayout;
-import com.lixui.text.TextOverflow;
-import com.lixui.text.TextStyle;
-import com.lixui.text.VerticalAlignment;
-import com.lixui.theme.Theme;
-import com.lixui.theme.WidgetStyle;
 import com.lixui.widget.FrameInfo;
 import com.lixui.widget.LayoutConstraints;
-import com.lixui.widget.Panel;
 import com.lixui.widget.UiContext;
 import com.lixui.widget.Widget;
-import com.lixui.widget.control.Image;
 import com.lixui.widget.image.ImageSource;
 
 import java.util.ArrayDeque;
@@ -31,15 +17,18 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Manages transient notification cards shown in a viewport corner.
- * Toasts enter and leave with a short slide and fade, pause their countdown while hovered and show
- * a progress bar with the remaining time. Every toast has a semantic type that selects a default
- * accent color and icon, and can add a title, an explicit icon, wrapped text limits and explicit
- * card width bounds. The visible count is limited; extra notifications wait in a queue and appear
- * as earlier cards expire. The manager owns a top-level host that lets pointer input pass through
- * empty space, so the layer never blocks the UI outside an actual toast.
+ * A transparent overlay widget that stacks transient {@link com.lixui.widget.overlay.Toast}
+ * cards in a corner of its bounds.
+ * The no-argument constructor creates a detached overlay. Attach it through the normal widget API,
+ * for example {@code parent.add(toasts)} or {@code manager.add(toasts)}; it then uses the bounds
+ * assigned by its parent and never needs the owning manager or context. The context constructor is
+ * kept for source and binary compatibility and attaches the overlay as a top-level widget.
+ * Toasts appear with a short slide and fade, pause their countdown while hovered and show a
+ * progress bar with the remaining time. The visible count is limited; extra notifications wait in
+ * a queue and appear as earlier cards expire. Empty layer space passes pointer input through, so
+ * the overlay never blocks the UI outside an actual toast.
  */
-public final class ToastManager implements AutoCloseable {
+public final class ToastManager extends Widget implements AutoCloseable {
     /**
      * A viewport corner used as the toast stack origin.
      */
@@ -55,9 +44,8 @@ public final class ToastManager implements AutoCloseable {
     }
 
     /**
-     * Semantic notification type.
-     * The type selects the default accent color and the bundled icon used when no explicit icon is
-     * assigned.
+     * Legacy semantic notification type.
+     * This adapter preserves the nested API and maps to the standalone toast type.
      */
     public enum Type {
         /** Neutral informational message. */
@@ -83,27 +71,23 @@ public final class ToastManager implements AutoCloseable {
         public String iconName() {
             return iconName;
         }
+
+        com.lixui.widget.overlay.Toast.Type toToastType() {
+            return com.lixui.widget.overlay.Toast.Type.valueOf(name());
+        }
+
+        static Type from(com.lixui.widget.overlay.Toast.Type type) {
+            return valueOf(type.name());
+        }
     }
 
     /**
-     * Presentation options for a single toast.
-     * Options are mutable so a caller can build a notification fluently, and are copied when the
-     * toast is shown, so later changes do not affect a visible card. The message is the only
-     * required value; every other option has a default so the plain
-     * {@link ToastManager#show(String)} call keeps working unchanged.
+     * Legacy presentation options for a single toast.
+     * The adapter delegates storage and validation to
+     * {@link com.lixui.widget.overlay.Toast.Options} while preserving the original fluent API.
      */
     public static final class Options {
-        private final String message;
-        private Type type = Type.INFO;
-        private String title = "";
-        private ImageSource icon;
-        private Color accent;
-        private int maxLines = DEFAULT_MAX_LINES;
-        private float maxWidth = DEFAULT_MAX_WIDTH;
-        private float minCardWidth = DEFAULT_MIN_CARD_WIDTH;
-        private float maxCardWidth = DEFAULT_MAX_CARD_WIDTH;
-        private boolean showTimer = true;
-        private float duration;
+        private final com.lixui.widget.overlay.Toast.Options delegate;
 
         /**
          * Creates options for a notification message.
@@ -112,7 +96,7 @@ public final class ToastManager implements AutoCloseable {
          * @throws NullPointerException if {@code message} is null
          */
         public Options(String message) {
-            this.message = Objects.requireNonNull(message, "message");
+            delegate = new com.lixui.widget.overlay.Toast.Options(message);
         }
 
         /**
@@ -121,16 +105,16 @@ public final class ToastManager implements AutoCloseable {
          * @return the message
          */
         public String message() {
-            return message;
+            return delegate.message();
         }
 
         /**
-         * Returns the semantic type.
+         * Returns the legacy semantic type.
          *
          * @return the type
          */
         public Type type() {
-            return type;
+            return Type.from(delegate.type());
         }
 
         /**
@@ -141,7 +125,7 @@ public final class ToastManager implements AutoCloseable {
          * @throws NullPointerException if {@code type} is null
          */
         public Options type(Type type) {
-            this.type = Objects.requireNonNull(type, "type");
+            delegate.type(Objects.requireNonNull(type, "type").toToastType());
             return this;
         }
 
@@ -151,19 +135,18 @@ public final class ToastManager implements AutoCloseable {
          * @return the title, or an empty string when no title is set
          */
         public String title() {
-            return title;
+            return delegate.title();
         }
 
         /**
          * Assigns a title drawn on its own line above the message.
-         * An empty title hides the title row.
          *
          * @param title title text
          * @return this options object
          * @throws NullPointerException if {@code title} is null
          */
         public Options title(String title) {
-            this.title = Objects.requireNonNull(title, "title");
+            delegate.title(title);
             return this;
         }
 
@@ -173,31 +156,29 @@ public final class ToastManager implements AutoCloseable {
          * @return the explicit source, or null when the type icon is used
          */
         public ImageSource icon() {
-            return icon;
+            return delegate.icon();
         }
 
         /**
          * Assigns an explicit icon source.
-         * Textures, bundled icon names and remote sources are supported through
-         * {@link ImageSource}. A null source restores the default type icon.
          *
          * @param icon explicit image source, or null to use the type icon
          * @return this options object
          */
         public Options icon(ImageSource icon) {
-            this.icon = icon;
+            delegate.icon(icon);
             return this;
         }
 
         /**
          * Assigns a caller-owned texture as the icon.
-         * The texture is not released by the toast.
          *
          * @param texture icon texture, or null to use the type icon
          * @return this options object
          */
         public Options icon(Texture texture) {
-            return icon(texture == null ? null : ImageSource.texture(texture));
+            delegate.icon(texture);
+            return this;
         }
 
         /**
@@ -206,19 +187,17 @@ public final class ToastManager implements AutoCloseable {
          * @return the accent, or null when the type color is used
          */
         public Color accent() {
-            return accent;
+            return delegate.accent();
         }
 
         /**
          * Assigns an explicit accent color.
-         * The accent tints the icon, the title and the remaining-time bar, and slightly colors the
-         * card surface and border. A null accent restores the type color.
          *
          * @param accent straight-alpha accent color, or null to use the type color
          * @return this options object
          */
         public Options accent(Color accent) {
-            this.accent = accent;
+            delegate.accent(accent);
             return this;
         }
 
@@ -228,22 +207,18 @@ public final class ToastManager implements AutoCloseable {
          * @return the line limit, or zero when the message is not line-limited
          */
         public int maxLines() {
-            return maxLines;
+            return delegate.maxLines();
         }
 
         /**
          * Assigns the maximum number of visible message lines.
-         * Additional lines are truncated with an ellipsis. Zero keeps every wrapped line.
          *
          * @param maxLines maximum line count, or zero for no limit
          * @return this options object
          * @throws IllegalArgumentException if the count is negative
          */
         public Options maxLines(int maxLines) {
-            if (maxLines < 0) {
-                throw new IllegalArgumentException("Maximum toast line count must be non-negative.");
-            }
-            this.maxLines = maxLines;
+            delegate.maxLines(maxLines);
             return this;
         }
 
@@ -253,23 +228,18 @@ public final class ToastManager implements AutoCloseable {
          * @return the wrap width in logical UI units
          */
         public float maxWidth() {
-            return maxWidth;
+            return delegate.maxWidth();
         }
 
         /**
          * Assigns the maximum message text width before lines wrap.
-         * The card width can be bounded separately through {@link #minCardWidth(float)} and
-         * {@link #maxCardWidth(float)}.
          *
          * @param maxWidth positive wrap width in logical UI units
          * @return this options object
          * @throws IllegalArgumentException if the width is not finite or not positive
          */
         public Options maxWidth(float maxWidth) {
-            if (!Float.isFinite(maxWidth) || maxWidth <= 0) {
-                throw new IllegalArgumentException("Maximum toast text width must be finite and positive.");
-            }
-            this.maxWidth = maxWidth;
+            delegate.maxWidth(maxWidth);
             return this;
         }
 
@@ -279,22 +249,18 @@ public final class ToastManager implements AutoCloseable {
          * @return the lower bound in logical UI units
          */
         public float minCardWidth() {
-            return minCardWidth;
+            return delegate.minCardWidth();
         }
 
         /**
          * Assigns the minimum card width.
-         * Short content stretches the card to this width.
          *
          * @param minCardWidth non-negative width in logical UI units
          * @return this options object
          * @throws IllegalArgumentException if the width is not finite or negative
          */
         public Options minCardWidth(float minCardWidth) {
-            if (!Float.isFinite(minCardWidth) || minCardWidth < 0) {
-                throw new IllegalArgumentException("Minimum toast card width must be finite and non-negative.");
-            }
-            this.minCardWidth = minCardWidth;
+            delegate.minCardWidth(minCardWidth);
             return this;
         }
 
@@ -304,22 +270,18 @@ public final class ToastManager implements AutoCloseable {
          * @return the upper bound in logical UI units
          */
         public float maxCardWidth() {
-            return maxCardWidth;
+            return delegate.maxCardWidth();
         }
 
         /**
          * Assigns the maximum card width.
-         * The card never grows past this width even when the available viewport is wider.
          *
          * @param maxCardWidth positive width in logical UI units
          * @return this options object
          * @throws IllegalArgumentException if the width is not finite or not positive
          */
         public Options maxCardWidth(float maxCardWidth) {
-            if (!Float.isFinite(maxCardWidth) || maxCardWidth <= 0) {
-                throw new IllegalArgumentException("Maximum toast card width must be finite and positive.");
-            }
-            this.maxCardWidth = maxCardWidth;
+            delegate.maxCardWidth(maxCardWidth);
             return this;
         }
 
@@ -329,18 +291,17 @@ public final class ToastManager implements AutoCloseable {
          * @return true when the timer indicator is drawn
          */
         public boolean showTimer() {
-            return showTimer;
+            return delegate.showTimer();
         }
 
         /**
          * Shows or hides the remaining-time bar.
-         * The countdown and automatic hiding continue when the indicator is hidden.
          *
          * @param showTimer true to draw the remaining-time bar
          * @return this options object
          */
         public Options showTimer(boolean showTimer) {
-            this.showTimer = showTimer;
+            delegate.showTimer(showTimer);
             return this;
         }
 
@@ -350,75 +311,102 @@ public final class ToastManager implements AutoCloseable {
          * @return the lifetime in seconds, or zero when the manager default is used
          */
         public float duration() {
-            return duration;
+            return delegate.duration();
         }
 
         /**
          * Assigns an explicit lifetime.
-         * When no lifetime is assigned, {@link ToastManager#defaultDuration()} is used.
          *
          * @param duration positive lifetime in seconds
          * @return this options object
          * @throws IllegalArgumentException if the duration is not finite or not positive
          */
         public Options duration(float duration) {
-            if (!Float.isFinite(duration) || duration <= 0) {
-                throw new IllegalArgumentException("Toast duration must be finite and positive.");
-            }
-            this.duration = duration;
+            delegate.duration(duration);
             return this;
         }
 
-        private void validate() {
-            if (minCardWidth > maxCardWidth) {
-                throw new IllegalArgumentException(
-                        "Minimum toast card width must not exceed the maximum card width.");
-            }
+        /**
+         * Returns the custom content widget.
+         *
+         * @return the custom content, or null when the default body is used
+         */
+        public Widget content() {
+            return delegate.content();
+        }
+
+        /**
+         * Replaces the default body with a custom widget.
+         *
+         * @param content content widget without a parent, or null to restore the default body
+         * @return this options object
+         */
+        public Options content(Widget content) {
+            delegate.content(content);
+            return this;
+        }
+
+        /**
+         * Returns the custom card renderer.
+         *
+         * @return the renderer, or null when the default card is drawn
+         */
+        public com.lixui.widget.overlay.Toast.Renderer renderer() {
+            return delegate.renderer();
+        }
+
+        /**
+         * Replaces the default card visuals with custom drawing.
+         *
+         * @param renderer custom card renderer, or null to restore the default card
+         * @return this options object
+         */
+        public Options renderer(com.lixui.widget.overlay.Toast.Renderer renderer) {
+            delegate.renderer(renderer);
+            return this;
+        }
+
+        com.lixui.widget.overlay.Toast.Options toToastOptions() {
+            return delegate;
         }
     }
 
     private static final float MARGIN = 16;
     private static final float GAP = 8;
     private static final float SLIDE_DISTANCE = 24;
-    private static final int DEFAULT_MAX_LINES = 3;
-    private static final float DEFAULT_MAX_WIDTH = 296;
-    private static final float DEFAULT_MIN_CARD_WIDTH = 180;
-    private static final float DEFAULT_MAX_CARD_WIDTH = 320;
-    private static final float MIN_HEIGHT = 56;
-    private static final float CARD_PADDING = 12;
-    private static final float CORNER_RADIUS = 8;
-    private static final float ICON_SIZE = 20;
-    private static final float ICON_GAP = 10;
-    private static final float ICON_SPACE = ICON_SIZE + ICON_GAP;
-    private static final float TITLE_GAP = 2;
-    private static final float PROGRESS_HEIGHT = 3;
-    private static final float PROGRESS_GAP = 7;
-    private static final float SURFACE_MIX = 0.1f;
-    private static final float BORDER_MIX = 0.45f;
-    private static final float APPEAR_SECONDS = 0.18f;
-    private static final float EXIT_SECONDS = 0.15f;
     private static final float DEFAULT_DURATION = 4;
 
-    private final UiContext context;
-    private final ToastHost host;
-    private final List<ToastCard> visible = new ArrayList<>();
-    private final ArrayDeque<ToastCard> pending = new ArrayDeque<>();
+    private final List<Toast> visible = new ArrayList<>();
+    private final ArrayDeque<Toast> pending = new ArrayDeque<>();
     private Corner corner = Corner.TOP_RIGHT;
     private int maxVisible = 3;
     private float defaultDuration = DEFAULT_DURATION;
     private boolean closed;
 
     /**
-     * Creates a manager, attaches its transparent host and shows an empty layer.
+     * Creates a detached toast overlay.
+     * Attach the overlay to any widget tree through
+     * {@link Widget#add(Widget)} or {@link com.lixui.widget.WidgetManager#add(Widget)}.
+     * The parent assigns the overlay bounds.
+     */
+    public ToastManager() {
+        setFillViewport(true);
+        setAlwaysOnTop(true);
+        setClipToBounds(true);
+    }
+
+    /**
+     * Creates a toast overlay and attaches it as a top-level widget of the supplied context.
+     * This constructor is kept for compatibility; new code can use {@link #ToastManager()} and
+     * attach the overlay through the normal widget API.
      *
-     * @param context context that owns the widget manager
+     * @param context context that owns the overlay
      * @throws NullPointerException if {@code context} is null
      * @throws IllegalStateException if the context is closed or has no manager
      */
     public ToastManager(UiContext context) {
-        this.context = Objects.requireNonNull(context, "context");
-        host = new ToastHost(this);
-        context.addTopLevel(host);
+        this();
+        Objects.requireNonNull(context, "context").addTopLevel(this);
     }
 
     /**
@@ -431,7 +419,7 @@ public final class ToastManager implements AutoCloseable {
     }
 
     /**
-     * Moves the toast stack to a viewport corner.
+     * Moves the toast stack to a corner of the overlay bounds.
      *
      * @param corner stack corner
      * @throws NullPointerException if {@code corner} is null
@@ -455,7 +443,7 @@ public final class ToastManager implements AutoCloseable {
      *
      * @param maxVisible positive visible limit
      * @throws IllegalArgumentException if the limit is not positive
-     * @throws IllegalStateException if the manager is closed
+     * @throws IllegalStateException if the overlay is closed
      */
     public void setMaxVisible(int maxVisible) {
         ensureOpen();
@@ -464,15 +452,15 @@ public final class ToastManager implements AutoCloseable {
         }
         this.maxVisible = maxVisible;
         while (visible.size() > maxVisible) {
-            ToastCard card = visible.remove(visible.size() - 1);
-            host.remove(card);
-            card.abort();
+            Toast toast = visible.remove(visible.size() - 1);
+            remove(toast.widget());
+            toast.widget().abort();
         }
         promote();
     }
 
     /**
-     * Returns the duration used by {@link #show(String)}.
+     * Returns the duration used when options do not supply a lifetime.
      *
      * @return the default duration in seconds
      */
@@ -481,11 +469,11 @@ public final class ToastManager implements AutoCloseable {
     }
 
     /**
-     * Sets the duration used by {@link #show(String)}.
+     * Sets the duration used when options do not supply a lifetime.
      *
      * @param defaultDuration positive duration in seconds
      * @throws IllegalArgumentException if the duration is not finite or not positive
-     * @throws IllegalStateException if the manager is closed
+     * @throws IllegalStateException if the overlay is closed
      */
     public void setDefaultDuration(float defaultDuration) {
         ensureOpen();
@@ -499,12 +487,12 @@ public final class ToastManager implements AutoCloseable {
      * Shows a toast with the default duration.
      *
      * @param message notification text
-     * @return the toast handle
+     * @return the shown or queued toast handle
      * @throws NullPointerException if {@code message} is null
-     * @throws IllegalStateException if the manager is closed
+     * @throws IllegalStateException if the overlay is closed
      */
     public Toast show(String message) {
-        return show(message, defaultDuration);
+        return show(new Options(message));
     }
 
     /**
@@ -513,13 +501,12 @@ public final class ToastManager implements AutoCloseable {
      *
      * @param message notification text
      * @param duration positive lifetime in seconds
-     * @return the toast handle
+     * @return the shown or queued toast handle
      * @throws NullPointerException if {@code message} is null
      * @throws IllegalArgumentException if the duration is not finite or not positive
-     * @throws IllegalStateException if the manager is closed
+     * @throws IllegalStateException if the overlay is closed
      */
     public Toast show(String message, float duration) {
-        ensureOpen();
         return show(new Options(message).duration(duration));
     }
 
@@ -529,23 +516,27 @@ public final class ToastManager implements AutoCloseable {
      * {@link #defaultDuration()}.
      *
      * @param options toast presentation options
-     * @return the toast handle
+     * @return the shown or queued toast handle
      * @throws NullPointerException if {@code options} is null
-     * @throws IllegalArgumentException if the options are inconsistent
-     * @throws IllegalStateException if the manager is closed
+     * @throws IllegalArgumentException if the options are inconsistent or custom content already
+     *                                  has a parent
+     * @throws IllegalStateException if the overlay is closed
      */
     public Toast show(Options options) {
         ensureOpen();
         Objects.requireNonNull(options, "options");
-        options.validate();
-        float duration = options.duration() > 0 ? options.duration() : defaultDuration;
-        ToastCard card = new ToastCard(this, options, duration);
+        com.lixui.widget.overlay.Toast.Options toastOptions = options.toToastOptions();
+        float duration = toastOptions.duration() > 0 ? toastOptions.duration() : defaultDuration;
+        com.lixui.widget.overlay.Toast view = new com.lixui.widget.overlay.Toast(toastOptions, duration);
+        Toast toast = new Toast(view);
+        view.setDismissAction(() -> dismiss(toast));
+        view.setDismissListener(() -> removeVisible(toast));
         if (visible.size() < maxVisible) {
-            showCard(card);
+            showToast(toast);
         } else {
-            pending.addLast(card);
+            pending.addLast(toast);
         }
-        return card.toast;
+        return toast;
     }
 
     /**
@@ -567,37 +558,33 @@ public final class ToastManager implements AutoCloseable {
     }
 
     /**
-     * Returns handles for the visible toasts in display order.
+     * Returns the visible toast handles in display order.
      *
      * @return an immutable snapshot of visible toast handles
      */
     public List<Toast> visibleToasts() {
-        List<Toast> toasts = new ArrayList<>(visible.size());
-        for (ToastCard card : visible) {
-            toasts.add(card.toast);
-        }
-        return List.copyOf(toasts);
+        return List.copyOf(visible);
     }
 
     /**
      * Dismisses every queued toast and starts the exit animation for visible ones.
      *
-     * @throws IllegalStateException if the manager is closed
+     * @throws IllegalStateException if the overlay is closed
      */
     public void dismissAll() {
         ensureOpen();
-        for (ToastCard card : pending) {
-            card.abort();
+        for (Toast toast : pending) {
+            toast.widget().abort();
         }
         pending.clear();
-        for (ToastCard card : List.copyOf(visible)) {
-            card.startExit();
+        for (Toast toast : List.copyOf(visible)) {
+            toast.widget().startExit();
         }
     }
 
     /**
-     * Removes the host layer and every toast.
-     * Closing an already closed manager does nothing.
+     * Removes the overlay from its parent or top-level manager and stops every toast.
+     * Closing an already closed overlay does nothing.
      */
     @Override
     public void close() {
@@ -605,76 +592,136 @@ public final class ToastManager implements AutoCloseable {
             return;
         }
         closed = true;
-        pending.clear();
-        for (ToastCard card : List.copyOf(visible)) {
-            card.abort();
-            host.remove(card);
-        }
-        visible.clear();
-        try {
-            context.removeTopLevel(host);
-        } catch (IllegalStateException ignored) {
-            // The manager may already be closing and detach every top-level widget.
-        }
-    }
-
-    private void showCard(ToastCard card) {
-        visible.add(card);
-        host.add(card);
-        card.startAppear();
-    }
-
-    private void update(float deltaSeconds) {
-        for (ToastCard card : List.copyOf(visible)) {
-            if (card.finished) {
-                removeVisible(card);
-                continue;
-            }
-            card.advance(deltaSeconds);
-        }
-    }
-
-    private void removeVisible(ToastCard card) {
-        if (!visible.remove(card)) {
+        abortAll();
+        Widget parent = parent();
+        if (parent != null) {
+            parent.remove(this);
             return;
         }
-        host.remove(card);
+        UiContext owner = context();
+        if (owner != null) {
+            try {
+                owner.removeTopLevel(this);
+            } catch (IllegalStateException ignored) {
+                // The owner may already be closing and detach every top-level widget.
+            }
+        }
+    }
+
+    /**
+     * Removes finished toasts at the start of a frame.
+     *
+     * @param frame timing information for the current frame
+     */
+    @Override
+    protected void onUpdate(FrameInfo frame) {
+        for (Toast toast : List.copyOf(visible)) {
+            if (toast.widget().isFinished()) {
+                removeVisible(toast);
+            }
+        }
+    }
+
+    /**
+     * Stacks visible toasts in the configured corner.
+     */
+    @Override
+    protected void onLayout() {
+        layoutToasts();
+    }
+
+    /**
+     * Stops every toast when the overlay leaves its widget tree.
+     */
+    @Override
+    protected void onDetached() {
+        closed = true;
+        abortAll();
+    }
+
+    /**
+     * Passes input through empty layer space while keeping toast cards hoverable.
+     *
+     * @param x horizontal coordinate relative to the overlay
+     * @param y vertical coordinate relative to the overlay
+     * @return the toast under the point, or null when the point is outside every toast
+     */
+    @Override
+    public Widget hitTest(float x, float y) {
+        if (!contains(x, y)) {
+            return null;
+        }
+        for (int index = children().size() - 1; index >= 0; index--) {
+            Widget child = children().get(index);
+            if (!child.isVisible()) {
+                continue;
+            }
+            Widget hit = child.hitTest(x - child.bounds().x(), y - child.bounds().y());
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
+    }
+
+    private void showToast(Toast toast) {
+        visible.add(toast);
+        add(toast.widget());
+    }
+
+    private void removeVisible(Toast toast) {
+        if (!visible.remove(toast)) {
+            return;
+        }
+        remove(toast.widget());
         promote();
     }
 
     private void promote() {
         while (visible.size() < maxVisible && !pending.isEmpty()) {
-            showCard(pending.pollFirst());
+            showToast(pending.pollFirst());
         }
     }
 
-    private void dismiss(ToastCard card) {
-        if (pending.remove(card)) {
-            card.abort();
+    private void dismiss(Toast toast) {
+        if (pending.remove(toast)) {
+            toast.widget().abort();
             return;
         }
-        if (visible.contains(card)) {
-            card.startExit();
+        if (visible.contains(toast)) {
+            toast.widget().startExit();
         }
+    }
+
+    private void abortAll() {
+        for (Toast toast : pending) {
+            toast.widget().abort();
+        }
+        pending.clear();
+        for (Toast toast : visible) {
+            toast.widget().abort();
+        }
+        visible.clear();
     }
 
     private void layoutToasts() {
-        float viewportWidth = host.bounds().width();
-        float viewportHeight = host.bounds().height();
-        if (viewportWidth <= 0 || viewportHeight <= 0) {
+        float layerWidth = bounds().width();
+        float layerHeight = bounds().height();
+        if (layerWidth <= 0 || layerHeight <= 0) {
             return;
         }
-        float maximumWidth = Math.max(1, viewportWidth - MARGIN * 2);
-        float maximumHeight = Math.max(1, viewportHeight - MARGIN * 2);
+        float maximumWidth = Math.max(1, layerWidth - MARGIN * 2);
+        float maximumHeight = Math.max(1, layerHeight - MARGIN * 2);
         float top = MARGIN;
-        float bottom = viewportHeight - MARGIN;
-        for (ToastCard card : visible) {
-            Size size = card.measure(LayoutConstraints.loose(maximumWidth, maximumHeight));
-            float slide = card.slideProgress() * SLIDE_DISTANCE;
+        float bottom = layerHeight - MARGIN;
+        for (Toast toast : visible) {
+            com.lixui.widget.overlay.Toast view = toast.widget();
+            Size size = view.measure(LayoutConstraints.loose(maximumWidth, maximumHeight));
+            float slide = view.slideProgress() * SLIDE_DISTANCE;
             float x = switch (corner) {
                 case TOP_LEFT, BOTTOM_LEFT -> MARGIN - slide;
                 case TOP_RIGHT, BOTTOM_RIGHT ->
-                        viewportWidth - MARGIN - size.width() + slide;
+                        layerWidth - MARGIN - size.width() + slide;
             };
             float y;
             switch (corner) {
@@ -689,7 +736,9 @@ public final class ToastManager implements AutoCloseable {
                 }
                 default -> throw new IllegalStateException("Unknown toast corner.");
             }
-            card.layout(new Rect(x, y, size.width(), size.height()));
+            float clampedX = Math.clamp(x, 0, Math.max(0, layerWidth - size.width()));
+            float clampedY = Math.clamp(y, 0, Math.max(0, layerHeight - size.height()));
+            view.layout(new Rect(clampedX, clampedY, size.width(), size.height()));
         }
     }
 
@@ -700,13 +749,14 @@ public final class ToastManager implements AutoCloseable {
     }
 
     /**
-     * A handle for a queued or visible toast.
+     * A legacy handle for a queued or visible toast.
+     * The handle delegates to the standalone toast widget while preserving the original nested API.
      */
     public static final class Toast {
-        private final ToastCard card;
+        private final com.lixui.widget.overlay.Toast view;
 
-        private Toast(ToastCard card) {
-            this.card = card;
+        private Toast(com.lixui.widget.overlay.Toast view) {
+            this.view = view;
         }
 
         /**
@@ -715,16 +765,16 @@ public final class ToastManager implements AutoCloseable {
          * @return the message
          */
         public String message() {
-            return card.message;
+            return view.message();
         }
 
         /**
-         * Returns the semantic type.
+         * Returns the legacy semantic type.
          *
          * @return the type
          */
         public Type type() {
-            return card.type;
+            return Type.from(view.type());
         }
 
         /**
@@ -733,7 +783,7 @@ public final class ToastManager implements AutoCloseable {
          * @return the title, or an empty string when the toast has no title
          */
         public String title() {
-            return card.title;
+            return view.title();
         }
 
         /**
@@ -742,7 +792,7 @@ public final class ToastManager implements AutoCloseable {
          * @return the explicit icon source or the default type icon
          */
         public ImageSource icon() {
-            return card.iconSource;
+            return view.icon();
         }
 
         /**
@@ -751,7 +801,7 @@ public final class ToastManager implements AutoCloseable {
          * @return the accent, or null when the toast uses the type color
          */
         public Color accent() {
-            return card.accent;
+            return view.accent();
         }
 
         /**
@@ -760,7 +810,7 @@ public final class ToastManager implements AutoCloseable {
          * @return the line limit, or zero when the message is not line-limited
          */
         public int maxLines() {
-            return card.maxLines;
+            return view.maxLines();
         }
 
         /**
@@ -769,7 +819,7 @@ public final class ToastManager implements AutoCloseable {
          * @return the wrap width in logical UI units
          */
         public float maxWidth() {
-            return card.maxWidth;
+            return view.maxWidth();
         }
 
         /**
@@ -778,7 +828,7 @@ public final class ToastManager implements AutoCloseable {
          * @return the lower bound in logical UI units
          */
         public float minCardWidth() {
-            return card.minCardWidth;
+            return view.minCardWidth();
         }
 
         /**
@@ -787,7 +837,7 @@ public final class ToastManager implements AutoCloseable {
          * @return the upper bound in logical UI units
          */
         public float maxCardWidth() {
-            return card.maxCardWidth;
+            return view.maxCardWidth();
         }
 
         /**
@@ -796,7 +846,7 @@ public final class ToastManager implements AutoCloseable {
          * @return true when the timer indicator is shown
          */
         public boolean showTimer() {
-            return card.showTimer;
+            return view.showTimer();
         }
 
         /**
@@ -805,410 +855,45 @@ public final class ToastManager implements AutoCloseable {
          * @return seconds until the toast starts hiding
          */
         public float remainingSeconds() {
-            return card.remaining;
+            return view.remainingSeconds();
         }
 
         /**
          * Reports whether the toast is currently attached to the screen.
          *
-         * @return true when the card is visible in the host
+         * @return true when the card is visible
          */
         public boolean isVisible() {
-            return card.parent() != null && !card.finished;
+            return view.isVisible();
         }
 
         /**
          * Returns the toast bounds in viewport coordinates.
          *
-         * @return the current or last bounds
+         * @return the current bounds translated to the viewport origin
          */
         public Rect bounds() {
-            Point position = card.absolutePosition();
-            return new Rect(position.x(), position.y(),
-                    card.bounds().width(), card.bounds().height());
+            return view.viewportBounds();
         }
 
         /**
          * Dismisses the toast, removing it from the queue or starting its exit animation.
          */
         public void dismiss() {
-            card.manager.dismiss(card);
+            view.dismiss();
+        }
+
+        /**
+         * Returns the standalone toast widget behind this handle.
+         *
+         * @return the toast widget
+         */
+        public com.lixui.widget.overlay.Toast widget() {
+            return view;
         }
 
         TextLayout messageLayout() {
-            return card.messageLayout();
-        }
-    }
-
-    private static final class ToastHost extends Widget {
-        private final ToastManager manager;
-
-        private ToastHost(ToastManager manager) {
-            this.manager = manager;
-            setFillViewport(true);
-            setAlwaysOnTop(true);
-            setClipToBounds(true);
-        }
-
-        /**
-         * Advances toast timers and removes finished cards.
-         *
-         * @param frame timing information for the current frame
-         */
-        @Override
-        protected void onUpdate(FrameInfo frame) {
-            manager.update(frame.deltaSeconds());
-        }
-
-        /**
-         * Stacks visible cards in the configured corner.
-         */
-        @Override
-        protected void onLayout() {
-            manager.layoutToasts();
-        }
-
-        /**
-         * Passes input through empty layer space while keeping toast cards hoverable.
-         *
-         * @param x horizontal coordinate relative to the host
-         * @param y vertical coordinate relative to the host
-         * @return the toast under the point, or null when the point is outside every card
-         */
-        @Override
-        public Widget hitTest(float x, float y) {
-            if (!contains(x, y)) {
-                return null;
-            }
-            for (int index = children().size() - 1; index >= 0; index--) {
-                Widget child = children().get(index);
-                if (!child.isVisible()) {
-                    continue;
-                }
-                Widget hit = child.hitTest(x - child.bounds().x(), y - child.bounds().y());
-                if (hit != null) {
-                    return hit;
-                }
-            }
-            return null;
-        }
-    }
-
-    private static final class ToastCard extends Panel {
-        private final ToastManager manager;
-        private final Toast toast;
-        private final String message;
-        private final String title;
-        private final Type type;
-        private final ImageSource iconSource;
-        private final Color accent;
-        private final int maxLines;
-        private final float maxWidth;
-        private final float minCardWidth;
-        private final float maxCardWidth;
-        private final boolean showTimer;
-        private final float duration;
-        private final Image iconView = new Image();
-        private float textWidth;
-        private float remaining;
-        private float appear = 1;
-        private float exit;
-        private boolean exiting;
-        private boolean finished;
-        private Animation appearAnimation;
-        private Animation exitAnimation;
-
-        private ToastCard(ToastManager manager, Options options, float duration) {
-            this.manager = manager;
-            this.toast = new Toast(this);
-            this.message = options.message();
-            this.title = options.title();
-            this.type = options.type();
-            this.iconSource = options.icon() != null
-                    ? options.icon() : ImageSource.icon(options.type().iconName());
-            this.accent = options.accent();
-            this.maxLines = options.maxLines();
-            this.maxWidth = options.maxWidth();
-            this.minCardWidth = options.minCardWidth();
-            this.maxCardWidth = options.maxCardWidth();
-            this.showTimer = options.showTimer();
-            this.duration = duration;
-            this.remaining = duration;
-            iconView.setAutoSize(false);
-            iconView.setVisible(false);
-            iconView.setSource(iconSource);
-            add(iconView);
-        }
-
-        /**
-         * Applies the type accent to the card surface when the toast attaches.
-         */
-        @Override
-        protected void onAttached() {
-            applyTheme();
-        }
-
-        /**
-         * Reapplies the type accent after a theme or context change.
-         */
-        @Override
-        protected void onContextChanged() {
-            applyTheme();
-        }
-
-        /**
-         * Measures the icon, title, wrapped message and optional timer bar.
-         *
-         * @param constraints available and required dimensions
-         * @return the card size
-         */
-        @Override
-        protected Size onMeasure(LayoutConstraints constraints) {
-            float availableCardWidth = Math.max(1, Math.min(maxCardWidth, constraints.maxWidth()));
-            float lowerBound = Math.min(minCardWidth, availableCardWidth);
-            textWidth = textLimit(availableCardWidth);
-            Font font = font();
-            Size titleSize = measure(font, title, titleStyle(textWidth));
-            Size messageSize = measure(font, message, messageStyle(textWidth));
-            float naturalTextWidth = Math.max(titleSize.width(), messageSize.width());
-            float width = Math.clamp(naturalTextWidth + CARD_PADDING * 2 + ICON_SPACE,
-                    lowerBound, availableCardWidth);
-            float textHeight = titleSize.height()
-                    + (titleSize.height() > 0 && messageSize.height() > 0 ? TITLE_GAP : 0)
-                    + messageSize.height();
-            float contentHeight = Math.max(ICON_SIZE, textHeight);
-            float height = Math.max(MIN_HEIGHT, contentHeight + CARD_PADDING * 2
-                    + (showTimer ? PROGRESS_GAP + PROGRESS_HEIGHT : 0));
-            return new Size(Math.max(1, width), height);
-        }
-
-        /**
-         * Places the icon in the text block and refreshes the resolved wrap width.
-         */
-        @Override
-        protected void onLayout() {
-            float width = localBounds().width();
-            float availableText = Math.max(1, width - CARD_PADDING * 2 - ICON_SPACE);
-            textWidth = Math.max(1, Math.min(maxWidth, availableText));
-            Font font = font();
-            Size titleSize = measure(font, title, titleStyle(textWidth));
-            Size messageSize = measure(font, message, messageStyle(textWidth));
-            float textHeight = titleSize.height()
-                    + (titleSize.height() > 0 && messageSize.height() > 0 ? TITLE_GAP : 0)
-                    + messageSize.height();
-            float iconY = CARD_PADDING + Math.max(0, (textHeight - ICON_SIZE) / 2);
-            iconView.layout(new Rect(CARD_PADDING, iconY, ICON_SIZE, ICON_SIZE));
-        }
-
-        /**
-         * Paints the faded card, the icon, the title, the message and the remaining-time bar.
-         *
-         * @param renderer drawing manager for the current frame
-         * @param frame timing information for the current frame
-         */
-        @Override
-        protected void onDraw(RenderManager renderer, FrameInfo frame) {
-            WidgetStyle widgetStyle = style();
-            if (widgetStyle == null || localBounds().isEmpty()) {
-                return;
-            }
-            float opacity = opacity();
-            if (opacity <= 0) {
-                return;
-            }
-            renderer.withOpacity(opacity, () -> drawCard(renderer, frame, widgetStyle));
-        }
-
-        private void drawCard(RenderManager renderer, FrameInfo frame, WidgetStyle widgetStyle) {
-            super.onDraw(renderer, frame);
-            UiContext owner = context();
-            if (owner == null) {
-                return;
-            }
-            Theme theme = owner.theme();
-            Color accentColor = resolvedAccent(theme);
-            float width = localBounds().width();
-            float wrapWidth = Math.max(1, Math.min(maxWidth,
-                    width - CARD_PADDING * 2 - ICON_SPACE));
-            float textX = CARD_PADDING + ICON_SPACE;
-            Font font = font();
-            float titleHeight = 0;
-            if (font != null) {
-                if (!title.isEmpty()) {
-                    TextStyle style = titleStyle(wrapWidth);
-                    titleHeight = font.measure(title, style).height();
-                    renderer.text(font, title, textX, CARD_PADDING, accentColor, style);
-                    if (!message.isEmpty()) {
-                        titleHeight += TITLE_GAP;
-                    }
-                }
-                if (!message.isEmpty()) {
-                    renderer.text(font, message, textX, CARD_PADDING + titleHeight,
-                            theme.text(), messageStyle(wrapWidth));
-                }
-            }
-            drawIcon(renderer, font, accentColor, wrapWidth);
-            if (showTimer) {
-                drawTimer(renderer, width, accentColor);
-            }
-        }
-
-        private void drawIcon(RenderManager renderer, Font font, Color accentColor, float wrapWidth) {
-            Texture texture = iconView.displayedTexture();
-            if (texture == null) {
-                return;
-            }
-            Size titleSize = measure(font, title, titleStyle(wrapWidth));
-            Size messageSize = measure(font, message, messageStyle(wrapWidth));
-            float textHeight = titleSize.height()
-                    + (titleSize.height() > 0 && messageSize.height() > 0 ? TITLE_GAP : 0)
-                    + messageSize.height();
-            float iconY = CARD_PADDING + Math.max(0, (textHeight - ICON_SIZE) / 2);
-            renderer.icon(texture, new Rect(CARD_PADDING, iconY, ICON_SIZE, ICON_SIZE),
-                    ImageStyle.CONTAIN, accentColor);
-        }
-
-        private void drawTimer(RenderManager renderer, float width, Color accentColor) {
-            float barY = localBounds().height() - CARD_PADDING - PROGRESS_HEIGHT;
-            float barWidth = Math.max(0, width - CARD_PADDING * 2);
-            renderer.rect(new Rect(CARD_PADDING, barY, barWidth, PROGRESS_HEIGHT),
-                    accentColor.withAlpha(0.25f));
-            float fraction = duration <= 0 ? 0 : Math.clamp(remaining / duration, 0, 1);
-            if (fraction > 0) {
-                renderer.rect(new Rect(CARD_PADDING, barY, barWidth * fraction, PROGRESS_HEIGHT),
-                        accentColor);
-            }
-        }
-
-        private void applyTheme() {
-            UiContext owner = context();
-            if (owner == null) {
-                return;
-            }
-            Theme theme = owner.theme();
-            Color accentColor = resolvedAccent(theme);
-            Color background = Color.mix(theme.surface(), accentColor, SURFACE_MIX);
-            Color border = Color.mix(theme.border(), accentColor, BORDER_MIX);
-            setStyle(new WidgetStyle(background, background, background, background,
-                    theme.text(), theme.textMuted(), border, border,
-                    CORNER_RADIUS, CARD_PADDING, 1));
-            iconView.setTint(accentColor);
-        }
-
-        private Color resolvedAccent(Theme theme) {
-            if (accent != null) {
-                return accent;
-            }
-            return switch (type) {
-                case SUCCESS -> Color.hex("#4FC778");
-                case WARNING -> Color.hex("#E8A23D");
-                case ERROR -> Color.hex("#E05D5D");
-                case INFO -> theme.primary();
-            };
-        }
-
-        private float textLimit(float cardWidth) {
-            return Math.max(1, Math.min(maxWidth,
-                    cardWidth - CARD_PADDING * 2 - ICON_SPACE));
-        }
-
-        private static Size measure(Font font, String text, TextStyle style) {
-            return font == null || text.isEmpty() ? new Size(0, 0) : font.measure(text, style);
-        }
-
-        private TextLayout messageLayout() {
-            Font font = font();
-            if (font == null) {
-                return null;
-            }
-            return font.layoutBlockRelative(message, messageStyle(resolvedTextWidth()));
-        }
-
-        private float resolvedTextWidth() {
-            if (textWidth > 0) {
-                return textWidth;
-            }
-            float width = localBounds().width();
-            if (width > 0) {
-                return Math.max(1, Math.min(maxWidth, width - CARD_PADDING * 2 - ICON_SPACE));
-            }
-            return Math.max(1, Math.min(maxWidth,
-                    maxCardWidth - CARD_PADDING * 2 - ICON_SPACE));
-        }
-
-        private void startAppear() {
-            appear = 0;
-            exit = 0;
-            exiting = false;
-            finished = false;
-            UiContext owner = context();
-            if (owner == null) {
-                appear = 1;
-                return;
-            }
-            appearAnimation = owner.animate(0, 1, APPEAR_SECONDS, Easing.EASE_OUT,
-                    value -> appear = value);
-        }
-
-        private void advance(float deltaSeconds) {
-            if (finished || exiting || isHovered()) {
-                return;
-            }
-            remaining -= deltaSeconds;
-            if (remaining <= 0) {
-                remaining = 0;
-                startExit();
-            }
-        }
-
-        private void startExit() {
-            if (exiting || finished) {
-                return;
-            }
-            exiting = true;
-            UiContext owner = context();
-            if (owner == null) {
-                finished = true;
-                return;
-            }
-            exitAnimation = owner.animate(0, 1, EXIT_SECONDS, Easing.EASE_IN,
-                    value -> exit = value);
-            exitAnimation.setOnComplete(() -> finished = true);
-        }
-
-        private float opacity() {
-            return Math.clamp(appear * (1 - exit), 0, 1);
-        }
-
-        private float slideProgress() {
-            return Math.clamp((1 - appear) + exit, 0, 1);
-        }
-
-        private void abort() {
-            finished = true;
-            UiContext owner = context();
-            if (owner != null) {
-                if (appearAnimation != null) {
-                    owner.animator().cancel(appearAnimation);
-                }
-                if (exitAnimation != null) {
-                    owner.animator().cancel(exitAnimation);
-                }
-            }
-        }
-
-        private static TextStyle titleStyle(float width) {
-            return new TextStyle(width, 0, 1, TextOverflow.ELLIPSIS,
-                    HorizontalAlignment.LEFT, VerticalAlignment.TOP);
-        }
-
-        private static TextStyle messageStyle(float width, int maxLines) {
-            return new TextStyle(width, 0, maxLines, TextOverflow.ELLIPSIS,
-                    HorizontalAlignment.LEFT, VerticalAlignment.TOP);
-        }
-
-        private TextStyle messageStyle(float width) {
-            return messageStyle(width, maxLines);
+            return view.messageLayout();
         }
     }
 }

@@ -26,14 +26,15 @@ class BenchmarkScenarioTest {
     }
 
     @Test
-    void treeNodesAreCappedWhileOtherDataStoresUseTheFullCount() {
-        int count = BenchmarkDataContent.TREE_NODE_LIMIT + 17;
+    void everyDataStoreUsesTheFullCount() {
+        int count = 10_000;
 
         BenchmarkDataContent data = assertInstanceOf(BenchmarkDataContent.class,
                 BenchmarkScenario.DATA.create(count));
         assertEquals(count, data.table().rows().size());
         assertEquals(count, data.list().itemCount());
-        assertEquals(BenchmarkDataContent.TREE_NODE_LIMIT, data.tree().roots().size());
+        assertEquals(count, data.tree().roots().size());
+        assertEquals(count, data.tree().visibleRowCount());
     }
 
     @Test

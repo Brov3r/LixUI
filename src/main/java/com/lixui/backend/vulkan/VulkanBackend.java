@@ -349,7 +349,7 @@ public final class VulkanBackend implements RenderBackend {
         }
 
         destroyBuffer(staging);
-        VulkanTexture texture = new VulkanTexture(imageHandle, imageView, imageMemory,
+        VulkanTexture texture = new VulkanTexture(this, imageHandle, imageView, imageMemory,
                 descriptorSet, width, height, true, options);
         textures.add(texture);
         return texture;
@@ -413,8 +413,8 @@ public final class VulkanBackend implements RenderBackend {
         Objects.requireNonNull(options, "options");
         long descriptorSet = allocateDescriptorSet();
         updateDescriptorSet(descriptorSet, imageView, imageSampler, imageLayout);
-        VulkanTexture texture = new VulkanTexture(VK10.VK_NULL_HANDLE, imageView, VK10.VK_NULL_HANDLE,
-                descriptorSet, width, height, false, options);
+        VulkanTexture texture = new VulkanTexture(this, VK10.VK_NULL_HANDLE, imageView,
+                VK10.VK_NULL_HANDLE, descriptorSet, width, height, false, options);
         textures.add(texture);
         return texture;
     }
@@ -446,6 +446,7 @@ public final class VulkanBackend implements RenderBackend {
      *
      * @param drawList commands to render
      * @throws NullPointerException if {@code drawList} is null
+     * @throws IllegalArgumentException if the draw list references a texture owned by another backend
      * @throws IllegalStateException if {@link #beginFrame(VkCommandBuffer)} or {@link #resize(Viewport)}
      *         has not been called
      */
@@ -462,10 +463,17 @@ public final class VulkanBackend implements RenderBackend {
         drawCallCount = 0;
         List<DrawCommand> commands = drawList.commands();
         if (commands.isEmpty()) {
+            batches.clear();
             return;
         }
 
-        ensureVertexCapacity(totalVertexFloats(commands));
+        int vertexFloats = totalVertexFloats(commands);
+        if (vertexFloats == 0) {
+            batches.clear();
+            return;
+        }
+
+        ensureVertexCapacity(vertexFloats);
         mappedVertices.clear();
         collect(commands);
         if (batches.isEmpty()) {
@@ -1370,9 +1378,9 @@ public final class VulkanBackend implements RenderBackend {
         vertexCapacity = 0;
     }
 
-    private static VulkanTexture asVulkanTexture(Texture texture) {
+    private VulkanTexture asVulkanTexture(Texture texture) {
         Objects.requireNonNull(texture, "texture");
-        if (!(texture instanceof VulkanTexture vulkanTexture)) {
+        if (!(texture instanceof VulkanTexture vulkanTexture) || !vulkanTexture.belongsTo(this)) {
             throw new IllegalArgumentException("Texture belongs to a different render backend.");
         }
         return vulkanTexture;

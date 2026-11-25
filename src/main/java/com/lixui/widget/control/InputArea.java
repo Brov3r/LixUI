@@ -34,6 +34,10 @@ public class InputArea extends Input {
     private boolean wrap = true;
     private float verticalScroll;
     private float horizontalScroll;
+    private boolean viewportValid;
+    private int viewportCaret;
+    private String viewportText;
+    private Rect viewportContent = Rect.EMPTY;
 
     /**
      * Creates an empty text area.
@@ -75,6 +79,7 @@ public class InputArea extends Input {
         }
         this.wrap = wrap;
         horizontalScroll = 0;
+        viewportValid = false;
     }
 
     /**
@@ -125,7 +130,7 @@ public class InputArea extends Input {
                 }
                 result.append('\n');
             } else if (codepoint == '\n' || codepoint == '\t'
-                    || !Character.isISOControl(codepoint)) {
+                    || (!Character.isISOControl(codepoint) && !isLoneSurrogate(codepoint))) {
                 result.appendCodePoint(codepoint);
             }
         }
@@ -208,10 +213,10 @@ public class InputArea extends Input {
         }
         TextStyle textStyle = textStyle(content);
         TextLayout layout = font.layoutBlockRelative(displayText(), textStyle);
-        ensureCaretVisible(layout, content, font);
+        int displayCaret = displayIndexForRaw(caretIndex());
+        ensureCaretVisible(layout, content, font, displayCaret);
         float textLeft = content.x() - horizontalScroll;
         float textTop = content.y() - verticalScroll;
-        int displayCaret = displayIndexForRaw(caretIndex());
         Point origin = absolutePosition();
         Rect contentClip = new Rect(origin.x() + content.x(), origin.y() + content.y(),
                 content.width(), content.height());
@@ -429,11 +434,22 @@ public class InputArea extends Input {
                 HorizontalAlignment.LEFT, VerticalAlignment.TOP);
     }
 
-    private void ensureCaretVisible(TextLayout layout, Rect content, Font font) {
+    private void ensureCaretVisible(TextLayout layout, Rect content, Font font, int displayCaret) {
         if (content.isEmpty()) {
             return;
         }
-        Point caret = layout.caretPosition(displayIndexForRaw(caretIndex()));
+        String raw = rawText();
+        if (viewportValid && displayCaret == viewportCaret && raw == viewportText
+                && content.equals(viewportContent)) {
+            // The pointer wheel may have moved the viewport away from the caret; keep it there
+            // until the caret, the value or the viewport actually changes.
+            return;
+        }
+        viewportValid = true;
+        viewportCaret = displayCaret;
+        viewportText = raw;
+        viewportContent = content;
+        Point caret = layout.caretPosition(displayCaret);
         float maxY = Math.max(0, layout.size().height() - content.height());
         if (caret.y() < verticalScroll) {
             verticalScroll = caret.y();

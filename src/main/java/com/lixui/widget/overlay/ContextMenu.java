@@ -811,6 +811,8 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
     private void updateHover() {
         int levelIndex = levelAt(pointerX, pointerY);
         if (levelIndex < 0) {
+            hoveredLevel = -1;
+            hoveredItem = -1;
             return;
         }
         Level level = levels.get(levelIndex);

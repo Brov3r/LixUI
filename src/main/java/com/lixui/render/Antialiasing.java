@@ -17,10 +17,16 @@ public enum Antialiasing {
 
     private final int samples;
     private final float tessellationScale;
+    private final ShapeTessellator tessellator;
 
     Antialiasing(int samples, float tessellationScale) {
         this.samples = samples;
         this.tessellationScale = tessellationScale;
+        tessellator = new ShapeTessellator(tessellationScale);
+    }
+
+    ShapeTessellator tessellator() {
+        return tessellator;
     }
 
     /**

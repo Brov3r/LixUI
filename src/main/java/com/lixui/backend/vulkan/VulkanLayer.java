@@ -169,6 +169,7 @@ public final class VulkanLayer implements RenderBackend {
      *
      * @param drawList UI commands for this frame
      * @throws NullPointerException if the draw list is null
+     * @throws IllegalArgumentException if the draw list references a texture owned by another backend
      * @throws IllegalStateException if the layer is closed, no pass is active, or a list was already recorded
      */
     @Override
@@ -265,7 +266,7 @@ public final class VulkanLayer implements RenderBackend {
      *
      * @param texture texture to release
      * @throws NullPointerException if the texture is null
-     * @throws IllegalArgumentException if the texture belongs to another backend type
+     * @throws IllegalArgumentException if the texture belongs to another backend
      * @throws IllegalStateException if the layer is closed
      */
     @Override

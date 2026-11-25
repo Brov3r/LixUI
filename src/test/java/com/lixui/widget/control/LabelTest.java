@@ -95,6 +95,31 @@ class LabelTest {
     }
 
     @Test
+    void remeasuresAfterTextAndLineLimitChange() {
+        try (WidgetManager manager = manager(new TestBackend())) {
+            Font font = font(manager, 16, FontStyle.REGULAR);
+            float limit = Math.max(font.measure("alpha").width(),
+                    Math.max(font.measure("beta").width(), font.measure("gamma").width())) + 1;
+            Label label = new Label("alpha beta gamma");
+            label.setFont(font);
+
+            Size wrapped = label.measure(LayoutConstraints.loose(limit, 1000));
+            assertEquals(3 * font.lineHeight(), wrapped.height(), 0.001f);
+
+            label.setText("one");
+            Size replaced = label.measure(LayoutConstraints.loose(limit, 1000));
+            assertEquals(font.measure("one").width(), replaced.width(), 0.001f);
+            assertEquals(font.lineHeight(), replaced.height(), 0.001f);
+
+            label.setText("alpha beta gamma");
+            label.measure(LayoutConstraints.loose(limit, 1000));
+            label.setMaxLines(1);
+            Size limited = label.measure(LayoutConstraints.loose(limit, 1000));
+            assertEquals(font.lineHeight(), limited.height(), 0.001f);
+        }
+    }
+
+    @Test
     void drawsWithExplicitColorAndAlignment() {
         TestBackend backend = new TestBackend();
         Color red = Color.rgb(255, 0, 0);

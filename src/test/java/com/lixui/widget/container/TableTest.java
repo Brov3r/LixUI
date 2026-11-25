@@ -20,6 +20,7 @@ import com.lixui.widget.testsupport.TestViewports;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -342,6 +343,69 @@ class TableTest {
                 .filter(ImageCommand.class::isInstance)
                 .count();
         assertEquals(2, icons);
+    }
+
+    @Test
+    void defaultSortRefreshesAfterCellAndRowChanges() {
+        Table table = new Table();
+        table.setBounds(new Rect(0, 0, 300, 200));
+        table.addColumn("Name", 150);
+        Table.Row bravo = table.addRow("Bravo");
+        Table.Row charlie = table.addRow("Charlie");
+        table.setSort(0, Table.SortOrder.ASCENDING);
+        assertEquals(List.of("Bravo", "Charlie"), texts(table.displayedRows()));
+
+        bravo.cell(0).setText("Zulu");
+        assertEquals(List.of("Charlie", "Zulu"), texts(table.displayedRows()));
+
+        bravo.cell(0).setSortValue("Alpha");
+        assertEquals(List.of("Zulu", "Charlie"), texts(table.displayedRows()));
+
+        table.addRow("Beta");
+        assertEquals(List.of("Zulu", "Beta", "Charlie"), texts(table.displayedRows()));
+
+        table.removeRow(charlie);
+        assertEquals(List.of("Zulu", "Beta"), texts(table.displayedRows()));
+    }
+
+    @Test
+    void customComparatorsAreEvaluatedOnEveryRequest() {
+        Table table = new Table();
+        table.setBounds(new Rect(0, 0, 300, 200));
+        Table.Column column = table.addColumn("Name", 150);
+        table.addRow("Alpha");
+        table.addRow("Beta");
+        boolean[] reverse = {false};
+        column.setComparator((first, second) -> {
+            int result = first.cell(0).text().compareTo(second.cell(0).text());
+            return reverse[0] ? -result : result;
+        });
+        table.setSort(0, Table.SortOrder.ASCENDING);
+
+        assertEquals(List.of("Alpha", "Beta"), texts(table.displayedRows()));
+
+        reverse[0] = true;
+        assertEquals(List.of("Beta", "Alpha"), texts(table.displayedRows()));
+
+        column.setComparator(null);
+        assertEquals(List.of("Alpha", "Beta"), texts(table.displayedRows()));
+    }
+
+    @Test
+    void mutableDefaultSortValuesAreEvaluatedOnEveryRequest() {
+        Table table = new Table();
+        table.setBounds(new Rect(0, 0, 300, 200));
+        table.addColumn("Value", 150);
+        Date low = new Date(1);
+        Date high = new Date(2);
+        table.addRow(new Table.Row(Table.Cell.of("low", null, low)));
+        table.addRow(new Table.Row(Table.Cell.of("high", null, high)));
+        table.setSort(0, Table.SortOrder.ASCENDING);
+
+        assertEquals(List.of("low", "high"), texts(table.displayedRows()));
+
+        low.setTime(3);
+        assertEquals(List.of("high", "low"), texts(table.displayedRows()));
     }
 
     private static WidgetManager manager() {

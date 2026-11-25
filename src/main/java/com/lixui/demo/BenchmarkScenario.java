@@ -29,8 +29,7 @@ enum BenchmarkScenario {
             + "the first control is focused after a run.", 5_000,
             List.of(100, 500, 1_000, 2_000, 5_000)),
     /** Table, virtual list and tree row volume. */
-    DATA("Data", "Table, VirtualList and TreeView rows. The tree is capped at "
-            + BenchmarkDataContent.TREE_NODE_LIMIT + " nodes to avoid quadratic insertion.",
+    DATA("Data", "Table, VirtualList and TreeView rows.",
             10_000, List.of(100, 500, 1_000, 5_000, 10_000)),
     /** Charts, donuts, spinners and animated progress bars. */
     GRAPHICS("Graphics", "Sparkline charts, donut charts, spinners and progress bars in fixed tiles.",

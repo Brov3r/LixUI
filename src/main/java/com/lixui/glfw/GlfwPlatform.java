@@ -13,7 +13,8 @@ import java.util.Objects;
 /**
  * A GLFW implementation of clipboard access, cursor changes and URI opening.
  * Standard cursors are created lazily and released by {@link #close()}.
- * The adapter must be closed before its window is destroyed.
+ * The adapter must be closed before its window is destroyed, on the thread that owns the GLFW
+ * event loop.
  */
 public final class GlfwPlatform implements UiPlatform, AutoCloseable {
     private final long window;
@@ -29,8 +30,12 @@ public final class GlfwPlatform implements UiPlatform, AutoCloseable {
      *
      * @param window GLFW window handle
      * @return the adapter, which must be closed before the window is destroyed
+     * @throws IllegalArgumentException if {@code window} is not a valid handle
      */
     public static GlfwPlatform install(long window) {
+        if (window == MemoryUtil.NULL) {
+            throw new IllegalArgumentException("Window handle must not be null.");
+        }
         return new GlfwPlatform(window);
     }
 
@@ -105,7 +110,10 @@ public final class GlfwPlatform implements UiPlatform, AutoCloseable {
             return existing;
         }
         long created = GLFW.glfwCreateStandardCursor(shape(cursor));
-        cursors.put(cursor, created);
+        if (created != MemoryUtil.NULL) {
+            // Do not cache failures so a later request can retry after the platform recovers.
+            cursors.put(cursor, created);
+        }
         return created;
     }
 

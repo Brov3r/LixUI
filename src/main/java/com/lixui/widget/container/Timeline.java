@@ -241,7 +241,7 @@ public class Timeline extends Widget {
             return MIN_ROW_HEIGHT;
         }
         Entry entry = entries.get(index);
-        float width = textWidth();
+        float width = textWidth(entry, font);
         float titleHeight = Math.max(1, font.measure(entry.title(),
                 new TextStyle(width, 0, 1, TextOverflow.ELLIPSIS,
                         HorizontalAlignment.LEFT, VerticalAlignment.TOP)).height());
@@ -291,6 +291,10 @@ public class Timeline extends Widget {
                     new TextStyle(titleWidth, 0, 0, TextOverflow.CLIP,
                             HorizontalAlignment.LEFT, VerticalAlignment.TOP));
         }
+    }
+
+    private float textWidth(Entry entry, Font font) {
+        return Math.max(1, textWidth() - TIME_GAP - font.measure(entry.time()).width());
     }
 
     private float textWidth() {

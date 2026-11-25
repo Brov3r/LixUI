@@ -5,7 +5,6 @@ import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
 import com.lixui.graphics.GradientStop;
 import com.lixui.graphics.Paint;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -21,17 +20,13 @@ class ShapeTessellatorTest {
     private static final Paint SOLID = Paint.solid(RED);
     private static final Paint GRADIENT = Paint.linear(new Point(0, 0), new Point(100, 0),
             new GradientStop(0, RED), new GradientStop(1, BLUE));
-
-    @BeforeEach
-    void resetQuality() {
-        ShapeTessellator.setQuality(1);
-    }
+    private final ShapeTessellator tessellator = new ShapeTessellator(1);
 
     @Test
     void fillsRectangleGradientsWithTrianglesInsideBounds() {
         Rect bounds = new Rect(0, 0, 100, 50);
 
-        List<MeshVertex> vertices = ShapeTessellator.fillRect(bounds, GRADIENT);
+        List<MeshVertex> vertices = tessellator.fillRect(bounds, GRADIENT);
 
         assertTrue(vertices.size() >= 6);
         assertEquals(0, vertices.size() % 3);
@@ -49,7 +44,7 @@ class ShapeTessellatorTest {
                 new Point(100, 100),
                 new Point(0, 100));
 
-        List<MeshVertex> vertices = ShapeTessellator.fillPolygon(square, SOLID);
+        List<MeshVertex> vertices = tessellator.fillPolygon(square, SOLID);
 
         assertEquals(6, vertices.size());
     }
@@ -65,7 +60,7 @@ class ShapeTessellatorTest {
             sector.add(new Point((float) Math.cos(angle) * 50, (float) Math.sin(angle) * 50));
         }
 
-        List<MeshVertex> vertices = ShapeTessellator.fillPolygon(sector, SOLID);
+        List<MeshVertex> vertices = tessellator.fillPolygon(sector, SOLID);
 
         assertTrue(vertices.size() >= 6);
         assertEquals(0, vertices.size() % 3);
@@ -73,11 +68,11 @@ class ShapeTessellatorTest {
 
     @Test
     void buildsCurvedFillsAndRoundedRectangles() {
-        List<MeshVertex> circle = ShapeTessellator.fillEllipse(
+        List<MeshVertex> circle = tessellator.fillEllipse(
                 new Point(50, 50), 40, 30, GRADIENT);
-        List<MeshVertex> arc = ShapeTessellator.fillArc(
+        List<MeshVertex> arc = tessellator.fillArc(
                 new Point(50, 50), 40, 30, 0, (float) (Math.PI / 2), SOLID);
-        List<MeshVertex> rounded = ShapeTessellator.fillRoundedRect(
+        List<MeshVertex> rounded = tessellator.fillRoundedRect(
                 new Rect(0, 0, 100, 60), 12, GRADIENT);
 
         assertTrue(circle.size() >= 6);
@@ -90,11 +85,11 @@ class ShapeTessellatorTest {
 
     @Test
     void buildsStrokesForLinesAndCurves() {
-        List<MeshVertex> line = ShapeTessellator.strokeLine(
+        List<MeshVertex> line = tessellator.strokeLine(
                 new Point(0, 0), new Point(100, 100), 4, SOLID);
-        List<MeshVertex> arc = ShapeTessellator.strokeArc(
+        List<MeshVertex> arc = tessellator.strokeArc(
                 new Point(50, 50), 40, 30, 0, (float) Math.PI, 4, GRADIENT);
-        List<MeshVertex> polygon = ShapeTessellator.strokePolygon(
+        List<MeshVertex> polygon = tessellator.strokePolygon(
                 List.of(new Point(0, 0), new Point(100, 0), new Point(50, 100)), 4, SOLID);
 
         assertTrue(line.size() >= 6);
@@ -107,13 +102,37 @@ class ShapeTessellatorTest {
 
     @Test
     void curvedGradientsUseAdditionalRings() {
-        List<MeshVertex> solid = ShapeTessellator.fillEllipse(
+        List<MeshVertex> solid = tessellator.fillEllipse(
                 new Point(50, 50), 100, 80, SOLID);
-        List<MeshVertex> gradient = ShapeTessellator.fillEllipse(
+        List<MeshVertex> gradient = tessellator.fillEllipse(
                 new Point(50, 50), 100, 80, GRADIENT);
 
         assertTrue(gradient.size() > solid.size());
         assertEquals(0, gradient.size() % 3);
+    }
+
+    @Test
+    void instanceQualityStaysIndependent() {
+        ShapeTessellator low = new ShapeTessellator(0.75f);
+        ShapeTessellator high = new ShapeTessellator(1.5f);
+        Point center = new Point(50, 50);
+
+        int lowBefore = low.fillEllipse(center, 100, 80, SOLID).size();
+        int highVertices = high.fillEllipse(center, 100, 80, SOLID).size();
+        int lowAfter = low.fillEllipse(center, 100, 80, SOLID).size();
+
+        assertTrue(highVertices > lowBefore);
+        assertEquals(lowBefore, lowAfter,
+                "Tessellating with another instance must not change this instance's density.");
+    }
+
+    @Test
+    void rejectsInvalidQuality() {
+        assertThrows(IllegalArgumentException.class, () -> new ShapeTessellator(0));
+        assertThrows(IllegalArgumentException.class, () -> new ShapeTessellator(-1));
+        assertThrows(IllegalArgumentException.class, () -> new ShapeTessellator(Float.NaN));
+        assertThrows(IllegalArgumentException.class,
+                () -> new ShapeTessellator(Float.POSITIVE_INFINITY));
     }
 
     @Test
@@ -124,7 +143,7 @@ class ShapeTessellatorTest {
                 new Point(100, 100),
                 new Point(0, 100));
 
-        List<MeshVertex> vertices = ShapeTessellator.strokePolygon(square, 10, SOLID);
+        List<MeshVertex> vertices = tessellator.strokePolygon(square, 10, SOLID);
 
         assertEquals(24, vertices.size());
         assertEquals(4000, meshArea(vertices), 1);
@@ -132,7 +151,7 @@ class ShapeTessellatorTest {
 
     @Test
     void strokesOpenPathsWithRoundCapsThatDoNotOverlapTheBand() {
-        List<MeshVertex> vertices = ShapeTessellator.strokeLine(
+        List<MeshVertex> vertices = tessellator.strokeLine(
                 new Point(0, 0), new Point(100, 0), 10, SOLID);
 
         double area = meshArea(vertices);
@@ -151,7 +170,7 @@ class ShapeTessellatorTest {
         float outer = 0.128f;
         float sweep = (float) (Math.PI * 2) / 8 - 0.02f;
 
-        List<MeshVertex> vertices = ShapeTessellator.fillRingSector(
+        List<MeshVertex> vertices = tessellator.fillRingSector(
                 center, inner, outer, (float) (-Math.PI / 2), sweep, SOLID);
 
         assertTrue(vertices.size() >= 6);
@@ -174,7 +193,7 @@ class ShapeTessellatorTest {
         List<Point> polygon = ringSectorPolygon(center, inner, outer,
                 (float) (-Math.PI / 2), sweep);
 
-        List<MeshVertex> vertices = ShapeTessellator.fillPolygon(polygon, SOLID);
+        List<MeshVertex> vertices = tessellator.fillPolygon(polygon, SOLID);
 
         assertTrue(vertices.size() >= 6);
         assertEquals(0, vertices.size() % 3);
@@ -199,7 +218,7 @@ class ShapeTessellatorTest {
                     for (float amount : amounts) {
                         float outer = radius * amount;
                         for (float lift : lifts) {
-                            List<MeshVertex> vertices = ShapeTessellator.fillRingSector(
+                            List<MeshVertex> vertices = tessellator.fillRingSector(
                                     center, outer * ratio, outer + lift, start, sweep, SOLID);
                             assertEquals(0, vertices.size() % 3);
                         }
@@ -249,7 +268,7 @@ class ShapeTessellatorTest {
                 List.of(new Point(640.37f, 360.61f), new Point(640.37f, 360.61f)));
 
         for (List<Point> polygon : emptyPolygons) {
-            assertTrue(ShapeTessellator.fillPolygon(polygon, SOLID).isEmpty(),
+            assertTrue(tessellator.fillPolygon(polygon, SOLID).isEmpty(),
                     "An empty polygon must not produce geometry: " + polygon);
         }
     }
@@ -257,24 +276,24 @@ class ShapeTessellatorTest {
     @Test
     void rejectsNonFinitePolygonCoordinates() {
         assertThrows(IllegalArgumentException.class,
-                () -> ShapeTessellator.fillPolygon(
+                () -> tessellator.fillPolygon(
                         List.of(new Point(0, 0), new Point(Float.NaN, 0), new Point(1, 1)),
                         SOLID));
         assertThrows(IllegalArgumentException.class,
-                () -> ShapeTessellator.fillPolygon(
+                () -> tessellator.fillPolygon(
                         List.of(new Point(0, 0), new Point(1, 0), new Point(1, Float.POSITIVE_INFINITY)),
                         SOLID));
         assertThrows(NullPointerException.class,
-                () -> ShapeTessellator.fillPolygon(
+                () -> tessellator.fillPolygon(
                         List.of(new Point(0, 0), new Point(1, 0), null), SOLID));
         assertThrows(NullPointerException.class,
-                () -> ShapeTessellator.fillPolygon(null, SOLID));
+                () -> tessellator.fillPolygon(null, SOLID));
     }
 
     @Test
     void rejectsDegeneratePaths() {
         assertThrows(IllegalArgumentException.class,
-                () -> ShapeTessellator.strokePolyline(
+                () -> tessellator.strokePolyline(
                         List.of(new Point(0, 0), new Point(0, 0)), 4, SOLID));
     }
 }

@@ -58,6 +58,7 @@ public class Input extends Panel {
 
     private static final float DEFAULT_CONTENT_WIDTH = 160;
     private static final int MAX_HISTORY = 200;
+    private static final long MAX_HISTORY_CHARACTERS = 1 << 20;
     private static final double CARET_BLINK_PERIOD = 1.06;
     private static final double CARET_BLINK_HALF_PERIOD = CARET_BLINK_PERIOD / 2;
     private static final double MULTI_CLICK_SECONDS = 0.4;
@@ -876,7 +877,7 @@ public class Input extends Panel {
         }
         if (codepoint < 0 || codepoint > Character.MAX_CODE_POINT
                 || Character.isISOControl(codepoint)
-                || (codepoint >= Character.MIN_SURROGATE && codepoint <= Character.MAX_SURROGATE)) {
+                || isLoneSurrogate(codepoint)) {
             return false;
         }
         if (!allows(codepoint)) {
@@ -1616,10 +1617,25 @@ public class Input extends Panel {
 
     private void pushHistory() {
         undoHistory.push(new EditState(text, caret, anchor));
-        while (undoHistory.size() > MAX_HISTORY) {
-            undoHistory.removeLast();
-        }
+        trimHistory(undoHistory);
         redoHistory.clear();
+    }
+
+    /**
+     * Drops the oldest states so that the undo and redo stacks stay bounded by both the entry count
+     * and the total stored text length, which keeps large documents from pinning whole snapshots.
+     *
+     * @param history undo or redo stack to trim in place
+     */
+    private static void trimHistory(Deque<EditState> history) {
+        long characters = 0;
+        for (EditState state : history) {
+            characters += state.text().length();
+        }
+        while (history.size() > 1
+                && (history.size() > MAX_HISTORY || characters > MAX_HISTORY_CHARACTERS)) {
+            characters -= history.removeLast().text().length();
+        }
     }
 
     private boolean undo() {
@@ -1631,9 +1647,7 @@ public class Input extends Panel {
             return true;
         }
         redoHistory.push(new EditState(text, caret, anchor));
-        while (redoHistory.size() > MAX_HISTORY) {
-            redoHistory.removeLast();
-        }
+        trimHistory(redoHistory);
         restore(state);
         return true;
     }
@@ -1647,9 +1661,7 @@ public class Input extends Panel {
             return true;
         }
         undoHistory.push(new EditState(text, caret, anchor));
-        while (undoHistory.size() > MAX_HISTORY) {
-            undoHistory.removeLast();
-        }
+        trimHistory(undoHistory);
         restore(state);
         return true;
     }
@@ -1854,11 +1866,22 @@ public class Input extends Panel {
                 if (result.isEmpty() || result.charAt(result.length() - 1) != ' ') {
                     result.append(' ');
                 }
-            } else if (!Character.isISOControl(codepoint)) {
+            } else if (!Character.isISOControl(codepoint) && !isLoneSurrogate(codepoint)) {
                 result.appendCodePoint(codepoint);
             }
         }
         return result.toString();
+    }
+
+    /**
+     * Reports whether a code point is an unpaired surrogate.
+     * The stored value is UTF-16, so broken pairs cannot be represented and must be dropped.
+     *
+     * @param codepoint code point to inspect
+     * @return true for a lone surrogate code point
+     */
+    static boolean isLoneSurrogate(int codepoint) {
+        return codepoint >= Character.MIN_SURROGATE && codepoint <= Character.MAX_SURROGATE;
     }
 
     private static String truncateToCodePoints(String value, int maxCodePoints) {

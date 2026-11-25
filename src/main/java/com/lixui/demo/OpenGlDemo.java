@@ -12,7 +12,10 @@ import org.lwjgl.system.MemoryStack;
 import java.nio.IntBuffer;
 
 /**
- * Displays the widget demo rendered with OpenGL 4.5 Core.
+ * Displays the widget demo rendered with OpenGL 3.3 Core.
+ *
+ * <p>The demo requires an OpenGL 3.3 Core capable driver; forward-compatible contexts on newer
+ * versions are accepted.</p>
  */
 public final class OpenGlDemo {
     private OpenGlDemo() {

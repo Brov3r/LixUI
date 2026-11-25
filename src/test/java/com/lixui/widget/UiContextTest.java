@@ -61,6 +61,7 @@ class UiContextTest {
             assertEquals(1, platform.cursorWrites);
             assertSame(Cursor.POINTER, platform.cursor);
         }
+        assertSame(Cursor.DEFAULT, platform.cursor);
     }
 
     @Test

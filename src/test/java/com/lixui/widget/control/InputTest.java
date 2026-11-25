@@ -80,6 +80,20 @@ class InputTest {
     }
 
     @Test
+    void dropsUnpairedSurrogates() {
+        String broken = "a" + (char) 0xD800 + "b" + (char) 0xDC00 + "c";
+        Input input = new Input(broken);
+        assertEquals("abc", input.text());
+
+        input.setText("x" + (char) 0xDC00 + "y");
+        assertEquals("xy", input.text());
+
+        InputArea area = new InputArea();
+        assertTrue(area.insertText("p" + (char) 0xD800 + "q", false));
+        assertEquals("pq", area.text());
+    }
+
+    @Test
     void editsWithSelectionShortcutsAndHistory() {
         ClipboardPlatform platform = new ClipboardPlatform();
         try (WidgetManager manager = manager(new TestBackend(), platform)) {

@@ -357,6 +357,25 @@ class ScrollPanelTest {
     }
 
     @Test
+    void scrollBarInsetsShiftTheTracksAwayFromTheEdges() {
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
+        manager.resize(VIEWPORT);
+        ScrollPanel panel = new ScrollPanel();
+        panel.setBounds(PANEL_BOUNDS);
+        Widget content = new Widget() { };
+        content.setBounds(new Rect(0, 0, 400, 600));
+        panel.setContent(content);
+        panel.setScrollBarInsets(3, 10, 12, 5);
+        manager.add(panel);
+        manager.render();
+
+        assertEquals(new Rect(177, 8, 8, 117),
+                bar(panel, ScrollBar.Orientation.VERTICAL).bounds());
+        assertEquals(new Rect(10, 125, 167, 8),
+                bar(panel, ScrollBar.Orientation.HORIZONTAL).bounds());
+    }
+
+    @Test
     void removesScrollbarsWhenContentFits() {
         WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         manager.resize(VIEWPORT);

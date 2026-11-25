@@ -88,6 +88,30 @@ class RichLabelTest {
     }
 
     @Test
+    void remeasuresAfterAddingRunsAndChangingTheInheritedFont() {
+        try (WidgetManager manager = manager(new TestBackend())) {
+            Font small = font(manager, 16, FontStyle.REGULAR);
+            Font large = font(manager, 24, FontStyle.REGULAR);
+            RichLabel label = new RichLabel();
+            label.setFont(small);
+            label.add("alpha", Color.WHITE);
+
+            Size first = label.measure(LayoutConstraints.loose(1000, 1000));
+            assertEquals(small.lineHeight(), first.height(), 0.01f);
+
+            label.add(" beta", Color.WHITE);
+            Size extended = label.measure(LayoutConstraints.loose(1000, 1000));
+            float expectedWidth = first.width() + small.measure(" ").width()
+                    + small.measure("beta").width();
+            assertEquals(expectedWidth, extended.width(), 0.01f);
+
+            label.setFont(large);
+            Size enlarged = label.measure(LayoutConstraints.loose(1000, 1000));
+            assertEquals(large.lineHeight(), enlarged.height(), 0.01f);
+        }
+    }
+
+    @Test
     void drawsShadowsDecorationsAndSpanColors() {
         TestBackend backend = new TestBackend();
         Color red = Color.rgb(255, 0, 0);

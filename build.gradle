@@ -10,6 +10,7 @@ group = 'com.lixui'
 // Artifacts go into build/ unless BUILD_PATH points somewhere else.
 def customBuildPath = providers.environmentVariable('BUILD_PATH').orNull ?: layout.buildDirectory.get().asFile
 def lwjglVersion = libs.versions.lwjgl.get()
+def slf4jVersion = libs.versions.slf4j.get()
 def lwjglModules = ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl', 'lwjgl-stb']
 def lwjglApiModules = lwjglModules + ['lwjgl-vulkan']
 def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
@@ -113,23 +114,24 @@ tasks.withType(Jar).configureEach {
     }
 }
 
-// The fat JAR replaces the thin library JAR.
+// Project dependencies use Gradle's normal Java variants; the published JAR shades private code.
 tasks.named('jar') {
-    enabled = false
+    archiveClassifier.set('thin')
 }
 
 tasks.named('shadowJar') {
     group = 'build'
-    description = 'Builds the self-contained JAR with all non-LWJGL dependencies.'
+    description = 'Builds the library with its private SVG implementation.'
     archiveClassifier.set('')
 
     duplicatesStrategy = DuplicatesStrategy.INCLUDE
     mergeServiceFiles()
     relocate 'com.github.weisj.jsvg', 'com.lixui.internal.jsvg'
 
-    // LWJGL belongs to the host application; bundling it would cause duplicate classes.
+    // Native bindings and the logging facade must use the host application's class identity.
     dependencies {
         exclude(dependency('org.lwjgl:.*'))
+        exclude(dependency('org.slf4j:slf4j-api'))
     }
 
     exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'META-INF/INDEX.LIST',
@@ -291,6 +293,11 @@ publishing {
                     bom.appendNode('scope', 'import')
 
                     Node dependencies = root.appendNode('dependencies')
+                    Node logging = dependencies.appendNode('dependency')
+                    logging.appendNode('groupId', 'org.slf4j')
+                    logging.appendNode('artifactId', 'slf4j-api')
+                    logging.appendNode('version', slf4jVersion)
+                    logging.appendNode('scope', 'compile')
                     lwjglApiModules.each { String artifactId ->
                         Node dependency = dependencies.appendNode('dependency')
                         dependency.appendNode('groupId', 'org.lwjgl')

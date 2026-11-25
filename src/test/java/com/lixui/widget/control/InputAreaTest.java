@@ -6,6 +6,7 @@ import com.lixui.input.Key;
 import com.lixui.input.Modifiers;
 import com.lixui.input.event.CharTyped;
 import com.lixui.input.event.KeyPressed;
+import com.lixui.input.event.PointerScrolled;
 import com.lixui.render.Viewport;
 import com.lixui.render.command.DrawCommand;
 import com.lixui.render.command.RoundedRectCommand;
@@ -100,6 +101,40 @@ class InputAreaTest {
                 bottom = Math.max(bottom, glyph.bounds().bottom());
             }
             assertTrue(bottom - top > font.lineHeight() * 0.75f);
+        }
+    }
+
+    @Test
+    void keepsTheViewportWhereTheWheelScrolledIt() {
+        Optional<FontData> data = SystemFonts.findDefault();
+        Assumptions.assumeTrue(data.isPresent(), "No readable system font is installed.");
+        try (WidgetManager manager = manager(new TestBackend())) {
+            Font font = manager.context().createFont(data.get(), 16);
+            manager.setDefaultFont(font);
+            StringBuilder text = new StringBuilder();
+            for (int line = 0; line < 40; line++) {
+                text.append("line ").append(line);
+                if (line < 39) {
+                    text.append('\n');
+                }
+            }
+            InputArea area = new InputArea(text.toString());
+            area.setBounds(new Rect(0, 0, 240, 120));
+            manager.add(area);
+            manager.focus(area);
+            manager.render();
+
+            area.setCaretIndex(0);
+            manager.render();
+            assertEquals(0, area.verticalScrollOffset(), 0.001f);
+
+            manager.handle(new PointerScrolled(20, 20, 0, -1));
+            float scrolled = area.verticalScrollOffset();
+            assertTrue(scrolled > 0, "The wheel did not scroll the area.");
+
+            manager.render();
+            assertEquals(scrolled, area.verticalScrollOffset(), 0.001f,
+                    "Rendering scrolled the area back to the caret.");
         }
     }
 

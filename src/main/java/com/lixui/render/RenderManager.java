@@ -44,6 +44,7 @@ public final class RenderManager {
     private Viewport viewport;
     private Rect logicalViewport = Rect.EMPTY;
     private Antialiasing antialiasing = Antialiasing.LOW;
+    private ShapeTessellator tessellator = Antialiasing.LOW.tessellator();
     private float opacity = 1;
     private boolean drawing;
 
@@ -65,9 +66,10 @@ public final class RenderManager {
      * @throws NullPointerException if {@code viewport} is null
      */
     public void resize(Viewport viewport) {
-        this.viewport = Objects.requireNonNull(viewport, "viewport");
-        logicalViewport = new Rect(0, 0, viewport.logicalWidth(), viewport.logicalHeight());
+        Objects.requireNonNull(viewport, "viewport");
         backend.resize(viewport);
+        this.viewport = viewport;
+        logicalViewport = new Rect(0, 0, viewport.logicalWidth(), viewport.logicalHeight());
     }
 
     /**
@@ -94,7 +96,7 @@ public final class RenderManager {
         }
         transforms.clear();
         transforms.push(Transform.IDENTITY);
-        ShapeTessellator.setQuality(antialiasing.tessellationScale());
+        tessellator = antialiasing.tessellator();
         drawList.reset(logicalViewport);
         drawing = true;
     }
@@ -923,7 +925,7 @@ public final class RenderManager {
         } else if (backend.supportsAnalyticShapes() && ShapeCommand.supportsPaint(paint)) {
             drawList.shape(bounds, 0, false, paint, transform);
         } else {
-            drawMesh(ShapeTessellator.fillRect(bounds, paint));
+            drawMesh(tessellator.fillRect(bounds, paint));
         }
     }
 
@@ -951,7 +953,7 @@ public final class RenderManager {
         } else if (backend.supportsAnalyticShapes() && ShapeCommand.supportsPaint(paint)) {
             drawList.shape(bounds, radius, false, paint, transform);
         } else {
-            drawMesh(ShapeTessellator.fillRoundedRect(bounds, radius, paint));
+            drawMesh(tessellator.fillRoundedRect(bounds, radius, paint));
         }
     }
 
@@ -990,7 +992,7 @@ public final class RenderManager {
             target.shape(new Rect(center.x() - radiusX, center.y() - radiusY, radiusX * 2, radiusY * 2),
                     0, true, paint, currentTransform());
         } else {
-            drawMesh(ShapeTessellator.fillEllipse(center, radiusX, radiusY, paint));
+            drawMesh(tessellator.fillEllipse(center, radiusX, radiusY, paint));
         }
     }
 
@@ -1014,7 +1016,7 @@ public final class RenderManager {
         Objects.requireNonNull(paint, "paint");
         paint = applyOpacity(paint);
         ShapeTessellator.validateArc(center, radiusX, radiusY, startAngle, sweepAngle);
-        drawMesh(ShapeTessellator.fillArc(
+        drawMesh(tessellator.fillArc(
                 center, radiusX, radiusY, startAngle, sweepAngle, paint));
     }
 
@@ -1041,7 +1043,7 @@ public final class RenderManager {
         paint = applyOpacity(paint);
         ShapeTessellator.validateRingSector(center, innerRadius, outerRadius,
                 startAngle, sweepAngle);
-        drawMesh(ShapeTessellator.fillRingSector(center, innerRadius, outerRadius,
+        drawMesh(tessellator.fillRingSector(center, innerRadius, outerRadius,
                 startAngle, sweepAngle, paint));
     }
 
@@ -1059,7 +1061,7 @@ public final class RenderManager {
         Objects.requireNonNull(points, "points");
         Objects.requireNonNull(paint, "paint");
         paint = applyOpacity(paint);
-        drawMesh(ShapeTessellator.fillPolygon(points, paint));
+        drawMesh(tessellator.fillPolygon(points, paint));
     }
 
     /**
@@ -1077,7 +1079,7 @@ public final class RenderManager {
         Objects.requireNonNull(paint, "paint");
         paint = applyOpacity(paint);
         ShapeTessellator.validateWidth(width);
-        drawMesh(ShapeTessellator.strokeRect(bounds, width, paint));
+        drawMesh(tessellator.strokeRect(bounds, width, paint));
     }
 
     /**
@@ -1097,7 +1099,7 @@ public final class RenderManager {
         paint = applyOpacity(paint);
         ShapeTessellator.validateRadius(radius);
         ShapeTessellator.validateWidth(width);
-        drawMesh(ShapeTessellator.strokeRoundedRect(bounds, radius, width, paint));
+        drawMesh(tessellator.strokeRoundedRect(bounds, radius, width, paint));
     }
 
     /**
@@ -1117,7 +1119,7 @@ public final class RenderManager {
         Objects.requireNonNull(paint, "paint");
         paint = applyOpacity(paint);
         ShapeTessellator.validateWidth(width);
-        drawMesh(ShapeTessellator.strokeLine(start, end, width, paint));
+        drawMesh(tessellator.strokeLine(start, end, width, paint));
     }
 
     /**
@@ -1153,7 +1155,7 @@ public final class RenderManager {
         paint = applyOpacity(paint);
         ShapeTessellator.validateEllipse(center, radiusX, radiusY);
         ShapeTessellator.validateWidth(width);
-        drawMesh(ShapeTessellator.strokeEllipse(center, radiusX, radiusY, width, paint));
+        drawMesh(tessellator.strokeEllipse(center, radiusX, radiusY, width, paint));
     }
 
     /**
@@ -1178,7 +1180,7 @@ public final class RenderManager {
         paint = applyOpacity(paint);
         ShapeTessellator.validateArc(center, radiusX, radiusY, startAngle, sweepAngle);
         ShapeTessellator.validateWidth(width);
-        drawMesh(ShapeTessellator.strokeArc(
+        drawMesh(tessellator.strokeArc(
                 center, radiusX, radiusY, startAngle, sweepAngle, width, paint));
     }
 
@@ -1197,7 +1199,7 @@ public final class RenderManager {
         Objects.requireNonNull(paint, "paint");
         paint = applyOpacity(paint);
         ShapeTessellator.validateWidth(width);
-        drawMesh(ShapeTessellator.strokePolyline(points, width, paint));
+        drawMesh(tessellator.strokePolyline(points, width, paint));
     }
 
     /**
@@ -1215,7 +1217,7 @@ public final class RenderManager {
         Objects.requireNonNull(paint, "paint");
         paint = applyOpacity(paint);
         ShapeTessellator.validateWidth(width);
-        drawMesh(ShapeTessellator.strokePolygon(points, width, paint));
+        drawMesh(tessellator.strokePolygon(points, width, paint));
     }
 
     /**
@@ -1229,7 +1231,7 @@ public final class RenderManager {
     public void pushMaskRect(Rect bounds) {
         Objects.requireNonNull(bounds, "bounds");
         DrawList target = list();
-        target.pushMask(transformVertices(ShapeTessellator.fillRect(bounds, MASK_PAINT)));
+        target.pushMask(transformVertices(tessellator.fillRect(bounds, MASK_PAINT)));
     }
 
     /**
@@ -1245,7 +1247,7 @@ public final class RenderManager {
         Objects.requireNonNull(bounds, "bounds");
         ShapeTessellator.validateRadius(radius);
         DrawList target = list();
-        target.pushMask(transformVertices(ShapeTessellator.fillRoundedRect(bounds, radius, MASK_PAINT)));
+        target.pushMask(transformVertices(tessellator.fillRoundedRect(bounds, radius, MASK_PAINT)));
     }
 
     /**
@@ -1263,7 +1265,7 @@ public final class RenderManager {
         ShapeTessellator.validateEllipse(center, radiusX, radiusY);
         DrawList target = list();
         target.pushMask(transformVertices(
-                ShapeTessellator.fillEllipse(center, radiusX, radiusY, MASK_PAINT)));
+                tessellator.fillEllipse(center, radiusX, radiusY, MASK_PAINT)));
     }
 
     /**
@@ -1279,7 +1281,7 @@ public final class RenderManager {
     public void pushMaskPolygon(List<Point> points) {
         Objects.requireNonNull(points, "points");
         DrawList target = list();
-        target.pushMask(transformVertices(ShapeTessellator.fillPolygon(points, MASK_PAINT)));
+        target.pushMask(transformVertices(tessellator.fillPolygon(points, MASK_PAINT)));
     }
 
     /**

@@ -203,7 +203,7 @@ public class TreeView extends Widget {
             Node child = new Node(owner, Objects.requireNonNull(label, "label"));
             child.parent = this;
             children.add(child);
-            owner.onStructureChanged();
+            owner.invalidateRows();
             return child;
         }
     }
@@ -228,6 +228,7 @@ public class TreeView extends Widget {
     private Consumer<Node> selectionListener;
     private Node selectedNode;
     private boolean syncingSelection;
+    private boolean rowsDirty = true;
     private float rowHeight = DEFAULT_ROW_HEIGHT;
     private float indent = DEFAULT_INDENT;
     private float expansionDuration = DEFAULT_EXPANSION_SECONDS;
@@ -276,7 +277,7 @@ public class TreeView extends Widget {
         node.expanded = expanded;
         node.expandedAmount = expanded ? 1 : 0;
         roots.add(node);
-        onStructureChanged();
+        invalidateRows();
         return node;
     }
 
@@ -286,6 +287,7 @@ public class TreeView extends Widget {
      * @return the flattened visible row count
      */
     public int visibleRowCount() {
+        ensureRows();
         return rows.size();
     }
 
@@ -297,6 +299,7 @@ public class TreeView extends Widget {
      * @throws IllegalArgumentException if the index is out of range
      */
     public Node nodeAt(int visibleIndex) {
+        ensureRows();
         if (visibleIndex < 0 || visibleIndex >= rows.size()) {
             throw new IllegalArgumentException("Visible row index is out of range.");
         }
@@ -312,6 +315,7 @@ public class TreeView extends Widget {
      */
     public int indexOf(Node node) {
         Objects.requireNonNull(node, "node");
+        ensureRows();
         for (int index = 0; index < rows.size(); index++) {
             if (rows.get(index).node == node) {
                 return index;
@@ -504,6 +508,7 @@ public class TreeView extends Widget {
      * @return the content height in logical UI units
      */
     public float contentHeight() {
+        ensureRows();
         return list.contentHeight();
     }
 
@@ -512,6 +517,7 @@ public class TreeView extends Widget {
      */
     @Override
     protected void onLayout() {
+        ensureRows();
         list.layout(new Rect(0, 0, bounds().width(), bounds().height()));
     }
 
@@ -558,6 +564,7 @@ public class TreeView extends Widget {
      */
     @Override
     protected void onDraw(RenderManager renderer, FrameInfo frame) {
+        ensureRows();
         ensureIcons();
     }
 
@@ -573,6 +580,7 @@ public class TreeView extends Widget {
         if (!node.hasChildren()) {
             return;
         }
+        ensureRows();
         float target = expanded ? 1 : 0;
         if (node.expanded == expanded && Math.abs(node.expandedAmount - target) < ANIMATION_SNAP) {
             return;
@@ -605,11 +613,23 @@ public class TreeView extends Widget {
                 });
     }
 
+    // Flattening is deferred so bulk insertion stays linear; the row list rebuilds once on demand.
+    private void invalidateRows() {
+        rowsDirty = true;
+    }
+
+    private void ensureRows() {
+        if (rowsDirty) {
+            onStructureChanged();
+        }
+    }
+
     private void onStructureChanged() {
         onStructureChanged(null);
     }
 
     private void onStructureChanged(Node fallback) {
+        rowsDirty = false;
         Node before = selectedNode;
         Node previous = selectedNode;
         rows.clear();
@@ -860,6 +880,7 @@ public class TreeView extends Widget {
     }
 
     private int activeRowIndex() {
+        ensureRows();
         int index = list.activeIndex();
         if (index < 0 || index >= rows.size()) {
             index = selectedNode == null ? -1 : indexOf(selectedNode);
@@ -875,6 +896,7 @@ public class TreeView extends Widget {
     }
 
     private boolean moveSelection(int delta) {
+        ensureRows();
         if (rows.isEmpty()) {
             return false;
         }
@@ -894,6 +916,7 @@ public class TreeView extends Widget {
     }
 
     private boolean moveToEdge(boolean first) {
+        ensureRows();
         int index = findSelectable(first ? 0 : rows.size() - 1, first ? 1 : -1);
         if (index >= 0) {
             selectVisible(index);
@@ -902,6 +925,7 @@ public class TreeView extends Widget {
     }
 
     private boolean movePage(int direction) {
+        ensureRows();
         if (rows.isEmpty()) {
             return false;
         }

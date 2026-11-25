@@ -390,8 +390,7 @@ public class Popup extends Panel {
      */
     @Override
     protected boolean onPointerPress(float x, float y, MouseButton button, Modifiers modifiers) {
-        if (button == MouseButton.LEFT && closeOnOutsideClick
-                && !popupBounds.contains(x, y)) {
+        if (closeOnOutsideClick && !popupBounds.contains(x, y)) {
             close();
             return true;
         }

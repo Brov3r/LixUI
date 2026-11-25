@@ -24,19 +24,24 @@ final class ShapeTessellator {
     private static final int MAX_RINGS = 24;
     private static final float MITER_LIMIT = 4;
     private static final float CORNER_TOLERANCE = 0.1f;
-    private static float quality = 1;
+    private final float quality;
 
-    private ShapeTessellator() {
-    }
-
-    static void setQuality(float value) {
-        if (!Float.isFinite(value) || value <= 0) {
+    /**
+     * Creates a tessellator with the supplied quality multiplier.
+     * Each instance keeps its own quality, so tessellators used by different render managers
+     * cannot affect each other.
+     *
+     * @param quality multiplier applied to curve, ring and gradient segment counts
+     * @throws IllegalArgumentException if {@code quality} is non-finite or not positive
+     */
+    ShapeTessellator(float quality) {
+        if (!Float.isFinite(quality) || quality <= 0) {
             throw new IllegalArgumentException("Tessellation quality must be finite and positive.");
         }
-        quality = value;
+        this.quality = quality;
     }
 
-    static List<MeshVertex> fillRect(Rect bounds, Paint paint) {
+    List<MeshVertex> fillRect(Rect bounds, Paint paint) {
         if (bounds.isEmpty()) {
             return List.of();
         }
@@ -70,7 +75,7 @@ final class ShapeTessellator {
         return vertices;
     }
 
-    static List<MeshVertex> fillRoundedRect(Rect bounds, float radius, Paint paint) {
+    List<MeshVertex> fillRoundedRect(Rect bounds, float radius, Paint paint) {
         if (bounds.isEmpty()) {
             return List.of();
         }
@@ -85,7 +90,7 @@ final class ShapeTessellator {
         return vertices;
     }
 
-    static List<MeshVertex> fillEllipse(Point center, float radiusX, float radiusY, Paint paint) {
+    List<MeshVertex> fillEllipse(Point center, float radiusX, float radiusY, Paint paint) {
         int segments = ellipseSegments(radiusX, radiusY, TWO_PI);
         List<Point> path = ellipsePath(center, radiusX, radiusY, segments);
         List<MeshVertex> vertices = new ArrayList<>();
@@ -97,8 +102,8 @@ final class ShapeTessellator {
         return vertices;
     }
 
-    static List<MeshVertex> fillArc(Point center, float radiusX, float radiusY,
-                                    float startAngle, float sweepAngle, Paint paint) {
+    List<MeshVertex> fillArc(Point center, float radiusX, float radiusY,
+                             float startAngle, float sweepAngle, Paint paint) {
         if (isFullCircle(sweepAngle)) {
             return fillEllipse(center, radiusX, radiusY, paint);
         }
@@ -114,7 +119,7 @@ final class ShapeTessellator {
         return vertices;
     }
 
-    static List<MeshVertex> fillPolygon(List<Point> points, Paint paint) {
+    List<MeshVertex> fillPolygon(List<Point> points, Paint paint) {
         List<Point> polygon = normalizePolygon(points);
         if (polygon.size() < 3) {
             return List.of();
@@ -144,8 +149,8 @@ final class ShapeTessellator {
      * @throws NullPointerException if {@code center} is null
      * @throws IllegalArgumentException if a radius or angle is invalid
      */
-    static List<MeshVertex> fillRingSector(Point center, float innerRadius, float outerRadius,
-                                           float startAngle, float sweepAngle, Paint paint) {
+    List<MeshVertex> fillRingSector(Point center, float innerRadius, float outerRadius,
+                                    float startAngle, float sweepAngle, Paint paint) {
         validateRingSector(center, innerRadius, outerRadius, startAngle, sweepAngle);
         if (innerRadius <= EPSILON) {
             return fillArc(center, outerRadius, outerRadius, startAngle, sweepAngle, paint);
@@ -187,26 +192,26 @@ final class ShapeTessellator {
         }
     }
 
-    static List<MeshVertex> strokeLine(Point start, Point end, float width, Paint paint) {
+    List<MeshVertex> strokeLine(Point start, Point end, float width, Paint paint) {
         return strokePath(List.of(start, end), false, width, paint);
     }
 
-    static List<MeshVertex> strokeRect(Rect bounds, float width, Paint paint) {
+    List<MeshVertex> strokeRect(Rect bounds, float width, Paint paint) {
         return strokePath(rectPath(bounds), true, width, paint);
     }
 
-    static List<MeshVertex> strokeRoundedRect(Rect bounds, float radius, float width, Paint paint) {
+    List<MeshVertex> strokeRoundedRect(Rect bounds, float radius, float width, Paint paint) {
         return strokePath(roundedRectPath(bounds, radius), true, width, paint);
     }
 
-    static List<MeshVertex> strokeEllipse(Point center, float radiusX, float radiusY,
-                                          float width, Paint paint) {
+    List<MeshVertex> strokeEllipse(Point center, float radiusX, float radiusY,
+                                   float width, Paint paint) {
         int segments = ellipseSegments(radiusX, radiusY, TWO_PI);
         return strokePath(ellipsePath(center, radiusX, radiusY, segments), true, width, paint);
     }
 
-    static List<MeshVertex> strokeArc(Point center, float radiusX, float radiusY,
-                                      float startAngle, float sweepAngle, float width, Paint paint) {
+    List<MeshVertex> strokeArc(Point center, float radiusX, float radiusY,
+                               float startAngle, float sweepAngle, float width, Paint paint) {
         if (isFullCircle(sweepAngle)) {
             return strokeEllipse(center, radiusX, radiusY, width, paint);
         }
@@ -215,11 +220,11 @@ final class ShapeTessellator {
         return strokePath(path, false, width, paint);
     }
 
-    static List<MeshVertex> strokePolyline(List<Point> points, float width, Paint paint) {
+    List<MeshVertex> strokePolyline(List<Point> points, float width, Paint paint) {
         return strokePath(points, false, width, paint);
     }
 
-    static List<MeshVertex> strokePolygon(List<Point> points, float width, Paint paint) {
+    List<MeshVertex> strokePolygon(List<Point> points, float width, Paint paint) {
         return strokePath(points, true, width, paint);
     }
 
@@ -256,8 +261,8 @@ final class ShapeTessellator {
         }
     }
 
-    private static List<MeshVertex> strokePath(List<Point> input, boolean closed,
-                                               float width, Paint paint) {
+    private List<MeshVertex> strokePath(List<Point> input, boolean closed,
+                                        float width, Paint paint) {
         validateWidth(width);
         List<Point> points = removeShortSegments(dedupeConsecutive(input), closed);
         if (points.size() < 2) {
@@ -345,8 +350,8 @@ final class ShapeTessellator {
     /**
      * Fills a round cap with a half disc that only touches the stroke band instead of covering it.
      */
-    private static void addCap(List<MeshVertex> vertices, Point center, Point first,
-                               Point toward, Paint paint) {
+    private void addCap(List<MeshVertex> vertices, Point center, Point first,
+                        Point toward, Paint paint) {
         float radius = distance(center, first);
         float outwardX = center.x() - toward.x();
         float outwardY = center.y() - toward.y();
@@ -388,7 +393,7 @@ final class ShapeTessellator {
         return (float) Math.hypot(second.x() - first.x(), second.y() - first.y());
     }
 
-    private static int capSegments(float radius) {
+    private int capSegments(float radius) {
         return Math.clamp((int) Math.ceil(radius * 2 * quality), 4, 32);
     }
 
@@ -409,8 +414,8 @@ final class ShapeTessellator {
         }
     }
 
-    private static void addPathRings(List<MeshVertex> vertices, Point center,
-                                     List<Point> path, Paint paint) {
+    private void addPathRings(List<MeshVertex> vertices, Point center,
+                              List<Point> path, Paint paint) {
         int rings = ringCount(path.size());
         List<Point> previous = null;
         for (int ring = 1; ring <= rings; ring++) {
@@ -430,10 +435,10 @@ final class ShapeTessellator {
         }
     }
 
-    private static void addEllipseRings(List<MeshVertex> vertices, Point center,
-                                        float radiusX, float radiusY,
-                                        float startAngle, float sweepAngle,
-                                        int segments, boolean closed, Paint paint) {
+    private void addEllipseRings(List<MeshVertex> vertices, Point center,
+                                 float radiusX, float radiusY,
+                                 float startAngle, float sweepAngle,
+                                 int segments, boolean closed, Paint paint) {
         int rings = ringCount(Math.max(radiusX, radiusY));
         List<Point> previous = null;
         for (int ring = 1; ring <= rings; ring++) {
@@ -477,7 +482,7 @@ final class ShapeTessellator {
         }
     }
 
-    private static int ringCount(float size) {
+    private int ringCount(float size) {
         return Math.clamp((int) Math.ceil(size / 10 * quality), MIN_RINGS, MAX_RINGS);
     }
 
@@ -633,7 +638,7 @@ final class ShapeTessellator {
                 new Point(bounds.x(), bounds.bottom()));
     }
 
-    private static List<Point> roundedRectPath(Rect bounds, float radius) {
+    private List<Point> roundedRectPath(Rect bounds, float radius) {
         validateRadius(radius);
         float clamped = Math.min(radius, Math.min(bounds.width(), bounds.height()) / 2);
         if (clamped <= 0) {
@@ -708,7 +713,7 @@ final class ShapeTessellator {
         return result;
     }
 
-    private static int gradientSteps(Rect bounds) {
+    private int gradientSteps(Rect bounds) {
         int steps = (int) Math.ceil(Math.max(bounds.width(), bounds.height()) / 16 * quality);
         return Math.clamp(steps, 4, MAX_GRADIENT_STEPS);
     }
@@ -717,14 +722,14 @@ final class ShapeTessellator {
      * Keeps a quarter circle under the sagitta tolerance, so small corner radii no longer turn
      * into two or three visible facets.
      */
-    private static int cornerSegments(float radius) {
+    private int cornerSegments(float radius) {
         float ratio = Math.min(CORNER_TOLERANCE / (Math.max(radius, EPSILON) * quality), 0.9f);
         double step = 2 * Math.acos(1 - ratio);
         int segments = (int) Math.ceil(Math.PI / 2 / step);
         return Math.clamp(segments, 3, 48);
     }
 
-    private static int ellipseSegments(float radiusX, float radiusY, float sweep) {
+    private int ellipseSegments(float radiusX, float radiusY, float sweep) {
         float circumference = (float) (Math.PI * (radiusX + radiusY));
         float length = circumference * (sweep / TWO_PI);
         int segments = (int) Math.ceil(length / 6 * quality);

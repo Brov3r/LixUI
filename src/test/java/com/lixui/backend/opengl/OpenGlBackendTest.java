@@ -25,6 +25,8 @@ import org.lwjgl.system.MemoryStack;
 import java.nio.ByteBuffer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OpenGlBackendTest {
@@ -53,6 +55,7 @@ class OpenGlBackendTest {
                 Texture rows = backend.createTexture(new ImageData(1, 2, new byte[]{
                         -1, 0, 0, -1, 0, 0, -1, -1}));
                 assertEquals(8, GL11.glGetInteger(GL11.GL_UNPACK_ALIGNMENT));
+                assertEquals(GL11.GL_NO_ERROR, GL11.glGetError(), "Texture upload must not raise GL errors.");
                 GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 4);
                 clear();
                 renderer.begin();
@@ -60,6 +63,8 @@ class OpenGlBackendTest {
                 renderer.end();
                 assertPixel(16, 2, Color.rgb(255, 0, 0), 1);
                 assertPixel(16, 29, Color.rgb(0, 0, 255), 1);
+                assertEquals(GL11.GL_NO_ERROR, GL11.glGetError(),
+                        "Default framebuffer drawing must not raise GL errors.");
                 verifyGradients(renderer);
                 Texture nearest = MipmapScenario.stripes(renderer, TextureFilter.NEAREST);
                 Texture linear = MipmapScenario.stripes(renderer, TextureFilter.LINEAR);
@@ -85,6 +90,29 @@ class OpenGlBackendTest {
                 assertPixel(15, 15, Color.WHITE, 1);
                 assertPixel(42, 42, Color.WHITE, 1);
                 assertEquals(0, pixel(70, 70, 3));
+                try (OpenGlBackend foreign = new OpenGlBackend()) {
+                    Texture foreignTexture = foreign.createTexture(new ImageData(1, 1,
+                            new byte[]{(byte) 255, (byte) 255, (byte) 255, (byte) 255}));
+                    int foreignId = ((GlTexture) foreignTexture).id();
+                    assertThrows(IllegalArgumentException.class,
+                            () -> backend.destroyTexture(foreignTexture));
+                    assertTrue(GL11.glIsTexture(foreignId),
+                            "Owned textures from another backend must not be deleted.");
+                    int hostTexture = GL11.glGenTextures();
+                    GL11.glBindTexture(GL11.GL_TEXTURE_2D, hostTexture);
+                    GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+                    try {
+                        Texture wrapped = foreign.wrapTexture(hostTexture, 1, 1);
+                        backend.destroyTexture(wrapped);
+                        assertTrue(GL11.glIsTexture(hostTexture),
+                                "Wrapped host textures must be ignored.");
+                    } finally {
+                        GL11.glDeleteTextures(hostTexture);
+                    }
+                    foreign.destroyTexture(foreignTexture);
+                    assertFalse(GL11.glIsTexture(foreignId),
+                            "Owned textures must be deleted by their backend.");
+                }
                 assertEquals(GL11.GL_NO_ERROR, GL11.glGetError());
             }
         } finally {

@@ -8,6 +8,7 @@ import com.lixui.render.TextureOptions;
 import com.lixui.render.Viewport;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 
@@ -137,9 +138,12 @@ public final class OpenGlLayer implements RenderBackend {
 
             GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, state.drawFramebuffer());
             state.prepareDrawing();
+            // The UI shader declares a single output, so other host attachments must not be written.
+            state.restrictToFirstDrawBuffer();
             GL11.glViewport(0, 0, width, height);
             GL20.glUseProgram(program);
             GL30.glBindVertexArray(vertexArray);
+            GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTexture);
             GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
             drawCalls++;
@@ -190,7 +194,7 @@ public final class OpenGlLayer implements RenderBackend {
      *
      * @param texture image to release
      * @throws NullPointerException if the texture is null
-     * @throws IllegalArgumentException if the texture belongs to another backend type
+     * @throws IllegalArgumentException if the texture belongs to another backend
      * @throws IllegalStateException if the layer is closed
      */
     @Override

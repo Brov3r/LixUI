@@ -543,6 +543,32 @@ class RenderManagerTest {
     }
 
     @Test
+    void interleavedFramesKeepIndependentTessellationQuality() {
+        TestBackend coarseBackend = new TestBackend();
+        TestBackend denseBackend = new TestBackend();
+        RenderManager coarse = new RenderManager(coarseBackend);
+        RenderManager dense = new RenderManager(denseBackend);
+        coarse.resize(VIEWPORT);
+        dense.resize(VIEWPORT);
+        coarse.setAntialiasing(Antialiasing.OFF);
+        dense.setAntialiasing(Antialiasing.HIGH);
+
+        coarse.begin();
+        dense.begin();
+        coarse.fillCircle(new Point(100, 100), 50, Paint.solid(RED));
+        dense.fillCircle(new Point(100, 100), 50, Paint.solid(RED));
+        coarse.end();
+        dense.end();
+
+        int coarseVertices = ((MeshCommand) coarseBackend.lastDrawList().commands().getFirst())
+                .vertices().size();
+        int denseVertices = ((MeshCommand) denseBackend.lastDrawList().commands().getFirst())
+                .vertices().size();
+        assertTrue(denseVertices > coarseVertices,
+                "A dense frame must not raise the quality of an interleaved coarse frame.");
+    }
+
+    @Test
     void nestedMasksEmitBalancedCommands() {
         TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);

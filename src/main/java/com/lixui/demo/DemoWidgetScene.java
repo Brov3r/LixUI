@@ -164,7 +164,8 @@ final class DemoWidgetScene implements AutoCloseable {
     DemoWidgetScene(InputState input, RenderBackend backend, UiPlatform platform) {
         this.backend = backend;
         manager = new WidgetManager(input, backend, platform);
-        toasts = new ToastManager(manager.context());
+        toasts = new ToastManager();
+        manager.add(toasts);
         fontFamily = createFontFamily();
         background = new Background();
         themeButton = new Button();
@@ -1850,11 +1851,47 @@ final class DemoWidgetScene implements AutoCloseable {
             toasts.show("Hover this toast to pause its countdown, then move away to resume.", 8);
             status.setText("Shown an eight second toast. Hover it to pause the timer.");
         });
+        Button customContentToast = new Button("Custom content");
+        customContentToast.setOnAction(() -> {
+            Label message = new Label("A custom widget body replaces the default icon, title "
+                    + "and message while the card and timer stay managed.");
+            message.setFontFamily(fontFamily);
+            message.setWrap(true);
+            message.setAutoSize(false);
+            VBox body = new VBox();
+            body.setGap(6);
+            body.add(message).add(new ProgressBar(0.65f));
+            toasts.show(new ToastManager.Options("")
+                    .content(body)
+                    .minCardWidth(260)
+                    .maxWidth(260)
+                    .duration(8));
+            status.setText("Shown a toast with a custom content widget.");
+        });
+        Button customRendererToast = new Button("Custom renderer");
+        customRendererToast.setOnAction(() -> {
+            toasts.show(new ToastManager.Options("")
+                    .minCardWidth(240)
+                    .maxWidth(240)
+                    .renderer((toast, renderer, bounds, frame) -> {
+                        renderer.roundedRect(bounds, 8, Color.hex("#2C3550"));
+                        float barWidth = Math.max(0, bounds.width() - 24);
+                        float fraction = toast.duration() <= 0 ? 0
+                                : Math.clamp(toast.remainingSeconds() / toast.duration(), 0, 1);
+                        renderer.rect(new Rect(bounds.x() + 12, bounds.bottom() - 15,
+                                barWidth, 3), Color.hex("#3A4668"));
+                        renderer.rect(new Rect(bounds.x() + 12, bounds.bottom() - 15,
+                                barWidth * fraction, 3), Color.hex("#7FA6FF"));
+                    })
+                    .duration(8));
+            status.setText("Shown a renderer-only toast that paints the whole card.");
+        });
 
         Flow contentActions = new Flow();
         contentActions.setGap(8);
         contentActions.add(longTextToast).add(wideTextToast)
-                .add(timerOnToast).add(timerOffToast).add(hoverToast);
+                .add(timerOnToast).add(timerOffToast).add(hoverToast)
+                .add(customContentToast).add(customRendererToast);
 
         Button burst = new Button("Queue 4");
         burst.setOnAction(() -> {

@@ -4,6 +4,8 @@ import com.lixui.render.ImageData;
 import com.lixui.render.Texture;
 import com.lixui.render.TextureOptions;
 import com.lixui.widget.UiContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
@@ -37,12 +39,14 @@ import java.util.function.Consumer;
 /**
  * An HTTP image loader with request deduplication, background decoding and a bounded texture cache.
  * Downloads and decoding run on worker threads. Texture upload and all callbacks run on the render
- * thread through {@link UiContext#post(Runnable)}. Requests with the same URI, target size and
- * sampling options share one download and one cached texture.
+ * thread through {@link UiContext#post(Runnable)}. A failing callback is logged and does not prevent
+ * other callbacks from running. Requests with the same URI, target size and sampling options share
+ * one download and one cached texture.
  * Instances own a thread pool and an HTTP client, so the creator must close the loader when the UI
  * lifecycle ends.
  */
 public final class RemoteImageLoader implements ImageLoader {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RemoteImageLoader.class);
     private static final int MAX_WORKERS = 2;
     private static final int MAX_BYTES = 16 * 1024 * 1024;
     private static final long DEFAULT_MAX_CACHE_BYTES = 64L * 1024 * 1024;
@@ -59,7 +63,8 @@ public final class RemoteImageLoader implements ImageLoader {
             new LinkedHashMap<>(16, 0.75f, true);
 
     private long cacheBytes;
-    private boolean closed;
+    private volatile boolean closed;
+    private boolean trimQueued;
 
     /**
      * Creates a loader that downloads images over HTTP with the JDK client.
@@ -136,7 +141,7 @@ public final class RemoteImageLoader implements ImageLoader {
     }
 
     /**
-     * Stops pending requests and releases every cached texture.
+     * Stops pending requests and releases every cached texture on the calling render thread.
      */
     @Override
     public void close() {
@@ -244,6 +249,9 @@ public final class RemoteImageLoader implements ImageLoader {
 
     private void release(Entry entry, LoadCallback callback) {
         synchronized (lock) {
+            if (callback.cancelled) {
+                return;
+            }
             callback.cancelled = true;
             entry.callbacks.remove(callback);
             if (entry.references > 0) {
@@ -256,6 +264,14 @@ public final class RemoteImageLoader implements ImageLoader {
                     entry.future.cancel(true);
                     entry.future = null;
                 }
+            } else if (entry.references == 0 && cacheBytes > maxCacheBytes && !trimQueued) {
+                trimQueued = true;
+                post(() -> {
+                    synchronized (lock) {
+                        trimQueued = false;
+                        trimCache();
+                    }
+                });
             }
         }
     }
@@ -280,14 +296,24 @@ public final class RemoteImageLoader implements ImageLoader {
     }
 
     private void deliverReady(LoadCallback callback, Texture texture) {
-        if (!callback.cancelled) {
+        if (closed || callback.cancelled) {
+            return;
+        }
+        try {
             callback.onReady.accept(texture);
+        } catch (RuntimeException exception) {
+            LOGGER.error("Image ready callback failed.", exception);
         }
     }
 
     private void deliverError(LoadCallback callback, Throwable error) {
-        if (!callback.cancelled) {
+        if (closed || callback.cancelled) {
+            return;
+        }
+        try {
             callback.onError.accept(error);
+        } catch (RuntimeException exception) {
+            LOGGER.error("Image error callback failed.", exception);
         }
     }
 
@@ -428,7 +454,7 @@ public final class RemoteImageLoader implements ImageLoader {
     private static final class LoadCallback {
         private final Consumer<Texture> onReady;
         private final Consumer<Throwable> onError;
-        private boolean cancelled;
+        private volatile boolean cancelled;
 
         private LoadCallback(Consumer<Texture> onReady, Consumer<Throwable> onError) {
             this.onReady = onReady;
@@ -439,19 +465,17 @@ public final class RemoteImageLoader implements ImageLoader {
     private final class Handle implements ImageHandle {
         private final Entry entry;
         private final LoadCallback callback;
-        private boolean closed;
 
         private Handle(Entry entry, LoadCallback callback) {
             this.entry = entry;
             this.callback = callback;
         }
 
+        /**
+         * Releases this request's reference and suppresses pending delivery.
+         */
         @Override
         public void close() {
-            if (closed) {
-                return;
-            }
-            closed = true;
             release(entry, callback);
         }
     }

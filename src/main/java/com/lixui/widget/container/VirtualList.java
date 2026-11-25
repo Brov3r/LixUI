@@ -143,6 +143,7 @@ public class VirtualList extends Panel {
             validateVariableRowCount(itemCount);
         }
         if (this.itemCount == itemCount) {
+            metricsDirty = true;
             return;
         }
         this.itemCount = itemCount;
@@ -747,10 +748,12 @@ public class VirtualList extends Panel {
     }
 
     private int firstVisibleIndex() {
+        ensureMetrics();
         return Math.clamp(indexAt(scrollY), 0, Math.max(0, itemCount - 1));
     }
 
     private int lastVisibleIndex() {
+        ensureMetrics();
         if (itemCount == 0) {
             return -1;
         }

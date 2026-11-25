@@ -4,10 +4,11 @@ import com.lixui.render.Texture;
 import com.lixui.render.TextureOptions;
 
 /**
- * A Vulkan texture handle that references a descriptor set and an optionally
- * owned image.
+ * A Vulkan texture handle owned by the backend that created it.
+ * It references a descriptor set and an optionally owned image.
  */
 final class VulkanTexture implements Texture {
+    private final VulkanBackend owner;
     private final long image;
     private final long imageView;
     private final long memory;
@@ -17,8 +18,9 @@ final class VulkanTexture implements Texture {
     private final boolean owned;
     private final TextureOptions options;
 
-    VulkanTexture(long image, long imageView, long memory, long descriptorSet, int width, int height,
-                  boolean owned, TextureOptions options) {
+    VulkanTexture(VulkanBackend owner, long image, long imageView, long memory, long descriptorSet,
+                  int width, int height, boolean owned, TextureOptions options) {
+        this.owner = owner;
         this.image = image;
         this.imageView = imageView;
         this.memory = memory;
@@ -27,6 +29,10 @@ final class VulkanTexture implements Texture {
         this.height = height;
         this.owned = owned;
         this.options = options;
+    }
+
+    boolean belongsTo(VulkanBackend backend) {
+        return owner == backend;
     }
 
     long image() {

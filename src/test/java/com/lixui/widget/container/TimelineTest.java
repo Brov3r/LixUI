@@ -91,6 +91,27 @@ class TimelineTest {
     }
 
     @Test
+    void wideTimestampNarrowsTheBodyTextAndGrowsTheRow() {
+        Timeline timeline = new Timeline();
+        timeline.setBounds(new Rect(0, 0, 220, 1000));
+        WidgetManager manager = managerWithFont();
+        manager.add(timeline);
+        String body = "A much longer description that needs several wrapped lines when the "
+                + "timeline becomes narrow and fewer lines when the pane is wide enough.";
+
+        timeline.addEntry("Title", body, "", BLUE);
+        manager.render();
+        float withoutTimestamp = timeline.contentHeight();
+
+        timeline.clearEntries();
+        timeline.addEntry("Title", body, "12:34 PM", BLUE);
+        manager.render();
+        float withTimestamp = timeline.contentHeight();
+
+        assertTrue(withTimestamp > withoutTimestamp);
+    }
+
+    @Test
     void clickingSelectsAnEntryAndEmptySpaceClearsIt() {
         Timeline timeline = new Timeline();
         timeline.setBounds(new Rect(0, 0, 300, 300));

@@ -194,18 +194,31 @@ final class VulkanRenderer implements AutoCloseable {
 
     /**
      * Waits for submitted work and releases all Vulkan resources owned by this renderer.
+     * Device teardown still completes when an owned layer or scene fails to close; the first failure
+     * is rethrown afterwards.
+     *
+     * @throws RuntimeException if closing the scene or the UI layer fails
      */
     @Override
     public void close() {
+        RuntimeException failure = null;
         if (device != null) {
             // Cleanup must also proceed after device loss.
             VK10.vkDeviceWaitIdle(device);
             if (scene != null) {
-                scene.close();
+                try {
+                    scene.close();
+                } catch (RuntimeException exception) {
+                    failure = recordFailure(failure, exception);
+                }
                 scene = null;
             }
             if (layer != null) {
-                layer.close();
+                try {
+                    layer.close();
+                } catch (RuntimeException exception) {
+                    failure = recordFailure(failure, exception);
+                }
                 layer = null;
                 backend = null;
             }
@@ -231,6 +244,17 @@ final class VulkanRenderer implements AutoCloseable {
             VK10.vkDestroyInstance(instance, null);
             instance = null;
         }
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    private static RuntimeException recordFailure(RuntimeException failure, RuntimeException exception) {
+        if (failure == null) {
+            return exception;
+        }
+        failure.addSuppressed(exception);
+        return failure;
     }
 
     private void createInstance() {
@@ -736,9 +760,11 @@ final class VulkanRenderer implements AutoCloseable {
     private void createCommands(int imageCount) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             LongBuffer result = stack.mallocLong(1);
+            // Image command buffers are re-recorded every frame, so their implicit reset is required.
             VkCommandPoolCreateInfo pool = VkCommandPoolCreateInfo.calloc(stack)
                     .sType$Default()
-                    .queueFamilyIndex(queueFamily);
+                    .queueFamilyIndex(queueFamily)
+                    .flags(VK10.VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
             check(VK10.vkCreateCommandPool(device, pool, null, result), "Create command pool");
             commandPool = result.get(0);
 

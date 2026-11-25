@@ -4,7 +4,6 @@ import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
 import com.lixui.widget.FrameInfo;
 import com.lixui.widget.LayoutConstraints;
-import com.lixui.widget.UiContext;
 import com.lixui.widget.Widget;
 
 /**
@@ -12,7 +11,8 @@ import com.lixui.widget.Widget;
  * {@link System#nanoTime()}.
  * One phase runs per {@link #step()} call, so building ten thousand widgets does not block a single
  * frame. Text, layout and update measurements include real widget operations only; GPU timing is
- * never inferred.
+ * never inferred. The job updates only the stress subtree and never advances the shared context
+ * animator, so host animations keep their own frame timing.
  */
 final class BenchmarkRunJob {
     private static final float FRAME_SECONDS = 1f / 60f;
@@ -164,14 +164,10 @@ final class BenchmarkRunJob {
     }
 
     private void update() {
-        UiContext context = host.context();
         for (int frameIndex = 0; frameIndex < updateFrames; frameIndex++) {
             long started = System.nanoTime();
             float elapsedSeconds = (frameIndex + 1) * FRAME_SECONDS;
             content.update(new FrameInfo(FRAME_SECONDS, elapsedSeconds, frameIndex));
-            if (context != null) {
-                context.animator().update(FRAME_SECONDS);
-            }
             long elapsed = System.nanoTime() - started;
             if (isMeasuredIteration()) {
                 updateSamples[measuredIndex() * updateFrames + frameIndex] = elapsed;

@@ -77,7 +77,16 @@ final class TooltipOverlay {
                 active = settings;
                 opacity = 0;
                 leaving = false;
-                shown.attach(owner.context());
+                try {
+                    shown.attach(owner.context());
+                } catch (RuntimeException | Error exception) {
+                    shown = null;
+                    shownOwner = null;
+                    leaving = false;
+                    opacity = 0;
+                    dwellSeconds = 0;
+                    throw exception;
+                }
                 started = true;
             }
         }
@@ -139,9 +148,22 @@ final class TooltipOverlay {
      * Hides and detaches the tooltip widget immediately.
      */
     void hide() {
-        detach();
-        owner = null;
-        dwellSeconds = 0;
+        try {
+            detach();
+        } finally {
+            owner = null;
+            dwellSeconds = 0;
+        }
+    }
+
+    /**
+     * Forwards a context change to the presented tooltip, which is attached to the context without
+     * being part of a top-level widget subtree.
+     */
+    void contextChanged() {
+        if (shown != null) {
+            shown.contextChanged();
+        }
     }
 
     private void detach() {

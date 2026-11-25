@@ -181,6 +181,11 @@ public class InputCode extends InputArea {
     private String matchedText;
     private int matchedCaret = -1;
     private int[] matchedPair;
+    private String countedText;
+    private int countedLineCount;
+    private String labelText;
+    private int labelCaret = -1;
+    private String labelValue;
 
     /**
      * Creates an empty code editor.
@@ -480,6 +485,8 @@ public class InputCode extends InputArea {
             copy.add(Objects.requireNonNull(keyword, "keyword"));
         }
         this.keywords = copy;
+        // Keyword classification is cached with the spans, so the cache must be rebuilt.
+        tokenizedText = null;
     }
 
     /**
@@ -1228,15 +1235,33 @@ public class InputCode extends InputArea {
     private String caretPositionLabel() {
         String raw = rawText();
         int caret = caretIndex();
+        if (raw != labelText || caret != labelCaret) {
+            labelText = raw;
+            labelCaret = caret;
+            labelValue = caretPositionLabel(raw, caret);
+        }
+        return labelValue;
+    }
+
+    /**
+     * Formats the caret line and column, counting columns in Unicode code points so that
+     * characters outside the basic plane occupy a single column.
+     *
+     * @param raw stored value
+     * @param caret UTF-16 caret index in the stored value
+     * @return the formatted label
+     */
+    static String caretPositionLabel(String raw, int caret) {
+        int clamped = Math.clamp(caret, 0, raw.length());
         int line = 1;
         int lineStart = 0;
-        for (int index = 0; index < caret && index < raw.length(); index++) {
+        for (int index = 0; index < clamped; index++) {
             if (raw.charAt(index) == '\n') {
                 line++;
                 lineStart = index + 1;
             }
         }
-        return "Ln " + line + ", Col " + (caret - lineStart + 1);
+        return "Ln " + line + ", Col " + (raw.codePointCount(lineStart, clamped) + 1);
     }
 
     private float footerHeight(Font font) {
@@ -1276,8 +1301,12 @@ public class InputCode extends InputArea {
 
     private int logicalLineCount() {
         String raw = rawText();
-        long count = raw.chars().filter(character -> character == '\n').count() + 1;
-        return (int) Math.min(Integer.MAX_VALUE, count);
+        if (raw != countedText) {
+            countedText = raw;
+            long count = raw.chars().filter(character -> character == '\n').count() + 1;
+            countedLineCount = (int) Math.min(Integer.MAX_VALUE, count);
+        }
+        return countedLineCount;
     }
 
     /**

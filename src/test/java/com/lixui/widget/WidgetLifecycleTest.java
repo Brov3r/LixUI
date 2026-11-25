@@ -209,6 +209,99 @@ class WidgetLifecycleTest {
         assertTrue(manager.widgets().isEmpty());
     }
 
+    @Test
+    void removeKeepsDetachFailureAndSuppressesChildRemovalFailure() {
+        RuntimeException detachFailure = new IllegalStateException("Detach failed.");
+        RuntimeException removalFailure = new IllegalArgumentException("Removal callback failed.");
+        Widget root = new Widget() {
+            /**
+             * Simulates a failing child removal callback.
+             *
+             * @param child removed child
+             * @throws RuntimeException always
+             */
+            @Override
+            protected void onChildRemoved(Widget child) {
+                throw removalFailure;
+            }
+        };
+        Widget child = new Widget() {
+            /**
+             * Simulates a failing cleanup callback.
+             *
+             * @throws RuntimeException always
+             */
+            @Override
+            protected void onDetached() {
+                throw detachFailure;
+            }
+        };
+
+        try (WidgetManager manager = new WidgetManager(new InputState(), new TestBackend())) {
+            root.add(child);
+            manager.add(root);
+
+            assertSame(detachFailure, assertThrows(IllegalStateException.class,
+                    () -> root.remove(child)));
+            assertEquals(1, detachFailure.getSuppressed().length);
+            assertSame(removalFailure, detachFailure.getSuppressed()[0]);
+            assertTrue(root.children().isEmpty());
+            assertNull(child.parent());
+            assertNull(child.context());
+        }
+    }
+
+    @Test
+    void removeAllDetachesEveryChildAfterAnError() {
+        Error detachFailure = new Error("Detach failed.");
+        List<String> detached = new ArrayList<>();
+        Widget root = new Widget() { };
+        Widget first = errorDetachingWidget("first", detached, detachFailure);
+        Widget second = errorDetachingWidget("second", detached, null);
+        Widget third = errorDetachingWidget("third", detached, null);
+
+        try (WidgetManager manager = new WidgetManager(new InputState(), new TestBackend())) {
+            root.add(first).add(second).add(third);
+            manager.add(root);
+
+            assertSame(detachFailure, assertThrows(Error.class, root::removeAll));
+
+            assertEquals(List.of("first", "second", "third"), detached);
+            assertTrue(root.children().isEmpty());
+            assertNull(first.parent());
+            assertNull(second.parent());
+            assertNull(third.parent());
+            assertNull(first.context());
+            assertNull(second.context());
+            assertNull(third.context());
+        }
+    }
+
+    @Test
+    void closeKeepsTheFirstErrorAndSuppressesCleanupErrors() {
+        Error firstFailure = new Error("First detach failed.");
+        Error secondFailure = new Error("Second detach failed.");
+        List<String> detached = new ArrayList<>();
+        Widget root = new Widget() { };
+        Widget first = errorDetachingWidget("first", detached, firstFailure);
+        Widget second = errorDetachingWidget("second", detached, secondFailure);
+        root.add(first).add(second);
+        Widget other = errorDetachingWidget("other", detached, null);
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
+        manager.add(root).add(other);
+
+        assertSame(firstFailure, assertThrows(Error.class, manager::close));
+
+        assertEquals(1, firstFailure.getSuppressed().length);
+        assertSame(secondFailure, firstFailure.getSuppressed()[0]);
+        assertEquals(List.of("first", "second", "other"), detached);
+        assertTrue(manager.widgets().isEmpty());
+        assertNull(root.context());
+        assertNull(first.context());
+        assertNull(second.context());
+        assertNull(other.context());
+    }
+
     private static Widget updatingWidget(String name, List<String> updates) {
         return new Widget() {
             /**
@@ -229,6 +322,23 @@ class WidgetLifecycleTest {
              * Records detachment and optionally fails.
              *
              * @throws RuntimeException when a failure was supplied
+             */
+            @Override
+            protected void onDetached() {
+                detached.add(name);
+                if (failure != null) {
+                    throw failure;
+                }
+            }
+        };
+    }
+
+    private static Widget errorDetachingWidget(String name, List<String> detached, Error failure) {
+        return new Widget() {
+            /**
+             * Records detachment and optionally fails with an error.
+             *
+             * @throws Error when a failure was supplied
              */
             @Override
             protected void onDetached() {

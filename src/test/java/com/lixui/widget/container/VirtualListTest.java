@@ -142,6 +142,21 @@ class VirtualListTest {
     }
 
     @Test
+    void itemCountAssignmentRefreshesCachedHeightsEvenWhenTheCountIsUnchanged() {
+        VirtualList list = new VirtualList();
+        list.setBounds(new Rect(0, 0, 200, 100));
+        float[] heights = {10, 20, 30};
+        list.setItemCount(heights.length);
+        list.setRowHeightProvider(index -> heights[index]);
+        assertEquals(60, list.contentHeight(), 0.001f);
+
+        heights[1] = 40;
+        list.setItemCount(heights.length);
+
+        assertEquals(80, list.contentHeight(), 0.001f);
+    }
+
+    @Test
     void fixedHeightsUseConstantMemoryForVeryLargeCounts() {
         VirtualList list = new VirtualList();
         list.setBounds(new Rect(0, 0, 200, 80));

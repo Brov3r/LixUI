@@ -11,6 +11,7 @@ import com.lixui.input.event.PointerPressed;
 import com.lixui.render.command.DrawCommand;
 import com.lixui.render.command.RoundedRectCommand;
 import com.lixui.render.Viewport;
+import com.lixui.theme.Theme;
 import com.lixui.widget.testsupport.FixedWidget;
 import com.lixui.widget.tooltip.TooltipSettings;
 import org.junit.jupiter.api.Test;
@@ -196,6 +197,30 @@ class TooltipTest {
     }
 
     @Test
+    void presentedTooltipReceivesContextChanges() {
+        try (WidgetManager manager = new WidgetManager(new InputState(), new TestBackend())) {
+            manager.resize(VIEWPORT);
+            manager.setTooltipSettings(TooltipSettings.defaults().withDelay(0).withFade(0, 0));
+            ContextProbeTooltip tooltip = new ContextProbeTooltip();
+            Panel owner = new Panel();
+            owner.setBounds(new Rect(0, 0, 100, 100));
+            owner.setTooltip(tooltip);
+            manager.add(owner);
+
+            manager.handle(new PointerMoved(20, 20));
+            manager.update(0);
+            assertNotNull(tooltip.context());
+            assertEquals(0, tooltip.contextChanges);
+
+            manager.setTheme(Theme.light());
+            assertEquals(1, tooltip.contextChanges);
+
+            manager.resize(TestViewports.HIDPI);
+            assertEquals(2, tooltip.contextChanges);
+        }
+    }
+
+    @Test
     void pressingHidesTheTooltipAndCloseDetachesIt() {
         try (WidgetManager manager = new WidgetManager(new InputState(), new TestBackend())) {
             manager.resize(VIEWPORT);
@@ -340,6 +365,18 @@ class TooltipTest {
                 () -> TooltipSettings.defaults().withFade(0.1f, Float.NaN));
         assertThrows(IllegalArgumentException.class,
                 () -> TooltipSettings.defaults().withOffset(Float.POSITIVE_INFINITY, 0));
+    }
+
+    private static final class ContextProbeTooltip extends Panel {
+        private int contextChanges;
+
+        /**
+         * Counts context updates delivered to the presented tooltip.
+         */
+        @Override
+        protected void onContextChanged() {
+            contextChanges++;
+        }
     }
 
 

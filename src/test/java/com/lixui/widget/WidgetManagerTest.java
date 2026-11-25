@@ -166,6 +166,31 @@ class WidgetManagerTest {
     }
 
     @Test
+    void repeatedResizeWithTheSameViewportNotifiesWidgetsOnce() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
+        List<String> log = new ArrayList<>();
+        LifecycleProbe root = new LifecycleProbe("root", log);
+        manager.add(root);
+        log.clear();
+
+        manager.resize(VIEWPORT);
+        assertEquals(List.of("context:root"), log);
+        assertEquals(2, manager.context().scaleX());
+
+        log.clear();
+        manager.resize(new Viewport(VIEWPORT.framebufferWidth(), VIEWPORT.framebufferHeight(),
+                VIEWPORT.logicalWidth(), VIEWPORT.logicalHeight()));
+        assertTrue(log.isEmpty());
+        assertEquals(2, manager.context().scaleX());
+
+        manager.resize(TestViewports.LOGICAL);
+        assertEquals(List.of("context:root"), log);
+        assertEquals(1, manager.context().scaleX());
+        assertSame(TestViewports.LOGICAL, backend.viewport());
+    }
+
+    @Test
     void closeDetachesWidgetsAndRejectsFurtherFrames() {
         TestBackend backend = new TestBackend();
         WidgetManager manager = new WidgetManager(new InputState(), backend);
@@ -483,6 +508,48 @@ class WidgetManagerTest {
     }
 
     @Test
+    void offscreenRemovalKeepsTheFirstErrorAndStillRemovesEveryWidget() {
+        Error offscreenFailure = new Error("Offscreen callback failed.");
+        Error detachFailure = new Error("Detach failed.");
+        Widget first = new Widget() {
+            /**
+             * Simulates a failing offscreen callback.
+             *
+             * @throws Error always
+             */
+            @Override
+            protected void onOffscreen() {
+                throw offscreenFailure;
+            }
+
+            /**
+             * Simulates a failing cleanup callback.
+             *
+             * @throws Error always
+             */
+            @Override
+            protected void onDetached() {
+                throw detachFailure;
+            }
+        };
+        Widget second = new Widget() { };
+        Widget third = new Widget() { };
+        first.setBounds(new Rect(900, 0, 100, 100));
+        second.setBounds(new Rect(1000, 0, 100, 100));
+        third.setBounds(new Rect(1100, 0, 100, 100));
+        WidgetManager manager = manager(new TestBackend(), first, second, third);
+
+        assertSame(offscreenFailure, assertThrows(Error.class, manager::layout));
+
+        assertEquals(1, offscreenFailure.getSuppressed().length);
+        assertSame(detachFailure, offscreenFailure.getSuppressed()[0]);
+        assertTrue(manager.widgets().isEmpty());
+        assertNull(first.context());
+        assertNull(second.context());
+        assertNull(third.context());
+    }
+
+    @Test
     void keepsHiddenWidgetsBeyondTheViewport() {
         Probe hidden = new Probe("hidden", new ArrayList<>());
         hidden.setBounds(new Rect(900, 0, 100, 100));
@@ -642,6 +709,45 @@ class WidgetManagerTest {
         assertFalse(root.isHovered());
         assertFalse(root.isFocused());
         assertFalse(root.isPressed());
+    }
+
+    @Test
+    void removeKeepsTheOriginalErrorAndStillPrunesInteraction() {
+        Error detachFailure = new Error("Detach failed.");
+        Error cancelFailure = new Error("Capture cancellation failed.");
+        Widget widget = new Widget() {
+            /**
+             * Simulates a failing cleanup callback.
+             *
+             * @throws Error always
+             */
+            @Override
+            protected void onDetached() {
+                throw detachFailure;
+            }
+
+            /**
+             * Simulates a failing capture cancellation callback.
+             *
+             * @param button button whose capture was cancelled
+             * @throws Error always
+             */
+            @Override
+            protected void onPointerCaptureCancelled(MouseButton button) {
+                throw cancelFailure;
+            }
+        };
+        widget.setBounds(ROOT_BOUNDS);
+        WidgetManager manager = manager(new TestBackend(), widget);
+        manager.capturePointer(widget, MouseButton.LEFT);
+
+        assertSame(detachFailure, assertThrows(Error.class, () -> manager.remove(widget)));
+
+        assertEquals(1, detachFailure.getSuppressed().length);
+        assertSame(cancelFailure, detachFailure.getSuppressed()[0]);
+        assertTrue(manager.widgets().isEmpty());
+        assertNull(widget.context());
+        assertFalse(widget.isPressed());
     }
 
     @Test

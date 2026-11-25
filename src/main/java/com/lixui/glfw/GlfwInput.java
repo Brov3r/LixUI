@@ -14,6 +14,7 @@ import org.lwjgl.glfw.GLFWScrollCallback;
 import org.lwjgl.glfw.GLFWWindowFocusCallback;
 import org.lwjgl.system.Callback;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 
 import java.nio.DoubleBuffer;
 import java.util.Objects;
@@ -22,6 +23,8 @@ import java.util.Objects;
  * A GLFW input adapter that translates callbacks into backend-neutral {@link InputState} events.
  * Existing callbacks installed by the host are chained and restored on {@link #close()}.
  * Pointer coordinates are reported in logical UI units, matching the window content size.
+ * The adapter must be closed before its window is destroyed, on the thread that owns the GLFW
+ * event loop.
  */
 public final class GlfwInput implements AutoCloseable {
     private final long window;
@@ -42,6 +45,7 @@ public final class GlfwInput implements AutoCloseable {
     private GLFWCursorEnterCallback previousCursorEnter;
     private float pointerX;
     private float pointerY;
+    private int installedCallbacks;
     private boolean closed;
 
     private GlfwInput(long window, InputState input) {
@@ -57,10 +61,14 @@ public final class GlfwInput implements AutoCloseable {
      * @param input input state that receives the translated events
      * @return the installed adapter, which must be closed to restore the previous callbacks
      * @throws NullPointerException if {@code input} is null
+     * @throws IllegalArgumentException if {@code window} is not a valid handle
      * @throws IllegalStateException if callback installation fails
      */
     public static GlfwInput install(long window, InputState input) {
         Objects.requireNonNull(input, "input");
+        if (window == MemoryUtil.NULL) {
+            throw new IllegalArgumentException("Window handle must not be null.");
+        }
         GlfwInput adapter = new GlfwInput(window, input);
         try {
             adapter.attach();
@@ -80,13 +88,30 @@ public final class GlfwInput implements AutoCloseable {
             return;
         }
         closed = true;
-        GLFW.glfwSetCursorPosCallback(window, previousCursorPos);
-        GLFW.glfwSetMouseButtonCallback(window, previousMouseButton);
-        GLFW.glfwSetScrollCallback(window, previousScroll);
-        GLFW.glfwSetKeyCallback(window, previousKey);
-        GLFW.glfwSetCharCallback(window, previousChar);
-        GLFW.glfwSetWindowFocusCallback(window, previousFocus);
-        GLFW.glfwSetCursorEnterCallback(window, previousCursorEnter);
+        // Restore only the callbacks that replaced a host callback; a failed installation must not
+        // clear host callbacks that were never touched.
+        if (installedCallbacks > 0) {
+            GLFW.glfwSetCursorPosCallback(window, previousCursorPos);
+        }
+        if (installedCallbacks > 1) {
+            GLFW.glfwSetMouseButtonCallback(window, previousMouseButton);
+        }
+        if (installedCallbacks > 2) {
+            GLFW.glfwSetScrollCallback(window, previousScroll);
+        }
+        if (installedCallbacks > 3) {
+            GLFW.glfwSetKeyCallback(window, previousKey);
+        }
+        if (installedCallbacks > 4) {
+            GLFW.glfwSetCharCallback(window, previousChar);
+        }
+        if (installedCallbacks > 5) {
+            GLFW.glfwSetWindowFocusCallback(window, previousFocus);
+        }
+        if (installedCallbacks > 6) {
+            GLFW.glfwSetCursorEnterCallback(window, previousCursorEnter);
+        }
+        installedCallbacks = 0;
         free(cursorPosCallback);
         free(mouseButtonCallback);
         free(scrollCallback);
@@ -113,12 +138,19 @@ public final class GlfwInput implements AutoCloseable {
         cursorEnterCallback = GLFWCursorEnterCallback.create(this::onCursorEnter);
 
         previousCursorPos = GLFW.glfwSetCursorPosCallback(window, cursorPosCallback);
+        installedCallbacks = 1;
         previousMouseButton = GLFW.glfwSetMouseButtonCallback(window, mouseButtonCallback);
+        installedCallbacks = 2;
         previousScroll = GLFW.glfwSetScrollCallback(window, scrollCallback);
+        installedCallbacks = 3;
         previousKey = GLFW.glfwSetKeyCallback(window, keyCallback);
+        installedCallbacks = 4;
         previousChar = GLFW.glfwSetCharCallback(window, charCallback);
+        installedCallbacks = 5;
         previousFocus = GLFW.glfwSetWindowFocusCallback(window, focusCallback);
+        installedCallbacks = 6;
         previousCursorEnter = GLFW.glfwSetCursorEnterCallback(window, cursorEnterCallback);
+        installedCallbacks = 7;
     }
 
     private void onCursorPos(long ignoredWindow, double xpos, double ypos) {

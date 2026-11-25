@@ -34,6 +34,11 @@ public final class RichLabel extends Widget {
     private HorizontalAlignment horizontal = HorizontalAlignment.LEFT;
     private VerticalAlignment vertical = VerticalAlignment.TOP;
     private boolean wrap = true;
+    private int layoutRevision;
+    private Size cachedMeasure;
+    private float cachedMeasureWidth = Float.NaN;
+    private int cachedMeasureRevision = -1;
+    private Font cachedMeasureFont;
 
     /**
      * Creates an empty rich label.
@@ -104,6 +109,7 @@ public final class RichLabel extends Widget {
      */
     public RichLabel add(Span span) {
         spans.add(Objects.requireNonNull(span, "span"));
+        layoutRevision++;
         return this;
     }
 
@@ -112,6 +118,7 @@ public final class RichLabel extends Widget {
      */
     public void clear() {
         spans.clear();
+        layoutRevision++;
     }
 
     /**
@@ -141,6 +148,7 @@ public final class RichLabel extends Widget {
      */
     public void setFontFamily(FontFamily fontFamily) {
         this.fontFamily = fontFamily;
+        layoutRevision++;
     }
 
     /**
@@ -159,6 +167,7 @@ public final class RichLabel extends Widget {
      */
     public void setWrap(boolean wrap) {
         this.wrap = wrap;
+        layoutRevision++;
     }
 
     /**
@@ -180,6 +189,7 @@ public final class RichLabel extends Widget {
      */
     public void setAlignment(HorizontalAlignment alignment) {
         this.horizontal = Objects.requireNonNull(alignment, "alignment");
+        layoutRevision++;
     }
 
     /**
@@ -209,8 +219,37 @@ public final class RichLabel extends Widget {
      */
     @Override
     protected Size onMeasure(LayoutConstraints constraints) {
-        Layout layout = layout(constraints.maxWidth());
-        return new Size(layout.width(), layout.height());
+        return measureSize(constraints.maxWidth());
+    }
+
+    private Size measureSize(float availableWidth) {
+        Font inherited = font();
+        Color defaultColor = defaultColor();
+        if (cachedMeasure != null && cachedMeasureRevision == layoutRevision
+                && cachedMeasureWidth == availableWidth
+                && cachedMeasureFont == inherited) {
+            return cachedMeasure;
+        }
+        Layout layout = computeLayout(availableWidth, inherited, defaultColor);
+        Size measured = new Size(layout.width(), layout.height());
+        cachedMeasure = measured;
+        cachedMeasureWidth = availableWidth;
+        cachedMeasureRevision = layoutRevision;
+        cachedMeasureFont = inherited;
+        return measured;
+    }
+
+    private Layout drawLayout(float availableWidth) {
+        Font inherited = font();
+        float layoutWidth = wrap ? availableWidth : 0;
+        if (wrap && cachedMeasure != null && cachedMeasureRevision == layoutRevision
+                && cachedMeasureFont == inherited
+                && cachedMeasureWidth >= availableWidth
+                && cachedMeasure.width() <= availableWidth) {
+            layoutWidth = cachedMeasureWidth;
+        }
+        // Only visible labels reach this path; font metrics stay cached, layouts do not.
+        return computeLayout(layoutWidth, inherited, defaultColor());
     }
 
     /**
@@ -221,7 +260,7 @@ public final class RichLabel extends Widget {
      */
     @Override
     protected void onDraw(RenderManager renderer, FrameInfo frame) {
-        Layout layout = layout(localBounds().width());
+        Layout layout = drawLayout(localBounds().width());
         if (layout.lines().isEmpty()) {
             return;
         }
@@ -284,12 +323,10 @@ public final class RichLabel extends Widget {
         }
     }
 
-    private Layout layout(float availableWidth) {
+    private Layout computeLayout(float availableWidth, Font inherited, Color defaultColor) {
         if (spans.isEmpty()) {
             return Layout.EMPTY;
         }
-        Font inherited = font();
-        Color defaultColor = defaultColor();
         Font fallback = inherited;
         List<Token> tokens = new ArrayList<>();
         for (Span span : spans) {

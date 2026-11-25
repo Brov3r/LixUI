@@ -19,11 +19,8 @@ import java.util.Locale;
 /**
  * Stress content for the data scenario: a table, a virtual list and a tree filled with the same
  * requested row count.
- * Tree nodes are capped because every insertion rebuilds the visible row list, which would make the
- * build phase quadratic for ten thousand nodes.
  */
 final class BenchmarkDataContent extends Panel {
-    static final int TREE_NODE_LIMIT = 1_000;
     private static final float PANE_HEIGHT = 84;
     private static final float ROW_HEIGHT = 20;
 
@@ -108,7 +105,7 @@ final class BenchmarkDataContent extends Panel {
     /**
      * Returns the stress tree.
      *
-     * @return the tree with at most {@link #TREE_NODE_LIMIT} roots
+     * @return the tree containing the requested number of roots
      */
     TreeView tree() {
         return tree;
@@ -148,8 +145,7 @@ final class BenchmarkDataContent extends Panel {
     private void configureTree(int rows) {
         tree.setRowHeight(ROW_HEIGHT);
         tree.setExpansionDuration(0);
-        int nodes = Math.min(rows, TREE_NODE_LIMIT);
-        for (int index = 0; index < nodes; index++) {
+        for (int index = 0; index < rows; index++) {
             tree.addRoot("node-" + index);
         }
     }

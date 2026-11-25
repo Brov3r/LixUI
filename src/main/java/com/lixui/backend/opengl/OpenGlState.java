@@ -30,6 +30,8 @@ final class OpenGlState implements AutoCloseable {
             GL11.GL_UNPACK_ALIGNMENT, GL11.GL_UNPACK_ROW_LENGTH,
             GL11.GL_UNPACK_SKIP_PIXELS, GL11.GL_UNPACK_SKIP_ROWS
     };
+    private static final int MAX_DRAW_BUFFER_TARGETS =
+            GL20.GL_DRAW_BUFFER15 - GL20.GL_DRAW_BUFFER0 + 1;
     private final boolean[] enabled = new boolean[CAPABILITIES.length];
     private final int[] unpack = new int[UNPACK_PARAMETERS.length];
     private final boolean[] clipDistances = new boolean[GL11.glGetInteger(GL30.GL_MAX_CLIP_DISTANCES)];
@@ -49,6 +51,11 @@ final class OpenGlState implements AutoCloseable {
     private final float[] clearColor = new float[4];
     private final boolean[] colorMask = new boolean[4];
     private final int drawBuffers = GL11.glGetInteger(GL20.GL_MAX_DRAW_BUFFERS);
+    private final int[] drawBufferTargets =
+            new int[drawFramebuffer == 0 ? 0 : Math.min(drawBuffers, MAX_DRAW_BUFFER_TARGETS)];
+    private final int[] compositionDrawBuffers = new int[1];
+    private final boolean multipleDrawBuffers;
+    private boolean drawBuffersRestricted;
     private final boolean[][] indexedColorMasks = new boolean[drawBuffers][4];
     private final boolean[] indexedBlend = new boolean[drawBuffers];
     private final int[][] indexedBlendParameters;
@@ -103,6 +110,15 @@ final class OpenGlState implements AutoCloseable {
                 }
             }
         }
+        int activeDrawBuffers = 0;
+        for (int buffer = 0; buffer < drawBufferTargets.length; buffer++) {
+            drawBufferTargets[buffer] = GL11.glGetInteger(GL20.GL_DRAW_BUFFER0 + buffer);
+            if (drawBufferTargets[buffer] != GL11.GL_NONE) {
+                activeDrawBuffers++;
+            }
+        }
+        multipleDrawBuffers = activeDrawBuffers > 1;
+        compositionDrawBuffers[0] = drawBufferTargets.length == 0 ? GL11.GL_NONE : drawBufferTargets[0];
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
         texture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
         sampler = GL11.glGetInteger(GL33.GL_SAMPLER_BINDING);
@@ -113,6 +129,8 @@ final class OpenGlState implements AutoCloseable {
     }
 
     void prepareUpload() {
+        // Texture uploads and target creation must only touch the captured unit-zero binding.
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
         GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER, 0);
         GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
         GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
@@ -134,7 +152,20 @@ final class OpenGlState implements AutoCloseable {
         GL20.glBlendEquationSeparate(GL14.GL_FUNC_ADD, GL14.GL_FUNC_ADD);
         GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA,
                 GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
         GL33.glBindSampler(0, 0);
+    }
+
+    /**
+     * Restricts fragment output to the host's first draw buffer when the host renders into a
+     * multi-render-target framebuffer. Default and single-target framebuffers keep their routing,
+     * so their draw-buffer state is never modified.
+     */
+    void restrictToFirstDrawBuffer() {
+        if (multipleDrawBuffers && !drawBuffersRestricted) {
+            GL20.glDrawBuffers(compositionDrawBuffers);
+            drawBuffersRestricted = true;
+        }
     }
 
     /**
@@ -144,6 +175,10 @@ final class OpenGlState implements AutoCloseable {
     public void close() {
         GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, drawFramebuffer);
         GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, readFramebuffer);
+        if (drawBuffersRestricted) {
+            GL20.glDrawBuffers(drawBufferTargets);
+            drawBuffersRestricted = false;
+        }
         GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, renderbuffer);
         GL20.glUseProgram(program);
         GL30.glBindVertexArray(vertexArray);

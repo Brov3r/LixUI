@@ -638,8 +638,8 @@ public final class Font {
         for (int index = 0; index < specs.size(); index++) {
             LineSpec spec = specs.get(index);
             String lineText = spec.text();
-            float width = walk(lineText, 0, 0, null).width();
-            int spaces = spaceCount(lineText);
+            float width = spec.width();
+            int spaces = justify ? spaceCount(lineText) : 0;
             float extraSpace = justify && !spec.paragraphEnd() && spaces > 0 && style.maxWidth() > width
                     ? (style.maxWidth() - width) / spaces : 0;
             spacing[index] = extraSpace;
@@ -691,17 +691,20 @@ public final class Font {
     private void wrapParagraph(String paragraph, int paragraphStart, TextStyle style,
                                List<LineSpec> lines) {
         if (paragraph.isEmpty()) {
-            lines.add(new LineSpec(paragraphStart, paragraphStart, "", true));
+            lines.add(new LineSpec(paragraphStart, paragraphStart, "", true, 0));
             return;
         }
         float maxWidth = style.maxWidth();
         if (maxWidth <= 0) {
-            lines.add(new LineSpec(paragraphStart, paragraphStart + paragraph.length(), paragraph, true));
+            float width = walk(paragraph, 0, 0, null).width();
+            lines.add(new LineSpec(paragraphStart, paragraphStart + paragraph.length(), paragraph,
+                    true, width));
             return;
         }
         int lineStart = 0;
         while (lineStart < paragraph.length()) {
-            int lineEnd = findLineEnd(paragraph, lineStart, maxWidth);
+            LineBreak lineBreak = findLineBreak(paragraph, lineStart, maxWidth);
+            int lineEnd = lineBreak.end();
             String lineText = paragraph.substring(lineStart, lineEnd);
             int start = paragraphStart + lineStart;
             lineStart = lineEnd;
@@ -709,38 +712,43 @@ public final class Font {
                     && (paragraph.charAt(lineStart) == ' ' || paragraph.charAt(lineStart) == '\t')) {
                 lineStart++;
             }
-            lines.add(new LineSpec(start, paragraphStart + lineEnd, lineText, lineStart == paragraph.length()));
+            lines.add(new LineSpec(start, paragraphStart + lineEnd, lineText,
+                    lineStart == paragraph.length(), lineBreak.width()));
         }
     }
 
-    private int findLineEnd(String paragraph, int start, float maxWidth) {
+    private LineBreak findLineBreak(String paragraph, int start, float maxWidth) {
         int end = start;
         int lastBreak = -1;
+        float lastBreakWidth = 0;
         LinePen pen = new LinePen();
         while (end < paragraph.length()) {
             int codepoint = paragraph.codePointAt(end);
             int next = end + Character.charCount(codepoint);
+            float before = pen.x;
             pen.advance(codepoint, 0);
-            boolean overflow = pen.x > maxWidth;
-            if (overflow) {
+            if (pen.x > maxWidth) {
                 if (end == start) {
-                    end = next;
-                } else if (codepoint == ' ' || codepoint == '\t') {
-                    lastBreak = end;
+                    return new LineBreak(next, Math.max(0, pen.x));
                 }
-                break;
+                if (codepoint == ' ' || codepoint == '\t') {
+                    lastBreak = end;
+                    lastBreakWidth = before;
+                }
+                return lastBreak > start
+                        ? new LineBreak(lastBreak, Math.max(0, lastBreakWidth))
+                        : new LineBreak(end, Math.max(0, before));
             }
             if (codepoint == ' ' || codepoint == '\t') {
                 lastBreak = end;
+                lastBreakWidth = before;
             } else if (codepoint == '-') {
                 lastBreak = next;
+                lastBreakWidth = pen.x;
             }
             end = next;
         }
-        if (end < paragraph.length() && lastBreak > start) {
-            end = lastBreak;
-        }
-        return end;
+        return new LineBreak(end, Math.max(0, pen.x));
     }
 
     private LineSpec truncate(LineSpec line, float maxWidth) {
@@ -753,10 +761,12 @@ public final class Font {
                 keep = previous;
             }
             if (walk(ellipsis, 0, 0, null).width() > maxWidth) {
-                return new LineSpec(line.start(), line.start(), "", true);
+                return new LineSpec(line.start(), line.start(), "", true, 0);
             }
         }
-        return new LineSpec(line.start(), line.start() + keep, text.substring(0, keep) + ellipsis, true);
+        String truncated = text.substring(0, keep) + ellipsis;
+        return new LineSpec(line.start(), line.start() + keep, truncated, true,
+                walk(truncated, 0, 0, null).width());
     }
 
     private Size walk(String text, float x, float y, List<TextGlyph> quads) {
@@ -1046,7 +1056,10 @@ public final class Font {
     private record TextLayoutKey(String text, TextStyle style) {
     }
 
-    private record LineSpec(int start, int end, String text, boolean paragraphEnd) {
+    private record LineSpec(int start, int end, String text, boolean paragraphEnd, float width) {
+    }
+
+    private record LineBreak(int end, float width) {
     }
 
     private record Packing(int width, int height, byte[] pixels, List<PlacedGlyph> placed) {

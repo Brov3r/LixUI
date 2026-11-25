@@ -201,8 +201,10 @@ public final class UiContext implements AutoCloseable {
      * @throws IllegalStateException if the context is closed
      */
     public void post(Runnable task) {
-        ensureOpen();
-        tasks.add(Objects.requireNonNull(task, "task"));
+        synchronized (tasks) {
+            ensureOpen();
+            tasks.add(Objects.requireNonNull(task, "task"));
+        }
     }
 
     void runTasks() {
@@ -370,7 +372,13 @@ public final class UiContext implements AutoCloseable {
             dragSession = null;
             dragGhost = null;
             if (ghost.context() != null) {
-                manager().remove(ghost);
+                try {
+                    manager().remove(ghost);
+                } catch (RuntimeException | Error cleanupFailure) {
+                    if (cleanupFailure != exception) {
+                        exception.addSuppressed(cleanupFailure);
+                    }
+                }
             }
             throw exception;
         }
@@ -714,28 +722,44 @@ public final class UiContext implements AutoCloseable {
     /**
      * Releases every font and texture created through this context.
      * The graphics context that owns the backend resources must be current. Closing is idempotent.
+     *
+     * @throws RuntimeException the first cleanup failure, after the remaining resources have been
+     *                          released
+     * @throws Error the first cleanup failure when it is an error, after the remaining resources have
+     *               been released
      */
     @Override
     public void close() {
         if (closed) {
             return;
         }
-        clearDrag();
-        closed = true;
+        Throwable failure = null;
+        try {
+            clearDrag();
+        } catch (RuntimeException | Error exception) {
+            failure = exception;
+        }
+        try {
+            setCursor(Cursor.DEFAULT);
+        } catch (RuntimeException | Error exception) {
+            failure = Widget.recordFailure(failure, exception);
+        }
+        synchronized (tasks) {
+            closed = true;
+            tasks.clear();
+        }
         animator.clear();
-        tasks.clear();
-        RuntimeException failure = null;
         for (Font font : List.copyOf(fonts)) {
             try {
                 renderer.destroyFont(font);
-            } catch (RuntimeException exception) {
+            } catch (RuntimeException | Error exception) {
                 failure = Widget.recordFailure(failure, exception);
             }
         }
         for (Texture texture : List.copyOf(textures)) {
             try {
                 renderer.destroyTexture(texture);
-            } catch (RuntimeException exception) {
+            } catch (RuntimeException | Error exception) {
                 failure = Widget.recordFailure(failure, exception);
             }
         }
@@ -744,7 +768,7 @@ public final class UiContext implements AutoCloseable {
         icons.clear();
         defaultFont = null;
         if (failure != null) {
-            throw failure;
+            Widget.rethrowFailure(failure);
         }
     }
 

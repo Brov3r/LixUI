@@ -170,6 +170,99 @@ class RemoteImageLoaderTest {
         }
     }
 
+    @Test
+    void isolatesReadyCallbackFailures() throws IOException {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend);
+                RemoteImageLoader loader = loader(manager, png(20, 20))) {
+            ImageRequest request = new ImageRequest(IMAGE_URI, 20, 20);
+            AtomicReference<Texture> secondReady = new AtomicReference<>();
+            ImageHandle first = loader.load(request, texture -> {
+                throw new IllegalStateException("ready callback failed");
+            }, error -> {
+                throw new AssertionError(error);
+            });
+            ImageHandle second = loader.load(request, secondReady::set, error -> {
+                throw new AssertionError(error);
+            });
+
+            manager.update(0);
+
+            assertNotNull(secondReady.get());
+            first.close();
+            second.close();
+        }
+    }
+
+    @Test
+    void isolatesErrorCallbackFailures() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend);
+                RemoteImageLoader loader = new RemoteImageLoader(manager.context(), uri -> {
+                    throw new IOException("fetch failed");
+                }, new DirectExecutorService())) {
+            ImageRequest request = new ImageRequest(IMAGE_URI, 20, 20);
+            AtomicReference<Throwable> secondError = new AtomicReference<>();
+            ImageHandle first = loader.load(request, texture -> {
+                throw new AssertionError("Unexpected image.");
+            }, error -> {
+                throw new IllegalStateException("error callback failed");
+            });
+            ImageHandle second = loader.load(request, texture -> {
+                throw new AssertionError("Unexpected image.");
+            }, secondError::set);
+
+            manager.update(0);
+
+            assertTrue(secondError.get() instanceof IOException);
+            first.close();
+            second.close();
+        }
+    }
+
+    @Test
+    void releasingLastHandleTrimsOverBudgetTextureOnRenderThread() throws IOException {
+        TestBackend backend = new TestBackend();
+        byte[] image = png(20, 20);
+        try (WidgetManager manager = manager(backend);
+                RemoteImageLoader loader = new RemoteImageLoader(manager.context(), uri -> image,
+                        new DirectExecutorService(), 0)) {
+            AtomicReference<Texture> ready = new AtomicReference<>();
+            ImageHandle handle = loader.load(new ImageRequest(IMAGE_URI, 20, 20), ready::set,
+                    error -> {
+                        throw new AssertionError(error);
+                    });
+            manager.update(0);
+            assertNotNull(ready.get());
+            handle.close();
+            assertNull(backend.lastDestroyedTexture());
+            manager.update(0);
+            assertSame(ready.get(), backend.lastDestroyedTexture());
+        }
+    }
+
+    @Test
+    void closingLoaderSuppressesQueuedCacheHit() throws IOException {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend);
+                RemoteImageLoader loader = loader(manager, png(20, 20))) {
+            ImageRequest request = new ImageRequest(IMAGE_URI, 20, 20);
+            AtomicReference<Texture> ready = new AtomicReference<>();
+            loader.load(request, ready::set, error -> {
+                throw new AssertionError(error);
+            });
+            manager.update(0);
+            assertNotNull(ready.get());
+            ready.set(null);
+            loader.load(request, ready::set, error -> {
+                throw new AssertionError(error);
+            });
+            loader.close();
+            manager.update(0);
+            assertNull(ready.get());
+        }
+    }
+
     private static RemoteImageLoader loader(WidgetManager manager, byte[] bytes) {
         return new RemoteImageLoader(manager.context(), uri -> bytes, new DirectExecutorService());
     }

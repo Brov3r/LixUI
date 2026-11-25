@@ -63,6 +63,7 @@ public final class WidgetManager implements AutoCloseable {
     private final EnumMap<MouseButton, Widget> captures = new EnumMap<>(MouseButton.class);
     private final EnumMap<MouseButton, PressState> presses = new EnumMap<>(MouseButton.class);
     private final TooltipOverlay tooltips = new TooltipOverlay();
+    private Viewport appliedViewport;
     private Widget hovered;
     private Widget focused;
     private Widget lastClickTarget;
@@ -290,7 +291,13 @@ public final class WidgetManager implements AutoCloseable {
         } catch (RuntimeException | Error exception) {
             widgets.removeIf(candidate -> candidate == widget);
             widgetSnapshot = null;
-            pruneInteraction();
+            try {
+                pruneInteraction();
+            } catch (RuntimeException | Error cleanupFailure) {
+                if (cleanupFailure != exception) {
+                    exception.addSuppressed(cleanupFailure);
+                }
+            }
             throw exception;
         }
         return this;
@@ -303,6 +310,8 @@ public final class WidgetManager implements AutoCloseable {
      * @param widget widget to remove
      * @return true when the widget was registered
      * @throws NullPointerException if {@code widget} is null
+     * @throws RuntimeException the first cleanup failure, after interaction state is pruned
+     * @throws Error the first cleanup failure when it is an error, after interaction state is pruned
      */
     public boolean remove(Widget widget) {
         Objects.requireNonNull(widget, "widget");
@@ -310,10 +319,19 @@ public final class WidgetManager implements AutoCloseable {
             if (widgets.get(index) == widget) {
                 widgets.remove(index);
                 widgetSnapshot = null;
+                Throwable failure = null;
                 try {
                     widget.detach();
-                } finally {
+                } catch (RuntimeException | Error exception) {
+                    failure = exception;
+                }
+                try {
                     pruneInteraction();
+                } catch (RuntimeException | Error exception) {
+                    failure = Widget.recordFailure(failure, exception);
+                }
+                if (failure != null) {
+                    Widget.rethrowFailure(failure);
                 }
                 return true;
             }
@@ -323,6 +341,7 @@ public final class WidgetManager implements AutoCloseable {
 
     /**
      * Sets the logical viewport and delegates the physical viewport to the backend.
+     * Attached widgets are notified only when the viewport differs from the last applied one.
      *
      * @param viewport target viewport
      * @throws NullPointerException if {@code viewport} is null
@@ -332,8 +351,12 @@ public final class WidgetManager implements AutoCloseable {
         Objects.requireNonNull(viewport, "viewport");
         ensureOpen();
         renderer.resize(viewport);
+        if (viewport.equals(appliedViewport)) {
+            return;
+        }
         context.setViewport(viewport);
         notifyContextChanged();
+        appliedViewport = viewport;
     }
 
     /**
@@ -387,16 +410,25 @@ public final class WidgetManager implements AutoCloseable {
         if (viewport.isEmpty()) {
             return;
         }
-        for (Widget widget : List.copyOf(widgets)) {
+        Throwable failure = null;
+        for (Widget widget : widgetSnapshot()) {
             if (widget.context() != context || !widget.isVisible() || widget.bounds().isEmpty()
                     || !widget.bounds().intersect(viewport).isEmpty()) {
                 continue;
             }
             try {
                 widget.onOffscreen();
-            } finally {
-                remove(widget);
+            } catch (RuntimeException | Error exception) {
+                failure = Widget.recordFailure(failure, exception);
             }
+            try {
+                remove(widget);
+            } catch (RuntimeException | Error exception) {
+                failure = Widget.recordFailure(failure, exception);
+            }
+        }
+        if (failure != null) {
+            Widget.rethrowFailure(failure);
         }
     }
 
@@ -486,7 +518,10 @@ public final class WidgetManager implements AutoCloseable {
      * Hover, focus and pointer captures are cleared. The render backend and platform adapter are
      * owned by the host and are not closed by this method.
      *
-     * @throws RuntimeException if cleanup fails, after the remaining resources have been released
+     * @throws RuntimeException the first cleanup failure, after the remaining resources have been
+     *                          released
+     * @throws Error the first cleanup failure when it is an error, after the remaining resources have
+     *               been released
      */
     @Override
     public void close() {
@@ -494,25 +529,25 @@ public final class WidgetManager implements AutoCloseable {
             return;
         }
         closed = true;
-        RuntimeException failure = null;
+        Throwable failure = null;
         try {
             clearCaptures();
-        } catch (RuntimeException exception) {
+        } catch (RuntimeException | Error exception) {
             failure = Widget.recordFailure(failure, exception);
         }
         try {
             tooltips.hide();
-        } catch (RuntimeException exception) {
+        } catch (RuntimeException | Error exception) {
             failure = Widget.recordFailure(failure, exception);
         }
         try {
             clearHover();
-        } catch (RuntimeException exception) {
+        } catch (RuntimeException | Error exception) {
             failure = Widget.recordFailure(failure, exception);
         }
         try {
             focus(null);
-        } catch (RuntimeException exception) {
+        } catch (RuntimeException | Error exception) {
             failure = Widget.recordFailure(failure, exception);
         }
         resetClickSequence();
@@ -521,7 +556,7 @@ public final class WidgetManager implements AutoCloseable {
         for (Widget widget : widgetSnapshot()) {
             try {
                 widget.detach();
-            } catch (RuntimeException exception) {
+            } catch (RuntimeException | Error exception) {
                 failure = Widget.recordFailure(failure, exception);
             }
         }
@@ -529,11 +564,11 @@ public final class WidgetManager implements AutoCloseable {
         widgetSnapshot = List.of();
         try {
             context.close();
-        } catch (RuntimeException exception) {
+        } catch (RuntimeException | Error exception) {
             failure = Widget.recordFailure(failure, exception);
         }
         if (failure != null) {
-            throw failure;
+            Widget.rethrowFailure(failure);
         }
     }
 
@@ -744,6 +779,7 @@ public final class WidgetManager implements AutoCloseable {
                 widget.contextChanged();
             }
         }
+        tooltips.contextChanged();
     }
 
     private List<Widget> widgetSnapshot() {
@@ -1287,72 +1323,99 @@ public final class WidgetManager implements AutoCloseable {
             refreshCursor();
             return;
         }
-        Set<Widget> released = UiContext.identitySet();
-        Map<MouseButton, Widget> cancelled = new EnumMap<>(MouseButton.class);
+        Map<MouseButton, Widget> cancelled = null;
         Iterator<Map.Entry<MouseButton, Widget>> iterator = captures.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<MouseButton, Widget> entry = iterator.next();
             if (!isAttached(entry.getValue()) || !isInteractive(entry.getValue())) {
                 presses.remove(entry.getKey());
-                released.add(entry.getValue());
+                if (cancelled == null) {
+                    cancelled = new EnumMap<>(MouseButton.class);
+                }
                 cancelled.put(entry.getKey(), entry.getValue());
                 iterator.remove();
             }
         }
-        for (Widget widget : released) {
+        if (cancelled == null) {
+            refreshCursor();
+            return;
+        }
+        for (Widget widget : cancelled.values()) {
             clearPressedIfUncaptured(widget);
         }
-        RuntimeException failure = null;
+        Throwable failure = null;
         for (Map.Entry<MouseButton, Widget> entry : cancelled.entrySet()) {
             try {
                 entry.getValue().onPointerCaptureCancelled(entry.getKey());
-            } catch (RuntimeException exception) {
+            } catch (RuntimeException | Error exception) {
                 failure = Widget.recordFailure(failure, exception);
             }
         }
-        refreshCursor();
+        try {
+            refreshCursor();
+        } catch (RuntimeException | Error exception) {
+            failure = Widget.recordFailure(failure, exception);
+        }
         if (failure != null) {
-            throw failure;
+            Widget.rethrowFailure(failure);
         }
     }
 
     private void clearHover() {
-        tooltips.hide();
-        if (hovered == null) {
-            return;
+        Throwable failure = null;
+        try {
+            tooltips.hide();
+        } catch (RuntimeException | Error exception) {
+            failure = exception;
         }
         Widget previous = hovered;
-        hoverRevision++;
-        hovered = null;
-        previous.setHovered(false);
-        previous.onPointerExit();
-        refreshCursor();
-    }
-
-    private void clearCaptures() {
-        context.cancelDrag();
-        presses.clear();
-        resetClickSequence();
-        if (captures.isEmpty()) {
-            return;
-        }
-        Map<MouseButton, Widget> cancelled = new EnumMap<>(captures);
-        Set<Widget> pressedWidgets = UiContext.identitySet();
-        pressedWidgets.addAll(cancelled.values());
-        captures.clear();
-        for (Widget widget : pressedWidgets) {
-            widget.setPressed(false);
-        }
-        RuntimeException failure = null;
-        for (Map.Entry<MouseButton, Widget> entry : cancelled.entrySet()) {
+        if (previous != null) {
+            hoverRevision++;
+            hovered = null;
+            previous.setHovered(false);
             try {
-                entry.getValue().onPointerCaptureCancelled(entry.getKey());
-            } catch (RuntimeException exception) {
+                previous.onPointerExit();
+            } catch (RuntimeException | Error exception) {
+                failure = Widget.recordFailure(failure, exception);
+            }
+            try {
+                refreshCursor();
+            } catch (RuntimeException | Error exception) {
                 failure = Widget.recordFailure(failure, exception);
             }
         }
         if (failure != null) {
-            throw failure;
+            Widget.rethrowFailure(failure);
+        }
+    }
+
+    private void clearCaptures() {
+        Throwable failure = null;
+        try {
+            context.cancelDrag();
+        } catch (RuntimeException | Error exception) {
+            failure = exception;
+        }
+        presses.clear();
+        resetClickSequence();
+        if (!captures.isEmpty()) {
+            Map<MouseButton, Widget> cancelled = new EnumMap<>(captures);
+            Set<Widget> pressedWidgets = UiContext.identitySet();
+            pressedWidgets.addAll(cancelled.values());
+            captures.clear();
+            for (Widget widget : pressedWidgets) {
+                widget.setPressed(false);
+            }
+            for (Map.Entry<MouseButton, Widget> entry : cancelled.entrySet()) {
+                try {
+                    entry.getValue().onPointerCaptureCancelled(entry.getKey());
+                } catch (RuntimeException | Error exception) {
+                    failure = Widget.recordFailure(failure, exception);
+                }
+            }
+        }
+        if (failure != null) {
+            Widget.rethrowFailure(failure);
         }
     }
 

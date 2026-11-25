@@ -59,6 +59,93 @@ class OpenGlLayerTest {
         }
     }
 
+    @Test
+    void compositesIntoOnlyTheFirstAttachmentOfAMultiRenderTargetFramebuffer() {
+        Assumptions.assumeTrue(GLFW.glfwInit(), "GLFW display unavailable.");
+        long window = 0;
+        try {
+            GLFW.glfwDefaultWindowHints();
+            GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE, GLFW.GLFW_FALSE);
+            GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR, 3);
+            GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR, 3);
+            GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE, GLFW.GLFW_OPENGL_CORE_PROFILE);
+            window = GLFW.glfwCreateWindow(128, 128, "LixUI layer MRT", 0, 0);
+            Assumptions.assumeTrue(window != 0, "OpenGL context unavailable.");
+            GLFW.glfwMakeContextCurrent(window);
+            GL.createCapabilities();
+            verifyMultiRenderTargetIsolation();
+        } finally {
+            GL.setCapabilities(null);
+            if (window != 0) {
+                GLFW.glfwDestroyWindow(window);
+            }
+            GLFW.glfwTerminate();
+        }
+    }
+
+    private static void verifyMultiRenderTargetIsolation() {
+        int framebuffer = GL30.glGenFramebuffers();
+        int firstColor = GL30.glGenRenderbuffers();
+        int secondColor = GL30.glGenRenderbuffers();
+        try {
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, framebuffer);
+            GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, firstColor);
+            GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL11.GL_RGBA8, 128, 128);
+            GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
+                    GL30.GL_RENDERBUFFER, firstColor);
+            GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, secondColor);
+            GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL11.GL_RGBA8, 128, 128);
+            GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT1,
+                    GL30.GL_RENDERBUFFER, secondColor);
+            assertEquals(GL30.GL_FRAMEBUFFER_COMPLETE,
+                    GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER));
+
+            GL20.glDrawBuffers(new int[]{GL30.GL_COLOR_ATTACHMENT0, GL30.GL_COLOR_ATTACHMENT1});
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                GL30.glClearBufferfv(GL11.GL_COLOR, 0, stack.floats(0, 0, 1, 1));
+                GL30.glClearBufferfv(GL11.GL_COLOR, 1, stack.floats(0, 1, 0, 1));
+            }
+            assertEquals(GL11.GL_NO_ERROR, GL11.glGetError(), "MRT setup must be valid.");
+
+            try (OpenGlLayer layer = new OpenGlLayer()) {
+                RenderManager renderer = new RenderManager(layer);
+                renderer.resize(TestViewports.FRAMEBUFFER);
+                renderer.begin();
+                renderer.rect(new Rect(10, 10, 30, 30), Color.rgb(255, 0, 0));
+                renderer.end();
+
+                assertEquals(GL11.GL_NO_ERROR, GL11.glGetError(),
+                        "MRT composition must not raise GL errors.");
+                assertEquals(GL30.GL_COLOR_ATTACHMENT0,
+                        GL11.glGetInteger(GL30.GL_DRAW_BUFFER0));
+                assertEquals(GL30.GL_COLOR_ATTACHMENT1,
+                        GL11.glGetInteger(GL30.GL_DRAW_BUFFER1));
+                assertAttachmentPixel(0, 20, 20, 255, 0, 0);
+                assertAttachmentPixel(0, 80, 80, 0, 0, 255);
+                assertAttachmentPixel(1, 20, 20, 0, 255, 0);
+                assertAttachmentPixel(1, 80, 80, 0, 255, 0);
+            }
+        } finally {
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
+            GL30.glDeleteFramebuffers(framebuffer);
+            GL30.glDeleteRenderbuffers(firstColor);
+            GL30.glDeleteRenderbuffers(secondColor);
+        }
+    }
+
+    private static void assertAttachmentPixel(int attachment, int x, int y,
+                                              int red, int green, int blue) {
+        GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0 + attachment);
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            ByteBuffer pixel = stack.malloc(4);
+            GL11.glReadPixels(x, 127 - y, 1, 1, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, pixel);
+            assertEquals(red, Byte.toUnsignedInt(pixel.get(0)), 1);
+            assertEquals(green, Byte.toUnsignedInt(pixel.get(1)), 1);
+            assertEquals(blue, Byte.toUnsignedInt(pixel.get(2)), 1);
+        }
+        GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
+    }
+
     private static void verifyIsolation() {
         int framebuffer = GL30.glGenFramebuffers();
         int color = GL30.glGenRenderbuffers();
@@ -178,7 +265,8 @@ class OpenGlLayerTest {
                 GL11.glGetInteger(GL11.GL_UNPACK_ROW_LENGTH), GL11.glGetInteger(GL11.GL_UNPACK_SKIP_PIXELS),
                 GL11.glGetInteger(GL11.GL_UNPACK_SKIP_ROWS),
                 GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING),
-                GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING)
+                GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING),
+                GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D)
         };
     }
 

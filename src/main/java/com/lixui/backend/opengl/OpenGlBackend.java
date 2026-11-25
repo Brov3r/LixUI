@@ -174,7 +174,7 @@ public final class OpenGlBackend implements RenderBackend {
             throw exception;
         }
 
-        GlTexture texture = new GlTexture(id, image.width(), image.height(), true, options);
+        GlTexture texture = new GlTexture(this, id, image.width(), image.height(), true, options);
         textures.add(texture);
         return texture;
     }
@@ -214,11 +214,12 @@ public final class OpenGlBackend implements RenderBackend {
             throw new IllegalArgumentException("Texture dimensions must be positive.");
         }
         Objects.requireNonNull(options, "options");
-        return new GlTexture(textureId, width, height, false, options);
+        return new GlTexture(this, textureId, width, height, false, options);
     }
 
     /**
-     * Deletes a texture created by this backend. Wrapped host textures are left untouched.
+     * Deletes a texture created by this backend. Wrapped host textures are ignored.
+     * An owned texture from another backend is never deleted and is rejected.
      *
      * @param texture texture to release
      * @throws NullPointerException if {@code texture} is null
@@ -227,7 +228,13 @@ public final class OpenGlBackend implements RenderBackend {
     @Override
     public void destroyTexture(Texture texture) {
         GlTexture glTexture = asGlTexture(texture);
-        if (!glTexture.owned() || !textures.remove(glTexture)) {
+        if (!glTexture.owned()) {
+            return;
+        }
+        if (glTexture.owner() != this) {
+            throw new IllegalArgumentException("Texture belongs to another render backend.");
+        }
+        if (!textures.remove(glTexture)) {
             return;
         }
         GL11.glDeleteTextures(glTexture.id());
@@ -260,18 +267,29 @@ public final class OpenGlBackend implements RenderBackend {
         boolean scissorWasEnabled = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
         boolean stencilWasEnabled = GL11.glIsEnabled(GL11.GL_STENCIL_TEST);
         boolean multisampleWasEnabled = GL11.glIsEnabled(GL13.GL_MULTISAMPLE);
-        int previousStencilMask = GL11.glGetInteger(GL11.GL_STENCIL_WRITEMASK);
-        int previousClearStencil = GL11.glGetInteger(GL11.GL_STENCIL_CLEAR_VALUE);
+        boolean usesStencil = usesStencil();
+        int previousStencilMask = 0;
+        int previousClearStencil = 0;
+        if (usesStencil) {
+            previousStencilMask = GL11.glGetInteger(GL11.GL_STENCIL_WRITEMASK);
+            previousClearStencil = GL11.glGetInteger(GL11.GL_STENCIL_CLEAR_VALUE);
+        }
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glDisable(GL11.GL_CULL_FACE);
         GL11.glDisable(GL11.GL_SCISSOR_TEST);
         GL13.glEnable(GL13.GL_MULTISAMPLE);
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GL11.glClearStencil(0);
-        GL11.glStencilMask(0xFF);
-        GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
-        GL11.glEnable(GL11.GL_STENCIL_TEST);
+        if (usesStencil) {
+            GL11.glClearStencil(0);
+            GL11.glStencilMask(0xFF);
+            GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
+            GL11.glEnable(GL11.GL_STENCIL_TEST);
+        } else {
+            // Leave host stencil contents untouched when no mask needs them.
+            GL11.glDisable(GL11.GL_STENCIL_TEST);
+            GL11.glColorMask(true, true, true, true);
+        }
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
 
         GL30.glBindVertexArray(vertexArray);
@@ -286,25 +304,45 @@ public final class OpenGlBackend implements RenderBackend {
         GL11.glEnable(GL11.GL_SCISSOR_TEST);
         Paint previousPaint = null;
         boolean paintSet = false;
+        Rect appliedClip = null;
+        int appliedStencilRef = Integer.MIN_VALUE;
+        MaskAction appliedAction = null;
+        int boundTexture = -1;
         for (Batch batch : batches) {
-            if (!applyClip(batch.clip())) {
-                continue;
+            if (!Objects.equals(batch.clip(), appliedClip)) {
+                appliedClip = batch.clip();
+                if (!applyClip(appliedClip)) {
+                    continue;
+                }
             }
-            applyStencil(batch);
+            if (usesStencil && (appliedStencilRef != batch.stencilRef()
+                    || appliedAction != batch.action())) {
+                applyStencil(batch);
+                appliedStencilRef = batch.stencilRef();
+                appliedAction = batch.action();
+            }
             if (!paintSet || !Objects.equals(previousPaint, batch.paint())) {
                 applyPaint(batch.paint());
                 previousPaint = batch.paint();
                 paintSet = true;
             }
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, batch.texture().id());
+            int textureId = batch.texture().id();
+            if (textureId != boundTexture) {
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
+                boundTexture = textureId;
+            }
             GL11.glDrawArrays(GL11.GL_TRIANGLES, batch.firstVertex(), batch.vertexCount());
             drawCallCount++;
         }
 
         GL11.glColorMask(true, true, true, true);
-        GL11.glStencilMask(previousStencilMask);
-        GL11.glClearStencil(previousClearStencil);
-        if (!stencilWasEnabled) {
+        if (usesStencil) {
+            GL11.glStencilMask(previousStencilMask);
+            GL11.glClearStencil(previousClearStencil);
+        }
+        if (stencilWasEnabled) {
+            GL11.glEnable(GL11.GL_STENCIL_TEST);
+        } else {
             GL11.glDisable(GL11.GL_STENCIL_TEST);
         }
         if (!scissorWasEnabled) {
@@ -452,8 +490,16 @@ public final class OpenGlBackend implements RenderBackend {
 
 
 
+    private boolean usesStencil() {
+        for (Batch batch : batches) {
+            if (batch.action() != MaskAction.DRAW) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void applyStencil(Batch batch) {
-        GL11.glStencilMask(0xFF);
         GL11.glStencilFunc(GL11.GL_EQUAL, batch.stencilRef(), 0xFF);
         switch (batch.action()) {
             case DRAW -> {

@@ -9,6 +9,7 @@ import com.lixui.input.event.KeyPressed;
 import com.lixui.input.event.PointerMoved;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
+import com.lixui.platform.Cursor;
 import com.lixui.render.Viewport;
 import com.lixui.text.FontData;
 import com.lixui.text.SystemFonts;
@@ -197,6 +198,23 @@ class ContextMenuTest {
         manager.handle(new PointerPressed(700, 500, MouseButton.LEFT, Modifiers.NONE));
 
         assertFalse(menu.isOpen());
+    }
+
+    @Test
+    void clearsHoverWhenThePointerLeavesEveryLevel() {
+        WidgetManager manager = manager();
+        ContextMenu menu = new ContextMenu();
+        menu.addItem("Open", null);
+        menu.open(manager.context(), 100, 100);
+        manager.layout();
+
+        Rect root = menu.levelBounds(0);
+        manager.handle(new PointerMoved(root.x() + 20, root.y() + PADDING + ITEM_HEIGHT / 2));
+        assertEquals(Cursor.POINTER, menu.cursor());
+
+        manager.handle(new PointerMoved(VIEWPORT.logicalWidth() - 1,
+                VIEWPORT.logicalHeight() - 1));
+        assertEquals(Cursor.DEFAULT, menu.cursor());
     }
 
     @Test

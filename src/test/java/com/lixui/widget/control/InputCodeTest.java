@@ -344,6 +344,36 @@ class InputCodeTest {
     }
 
     @Test
+    void rehighlightsTheSameTextWhenKeywordsChange() {
+        Optional<FontData> data = SystemFonts.findDefault();
+        Assumptions.assumeTrue(data.isPresent(), "No readable system font is installed.");
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            Font font = manager.context().createFont(data.get(), 16);
+            manager.setDefaultFont(font);
+            InputCode code = new InputCode("alpha beta");
+            code.setShowLineNumbers(false);
+            code.setBounds(CODE_BOUNDS);
+            manager.add(code);
+            Color keyword = InputCode.SyntaxColors.defaults(manager.context().theme()).keyword();
+
+            manager.render();
+            assertFalse(textColors(backend).contains(keyword));
+
+            code.setKeywords(Set.of("alpha"));
+            manager.render();
+            assertTrue(textColors(backend).contains(keyword));
+        }
+    }
+
+    @Test
+    void countsCaretColumnsInCodePoints() {
+        String emoji = new String(Character.toChars(0x1F600));
+        assertEquals("Ln 1, Col 3", InputCode.caretPositionLabel(emoji + "a", 3));
+        assertEquals("Ln 2, Col 2", InputCode.caretPositionLabel("a\n" + emoji + "b", 4));
+    }
+
+    @Test
     void currentLineHighlightFollowsFocusAndDisablesWithTheEditor() {
         Optional<FontData> data = SystemFonts.findDefault();
         Assumptions.assumeTrue(data.isPresent(), "No readable system font is installed.");

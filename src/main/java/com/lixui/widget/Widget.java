@@ -633,7 +633,13 @@ public abstract class Widget {
             children.removeIf(candidate -> candidate == child);
             childSnapshot = null;
             child.setParent(null);
-            notifyStateChanged();
+            try {
+                notifyStateChanged();
+            } catch (RuntimeException | Error cleanupFailure) {
+                if (cleanupFailure != exception) {
+                    exception.addSuppressed(cleanupFailure);
+                }
+            }
             throw exception;
         }
         return this;
@@ -641,10 +647,13 @@ public abstract class Widget {
 
     /**
      * Removes a direct child widget and detaches it.
+     * The child is unlinked even when its cleanup callback fails.
      *
      * @param child widget to remove
      * @return true when the child was present
      * @throws NullPointerException if {@code child} is null
+     * @throws RuntimeException the first cleanup failure, with later failures suppressed
+     * @throws Error the first cleanup failure when it is an error, with later failures suppressed
      */
     public final boolean remove(Widget child) {
         Objects.requireNonNull(child, "child");
@@ -654,22 +663,51 @@ public abstract class Widget {
         }
         children.remove(index);
         childSnapshot = null;
+        Throwable failure = null;
         try {
             child.detach();
-        } finally {
+        } catch (RuntimeException | Error exception) {
+            failure = exception;
+        }
+        try {
             child.setParent(null);
+        } catch (RuntimeException | Error exception) {
+            failure = recordFailure(failure, exception);
+        }
+        try {
             onChildRemoved(child);
+        } catch (RuntimeException | Error exception) {
+            failure = recordFailure(failure, exception);
+        }
+        try {
             notifyStateChanged();
+        } catch (RuntimeException | Error exception) {
+            failure = recordFailure(failure, exception);
+        }
+        if (failure != null) {
+            rethrowFailure(failure);
         }
         return true;
     }
 
     /**
      * Removes every child and detaches all of them.
+     * Every child is attempted even when one removal fails.
+     *
+     * @throws RuntimeException the first cleanup failure, with later failures suppressed
+     * @throws Error the first cleanup failure when it is an error, with later failures suppressed
      */
     public final void removeAll() {
+        Throwable failure = null;
         for (Widget child : List.copyOf(children)) {
-            remove(child);
+            try {
+                remove(child);
+            } catch (RuntimeException | Error exception) {
+                failure = recordFailure(failure, exception);
+            }
+        }
+        if (failure != null) {
+            rethrowFailure(failure);
         }
     }
 
@@ -1445,20 +1483,20 @@ public abstract class Widget {
             return;
         }
         detaching = true;
-        RuntimeException failure = null;
+        Throwable failure = null;
         try {
             for (Widget child : childSnapshot()) {
                 if (child.parent == this) {
                     try {
                         child.detach();
-                    } catch (RuntimeException exception) {
+                    } catch (RuntimeException | Error exception) {
                         failure = recordFailure(failure, exception);
                     }
                 }
             }
             try {
                 onDetached();
-            } catch (RuntimeException exception) {
+            } catch (RuntimeException | Error exception) {
                 failure = recordFailure(failure, exception);
             }
         } finally {
@@ -1466,7 +1504,7 @@ public abstract class Widget {
             detaching = false;
         }
         if (failure != null) {
-            throw failure;
+            rethrowFailure(failure);
         }
     }
 
@@ -1547,6 +1585,26 @@ public abstract class Widget {
             failure.addSuppressed(exception);
         }
         return failure;
+    }
+
+    static Throwable recordFailure(Throwable failure, Throwable exception) {
+        if (failure == null) {
+            return exception;
+        }
+        if (failure != exception) {
+            failure.addSuppressed(exception);
+        }
+        return failure;
+    }
+
+    static void rethrowFailure(Throwable failure) {
+        if (failure instanceof RuntimeException runtimeException) {
+            throw runtimeException;
+        }
+        if (failure instanceof Error error) {
+            throw error;
+        }
+        throw new IllegalStateException("Unexpected cleanup failure.", failure);
     }
 
     private void notifyStateChanged() {

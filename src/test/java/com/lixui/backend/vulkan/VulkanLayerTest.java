@@ -6,6 +6,7 @@ import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
 import com.lixui.graphics.GradientStop;
 import com.lixui.graphics.Paint;
+import com.lixui.render.ImageData;
 import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
 import com.lixui.render.TextureFilter;
@@ -48,16 +49,87 @@ import org.lwjgl.vulkan.VkSubmitInfo;
 import org.lwjgl.vulkan.VkSubpassDependency;
 import org.lwjgl.vulkan.VkSubpassDescription;
 
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.nio.LongBuffer;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class VulkanLayerTest {
     private static final int SIZE = 64;
     private static final int PIXELS = SIZE * SIZE;
+
+    @Test
+    void rejectsTexturesFromAnotherBackendAndKeepsRepeatedDestroyHarmless() {
+        try (Host host = new Host();
+                VulkanLayer first = new VulkanLayer(host.physical, host.device, host.queue, host.family,
+                        host.loadPass, VK10.VK_SAMPLE_COUNT_1_BIT);
+                VulkanLayer second = new VulkanLayer(host.physical, host.device, host.queue, host.family,
+                        host.loadPass, VK10.VK_SAMPLE_COUNT_1_BIT)) {
+            Texture texture = first.createTexture(new ImageData(1, 1,
+                    new byte[]{(byte) 255, (byte) 255, (byte) 255, (byte) 255}));
+            assertThrows(IllegalArgumentException.class, () -> second.destroyTexture(texture));
+            first.destroyTexture(texture);
+            first.destroyTexture(texture);
+        }
+    }
+
+    @Test
+    void clearsBatchDiagnosticsWhenTheNextDrawListIsEmpty() throws ReflectiveOperationException {
+        try (Host host = new Host();
+                VulkanLayer layer = new VulkanLayer(host.physical, host.device, host.queue, host.family,
+                        host.loadPass, VK10.VK_SAMPLE_COUNT_1_BIT)) {
+            RenderManager renderer = new RenderManager(layer);
+            renderer.resize(new Viewport(SIZE, SIZE, SIZE, SIZE));
+            host.begin();
+            layer.beginFrame(host.command);
+            renderer.begin();
+            renderer.rect(new Rect(0, 0, 16, 16), Color.WHITE);
+            renderer.end();
+            layer.endFrame();
+            host.beginPass(host.clearPass);
+            layer.composite(host.command);
+            VK10.vkCmdEndRenderPass(host.command);
+            host.readBack();
+            assertEquals(2, layer.drawCallCount());
+
+            host.begin();
+            layer.beginFrame(host.command);
+            renderer.begin();
+            renderer.end();
+            layer.endFrame();
+            host.readBack();
+            assertEquals(0, layer.drawCallCount());
+            assertTrue(batches(layer).isEmpty());
+        }
+    }
+
+    @Test
+    void ignoresDrawListsThatEmitNoGeometry() {
+        try (Host host = new Host();
+                VulkanLayer layer = new VulkanLayer(host.physical, host.device, host.queue, host.family,
+                        host.loadPass, VK10.VK_SAMPLE_COUNT_1_BIT)) {
+            RenderManager renderer = new RenderManager(layer);
+            renderer.resize(new Viewport(SIZE, SIZE, SIZE, SIZE));
+            host.begin();
+            layer.beginFrame(host.command);
+            renderer.begin();
+            renderer.pushMaskRect(new Rect(0, 0, 0, 0));
+            renderer.popMask();
+            renderer.end();
+            layer.endFrame();
+            host.beginPass(host.clearPass);
+            layer.composite(host.command);
+            VK10.vkCmdEndRenderPass(host.command);
+            host.readBack();
+            assertEquals(0, layer.drawCallCount());
+            host.assertPixel(5, 5, 0, 0, 255);
+        }
+    }
 
     @Test
     void samplesGeneratedMipLevelsDuringMinification() {
@@ -167,6 +239,12 @@ class VulkanLayerTest {
                 }
             }
         }
+    }
+
+    private static List<?> batches(VulkanLayer layer) throws ReflectiveOperationException {
+        Field field = VulkanBackend.class.getDeclaredField("batches");
+        field.setAccessible(true);
+        return (List<?>) field.get(layer.backend());
     }
 
     private static final class Host implements AutoCloseable {

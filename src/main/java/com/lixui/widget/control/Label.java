@@ -42,6 +42,10 @@ public class Label extends Widget {
     private int maxLines;
     private TextOverflow overflow = TextOverflow.CLIP;
     private float lineHeight;
+    private Size cachedMeasure;
+    private String cachedMeasureText;
+    private Font cachedMeasureFont;
+    private TextStyle cachedMeasureStyle;
 
     /**
      * Creates an empty label.
@@ -310,7 +314,7 @@ public class Label extends Widget {
         if (font == null || text.isEmpty()) {
             return new Size(0, 0);
         }
-        return font.measure(text, layoutStyle(constraints.maxWidth()));
+        return measureSize(font, constraints.maxWidth());
     }
 
     /**
@@ -338,15 +342,16 @@ public class Label extends Widget {
             case CENTER -> height / 2;
             case BOTTOM -> height;
         };
-        TextStyle style = layoutStyle(width);
+        TextStyle style = drawStyle(font, width);
         Color color = resolveTextColor(widgetStyle);
+        TextLayout layout = decoration == TextDecoration.NONE
+                ? null : font.layoutBlockRelative(text, style);
         if (shadow != null) {
             renderer.text(font, text, anchorX + shadow.offsetX(), anchorY + shadow.offsetY(),
                     shadow.color(), style);
         }
-        if (decoration != TextDecoration.NONE) {
-            drawDecoration(renderer, font.layoutBlockRelative(text, style), font,
-                    anchorX, anchorY, color);
+        if (layout != null) {
+            drawDecoration(renderer, layout, font, anchorX, anchorY, color);
         }
         renderer.text(font, text, anchorX, anchorY, color, style);
     }
@@ -382,13 +387,48 @@ public class Label extends Widget {
         }
     }
 
+    private Size measureSize(Font font, float availableWidth) {
+        float maxWidth = wrap ? Math.max(0, availableWidth) : 0;
+        if (cachedMeasure != null && cachedMeasureFont == font && cachedMeasureText == text
+                && cachedMeasureStyle.maxWidth() == maxWidth
+                && matchesLayoutSettings(cachedMeasureStyle)) {
+            return cachedMeasure;
+        }
+        TextStyle style = new TextStyle(maxWidth, lineHeight, maxLines, overflow,
+                horizontal, vertical);
+        Size measured = font.measure(text, style);
+        cachedMeasure = measured;
+        cachedMeasureText = text;
+        cachedMeasureFont = font;
+        cachedMeasureStyle = style;
+        return measured;
+    }
+
+    private TextStyle drawStyle(Font font, float width) {
+        float maxWidth = wrap ? Math.max(0, width) : 0;
+        if (cachedMeasure != null && cachedMeasureFont == font && cachedMeasureText == text
+                && matchesLayoutSettings(cachedMeasureStyle)
+                && (cachedMeasureStyle.maxWidth() > 0) == (maxWidth > 0)) {
+            if (cachedMeasureStyle.maxWidth() == maxWidth) {
+                return cachedMeasureStyle;
+            }
+            if (cachedMeasureStyle.maxWidth() >= width && cachedMeasure.width() <= width) {
+                return cachedMeasureStyle;
+            }
+        }
+        return new TextStyle(maxWidth, lineHeight, maxLines, overflow, horizontal, vertical);
+    }
+
+    private boolean matchesLayoutSettings(TextStyle style) {
+        return style.lineHeight() == lineHeight
+                && style.maxLines() == maxLines
+                && style.overflow() == overflow
+                && style.horizontal() == horizontal
+                && style.vertical() == vertical;
+    }
+
     private Font resolvedFont() {
         Font inherited = font();
         return fontFamily != null ? fontFamily.resolve(fontStyle) : inherited;
-    }
-
-    private TextStyle layoutStyle(float availableWidth) {
-        return new TextStyle(wrap ? Math.max(0, availableWidth) : 0, lineHeight, maxLines,
-                overflow, horizontal, vertical);
     }
 }

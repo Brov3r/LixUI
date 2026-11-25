@@ -45,6 +45,18 @@ class PopupTest {
     }
 
     @Test
+    void closesOnAnyOutsidePress() {
+        WidgetManager manager = manager();
+        Popup popup = new Popup();
+        popup.open(manager.context(), new Rect(100, 100, 120, 30), 160, 80);
+        manager.layout();
+
+        manager.handle(new PointerPressed(20, 20, MouseButton.RIGHT, Modifiers.NONE));
+
+        assertFalse(popup.isOpen());
+    }
+
+    @Test
     void flipsAboveWhenThereIsNoRoomBelow() {
         WidgetManager manager = manager();
         Popup popup = new Popup();

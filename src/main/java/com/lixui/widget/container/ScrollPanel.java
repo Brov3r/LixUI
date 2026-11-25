@@ -538,12 +538,12 @@ public class ScrollPanel extends Panel {
         float horizontalWidth = Math.max(0, width - scrollBarInsetLeft - scrollBarInsetRight
                 - scrollBarMargin * 2 - (vertical ? BAR_THICKNESS : 0));
         verticalBar.layout(new Rect(
-                contentInsetLeft + width - scrollBarMargin - BAR_THICKNESS,
+                contentInsetLeft + width - scrollBarInsetRight - scrollBarMargin - BAR_THICKNESS,
                 contentInsetTop + scrollBarInsetTop + scrollBarMargin,
                 BAR_THICKNESS, verticalHeight));
         horizontalBar.layout(new Rect(
                 contentInsetLeft + scrollBarInsetLeft + scrollBarMargin,
-                contentInsetTop + height - scrollBarMargin - BAR_THICKNESS,
+                contentInsetTop + height - scrollBarInsetBottom - scrollBarMargin - BAR_THICKNESS,
                 horizontalWidth, BAR_THICKNESS));
     }
 

@@ -1,5 +1,7 @@
 package com.lixui.demo;
 
+import com.lixui.animation.Animation;
+import com.lixui.animation.Easing;
 import com.lixui.geometry.Rect;
 import com.lixui.input.InputState;
 import com.lixui.render.Viewport;
@@ -56,6 +58,30 @@ class BenchmarkRunJobTest {
             stage.clear();
             assertFalse(stage.hasContent());
             assertTrue(stage.children().isEmpty());
+        }
+    }
+
+    @Test
+    void jobDoesNotAdvanceTheSharedHostAnimator() {
+        try (WidgetManager manager = manager(new TestBackend())) {
+            Animation hostAnimation = manager.context().animator().animate(
+                    0, 1, 1, Easing.LINEAR, value -> { });
+            BenchmarkStage stage = new BenchmarkStage(120);
+            stage.setBounds(new Rect(0, 0, 420, 120));
+            manager.add(stage);
+            manager.render();
+
+            BenchmarkRunJob job = new BenchmarkRunJob(stage, BenchmarkScenario.TEXT,
+                    12, 0, 1, 4);
+            int guard = 0;
+            while (!job.isFinished() && guard++ < 20) {
+                job.step();
+            }
+
+            assertTrue(job.isFinished());
+            assertEquals(0, hostAnimation.progress(), 0.0001f);
+            assertFalse(hostAnimation.isFinished());
+            assertTrue(manager.context().animator().size() >= 1);
         }
     }
 

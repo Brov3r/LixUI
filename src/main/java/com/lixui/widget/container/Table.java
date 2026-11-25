@@ -81,6 +81,8 @@ public class Table extends Panel {
 
     private final List<Column> columns = new ArrayList<>();
     private final List<Row> rows = new ArrayList<>();
+    private List<Row> sortedRows;
+    private List<Object> sortedKeys;
     private final Set<Row> selectedRows = new LinkedHashSet<>();
     private final IconSet sortIcons = new IconSet("arrow-up-04.svg", "arrow-down-04.svg");
     private final ScrollBar verticalBar = new ScrollBar(ScrollBar.Orientation.VERTICAL);
@@ -541,6 +543,7 @@ public class Table extends Panel {
         }
         this.sortColumn = columnIndex;
         this.sortOrder = order;
+        invalidateSortCache();
     }
 
     /**
@@ -549,6 +552,7 @@ public class Table extends Panel {
     public final void clearSort() {
         sortColumn = -1;
         sortOrder = SortOrder.NONE;
+        invalidateSortCache();
     }
 
     /**
@@ -616,16 +620,76 @@ public class Table extends Panel {
      * @return an immutable snapshot of the displayed rows
      */
     public final List<Row> displayedRows() {
+        return List.copyOf(rowsInDisplayOrder());
+    }
+
+    // The default order is cached until structure changes or an immutable key snapshot no longer matches.
+    private List<Row> rowsInDisplayOrder() {
         if (sortOrder == SortOrder.NONE || sortColumn < 0 || sortColumn >= columns.size()) {
-            return List.copyOf(rows);
+            return rows;
         }
+        if (columns.get(sortColumn).comparator() != null) {
+            invalidateSortCache();
+            return sortRows();
+        }
+        if (sortedRows != null && sortKeysMatch()) {
+            return sortedRows;
+        }
+        invalidateSortCache();
+        List<Object> keys = immutableSortKeys();
+        if (keys == null) {
+            return sortRows();
+        }
+        sortedRows = sortRows();
+        sortedKeys = keys;
+        return sortedRows;
+    }
+
+    private boolean sortKeysMatch() {
+        if (sortedKeys == null || sortedKeys.size() != rows.size()) {
+            return false;
+        }
+        for (int index = 0; index < rows.size(); index++) {
+            if (!Objects.equals(sortKey(rows.get(index)), sortedKeys.get(index))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private List<Object> immutableSortKeys() {
+        List<Object> keys = new ArrayList<>(rows.size());
+        for (Row row : rows) {
+            Object key = sortKey(row);
+            if (!(key instanceof String || key instanceof Boolean || key instanceof Character
+                    || key instanceof Byte || key instanceof Short || key instanceof Integer
+                    || key instanceof Long || key instanceof Float || key instanceof Double
+                    || key instanceof Enum<?>)) {
+                return null;
+            }
+            keys.add(key);
+        }
+        return keys;
+    }
+
+    private Object sortKey(Row row) {
+        Cell cell = row.cell(sortColumn);
+        return cell == null ? "" : cell.sortValue();
+    }
+
+    private List<Row> sortRows() {
         List<Row> sorted = new ArrayList<>(rows);
         if (sortOrder == SortOrder.DESCENDING) {
             sorted.sort((first, second) -> compareRows(second, first));
         } else {
             sorted.sort(this::compareRows);
         }
-        return List.copyOf(sorted);
+        return sorted;
+    }
+
+    private void invalidateSortCache() {
+        sortedRows = null;
+        sortedKeys = null;
     }
 
     /**
@@ -671,8 +735,10 @@ public class Table extends Panel {
      * @throws NullPointerException if {@code column} is null
      */
     public final Column addColumn(Column column) {
-        columns.add(Objects.requireNonNull(column, "column"));
-        return column;
+        Column added = Objects.requireNonNull(column, "column");
+        columns.add(added);
+        invalidateSortCache();
+        return added;
     }
 
     /**
@@ -694,6 +760,7 @@ public class Table extends Panel {
         } else if (sortColumn > index) {
             sortColumn--;
         }
+        invalidateSortCache();
         return true;
     }
 
@@ -705,8 +772,10 @@ public class Table extends Panel {
      * @throws NullPointerException if {@code row} is null
      */
     public final Row addRow(Row row) {
-        rows.add(Objects.requireNonNull(row, "row"));
-        return row;
+        Row added = Objects.requireNonNull(row, "row");
+        rows.add(added);
+        invalidateSortCache();
+        return added;
     }
 
     /**
@@ -734,6 +803,7 @@ public class Table extends Panel {
             return false;
         }
         rows.remove(index);
+        invalidateSortCache();
         if (selectedRows.remove(row)) {
             if (selectionAnchor == row) {
                 selectionAnchor = null;
@@ -748,6 +818,7 @@ public class Table extends Panel {
      */
     public final void clearRows() {
         rows.clear();
+        invalidateSortCache();
         scrollY = 0;
         clearSelection();
     }
@@ -770,6 +841,7 @@ public class Table extends Panel {
         Objects.requireNonNull(newRows, "newRows");
         rows.clear();
         rows.addAll(newRows);
+        invalidateSortCache();
     }
 
     /**
@@ -962,34 +1034,34 @@ public class Table extends Panel {
         Color selectedHover = Color.mix(background, theme.primary(), 0.42f);
         Rect clip = new Rect(origin.x(), origin.y() + headerHeight, viewportWidth, viewportHeight);
         renderer.withClip(clip, () -> {
-            List<Row> visible = displayedRows();
+            List<Row> visible = rowsInDisplayOrder();
             int hovered = hoveredRow();
-            float y = headerHeight - scrollY;
-            for (int index = 0; index < visible.size(); index++) {
-                if (y + rowHeight <= headerHeight) {
-                    y += rowHeight;
-                    continue;
-                }
+            int first = Math.clamp((int) Math.floor(scrollY / rowHeight), 0,
+                    Math.max(0, visible.size() - 1));
+            float y = headerHeight - scrollY + first * rowHeight;
+            for (int index = first; index < visible.size(); index++) {
                 if (y >= headerHeight + viewportHeight) {
                     break;
                 }
-                Row row = visible.get(index);
-                boolean isSelected = selectedRows.contains(row);
-                Color rowColor;
-                if (isSelected) {
-                    rowColor = index == hovered ? selectedHover : selected;
-                } else {
-                    rowColor = index == hovered ? hoverBackground
-                            : (index % 2 == 0 ? background : alternate);
+                if (y + rowHeight > headerHeight) {
+                    Row row = visible.get(index);
+                    boolean isSelected = selectedRows.contains(row);
+                    Color rowColor;
+                    if (isSelected) {
+                        rowColor = index == hovered ? selectedHover : selected;
+                    } else {
+                        rowColor = index == hovered ? hoverBackground
+                                : (index % 2 == 0 ? background : alternate);
+                    }
+                    renderer.rect(new Rect(0, y, viewportWidth, rowHeight), rowColor);
+                    if (isSelected) {
+                        renderer.rect(new Rect(0, y, 3, rowHeight), theme.primary());
+                    } else if (index == hovered) {
+                        renderer.rect(new Rect(0, y, 2, rowHeight),
+                                theme.primary().withAlpha(0.7f));
+                    }
+                    drawRowCells(renderer, row, y, textColor, gridColor);
                 }
-                renderer.rect(new Rect(0, y, viewportWidth, rowHeight), rowColor);
-                if (isSelected) {
-                    renderer.rect(new Rect(0, y, 3, rowHeight), theme.primary());
-                } else if (index == hovered) {
-                    renderer.rect(new Rect(0, y, 2, rowHeight),
-                            theme.primary().withAlpha(0.7f));
-                }
-                drawRowCells(renderer, row, y, textColor, gridColor);
                 y += rowHeight;
             }
         });
@@ -1240,7 +1312,7 @@ public class Table extends Panel {
             clearSelection();
             return true;
         }
-        Row row = displayedRows().get(rowIndex);
+        Row row = rowsInDisplayOrder().get(rowIndex);
         selectionDragging = false;
         if (selectionMode == SelectionMode.MULTIPLE && modifiers.control()) {
             toggleSelection(row);
@@ -1432,10 +1504,9 @@ public class Table extends Panel {
             return;
         }
         if (sortColumn != index || sortOrder == SortOrder.NONE) {
-            sortColumn = index;
-            sortOrder = SortOrder.ASCENDING;
+            setSort(index, SortOrder.ASCENDING);
         } else if (sortOrder == SortOrder.ASCENDING) {
-            sortOrder = SortOrder.DESCENDING;
+            setSort(index, SortOrder.DESCENDING);
         } else {
             clearSort();
         }
@@ -1447,11 +1518,7 @@ public class Table extends Panel {
         if (comparator != null) {
             return comparator.compare(first, second);
         }
-        Cell firstCell = first.cell(sortColumn);
-        Cell secondCell = second.cell(sortColumn);
-        Object firstValue = firstCell == null ? "" : firstCell.sortValue();
-        Object secondValue = secondCell == null ? "" : secondCell.sortValue();
-        return compareValues(firstValue, secondValue);
+        return compareValues(sortKey(first), sortKey(second));
     }
 
     @SuppressWarnings("unchecked")
@@ -1522,7 +1589,7 @@ public class Table extends Panel {
     }
 
     private void extendSelectionTo(Row row) {
-        List<Row> displayed = displayedRows();
+        List<Row> displayed = rowsInDisplayOrder();
         int target = indexOfRow(displayed, row);
         if (target < 0) {
             return;
@@ -1574,7 +1641,7 @@ public class Table extends Panel {
             applySelection(new LinkedHashSet<>());
             return;
         }
-        List<Row> displayed = displayedRows();
+        List<Row> displayed = rowsInDisplayOrder();
         LinkedHashSet<Row> next = new LinkedHashSet<>();
         for (int index = first; index <= last; index++) {
             next.add(displayed.get(index));
