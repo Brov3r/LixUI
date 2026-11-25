@@ -209,6 +209,9 @@ final class DemoWidgetScene implements AutoCloseable {
                 outerTabs.addTab("Containers", createContainersPage())::setIcon);
         bindIcon("progress.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Progress", createProgressPage())::setIcon);
+        bindIcon("progress-02.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Steps",
+                        new StepperDemoPage(fontFamily, this::bindIcon).build())::setIcon);
         bindIcon("keyboard.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Input", createInputPage())::setIcon);
         bindIcon("a-to-z.svg", outerTabs.iconSize(),
