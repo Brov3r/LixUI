@@ -4,6 +4,8 @@ import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
 import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
+import com.lixui.input.Key;
+import com.lixui.input.Modifiers;
 import com.lixui.platform.UiPlatform;
 import com.lixui.render.RenderBackend;
 import com.lixui.render.RenderManager;
@@ -38,6 +40,7 @@ import com.lixui.widget.control.Input;
 import com.lixui.widget.control.InputArea;
 import com.lixui.widget.control.InputCode;
 import com.lixui.widget.control.Keycap;
+import com.lixui.widget.control.Keybind;
 import com.lixui.widget.control.KnobSlider;
 import com.lixui.widget.control.Label;
 import com.lixui.widget.control.MultiSelect;
@@ -224,6 +227,8 @@ final class DemoWidgetScene implements AutoCloseable {
                         new RadialMenuDemoPage(fontFamily, this::bindIcon).build())::setIcon);
         bindIcon("keyboard.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Input", createInputPage())::setIcon);
+        bindIcon("key.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Keybind", createKeybindPage())::setIcon);
         bindIcon("a-to-z.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Text area", createInputAreaPage())::setIcon);
         bindIcon("code.svg", outerTabs.iconSize(),
@@ -1731,6 +1736,59 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(queueActions)
                 .add(status);
         return page;
+    }
+
+    private Widget createKeybindPage() {
+        Label status = new Label("Click a field and press a shortcut. Escape cancels; the cross clears.");
+        status.setFontFamily(fontFamily);
+        status.setAutoSize(false);
+        status.setWrap(true);
+
+        Keybind primary = new Keybind(Key.K, new Modifiers(true, true, false, false));
+        primary.setOnChange(binding -> status.setText("Primary attack: "
+                + keybindText(binding) + "."));
+        primary.setTooltipText("Click and press a new shortcut.");
+
+        Keybind interact = new Keybind(Key.E, Modifiers.NONE);
+        interact.setOnChange(binding -> status.setText("Interact: "
+                + keybindText(binding) + "."));
+
+        Keybind menu = new Keybind(Key.TAB, Modifiers.NONE);
+        menu.setOnChange(binding -> status.setText("Menu: "
+                + keybindText(binding) + "."));
+        menu.setTooltipText("Tab is captured while the field is in capture mode.");
+
+        Keybind unbound = new Keybind();
+        unbound.setOnChange(binding -> status.setText("Unassigned: "
+                + keybindText(binding) + "."));
+        unbound.setTooltipText("Empty fields wait for the first shortcut.");
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(10);
+        page.add(sliderCaption("Combat and interface shortcuts"))
+                .add(keybindRow("Primary attack", primary))
+                .add(keybindRow("Interact", interact))
+                .add(keybindRow("Menu (Tab allowed)", menu))
+                .add(keybindRow("Unassigned", unbound))
+                .add(sliderCaption("Click to capture, Esc to cancel, cross to clear"))
+                .add(status);
+        return page;
+    }
+
+    private HBox keybindRow(String caption, Keybind field) {
+        Label label = new Label(caption);
+        label.setFontFamily(fontFamily);
+        label.setAutoSize(false);
+        HBox row = new HBox();
+        row.setGap(12);
+        row.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        row.add(label).add(field);
+        return row;
+    }
+
+    private static String keybindText(Keybind.Binding binding) {
+        return binding == null ? "cleared" : binding.text();
     }
 
     private Widget createTablePage() {
