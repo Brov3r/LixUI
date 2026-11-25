@@ -21,6 +21,8 @@ import com.lixui.widget.WidgetManager;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.testsupport.TestTexture;
 import com.lixui.widget.testsupport.TestViewports;
+import com.lixui.widget.tooltip.TextTooltip;
+import com.lixui.widget.tooltip.TooltipSettings;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +34,9 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -319,6 +324,109 @@ class RadialMenuTest {
             assertNoUnpairedSurrogates(fitted);
         }
         assertTrue(truncated);
+    }
+
+    @Test
+    void showsHoveredSectorTooltipAndSwitchesItWithoutSticking() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            RadialMenu menu = menu(4);
+            menu.setTooltipSettings(new TooltipSettings(0, 0, 0, 12, 18));
+            String longLabel = "SupercalifragilisticexpialidociousTokenWithoutSpaces0123456789";
+            String customTooltip = "Second sector hint that differs from its drawn label";
+            menu.items().getFirst().setLabel(longLabel);
+            menu.items().get(1).setTooltip(customTooltip);
+            menu.open(manager.context(), 400, 300);
+            manager.layout();
+            manager.render();
+
+            manager.handle(new PointerMoved(400, 200));
+            assertEquals(0, menu.hoveredIndex());
+            TextTooltip tooltip = assertInstanceOf(TextTooltip.class, menu.tooltip());
+            assertEquals(longLabel, tooltip.text());
+            manager.update(0.01f);
+            manager.update(0.02f);
+            assertNotNull(tooltip.context());
+
+            manager.handle(new PointerMoved(500, 300));
+            assertEquals(1, menu.hoveredIndex());
+            assertSame(tooltip, menu.tooltip());
+            assertEquals(customTooltip, tooltip.text());
+            assertNotNull(tooltip.context());
+
+            manager.handle(new PointerMoved(400, 400));
+            manager.handle(new PointerMoved(300, 300));
+            manager.handle(new PointerMoved(400, 200));
+            assertEquals(0, menu.hoveredIndex());
+            assertSame(tooltip, menu.tooltip());
+            assertEquals(longLabel, tooltip.text());
+        }
+    }
+
+    @Test
+    void clearsTheTooltipWhenHoverLeavesOrTheMenuCloses() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            RadialMenu menu = menu(4);
+            menu.setTooltipSettings(new TooltipSettings(0, 0, 0, 12, 18));
+            menu.open(manager.context(), 400, 300);
+            manager.layout();
+            manager.render();
+
+            manager.handle(new PointerMoved(400, 200));
+            TextTooltip tooltip = assertInstanceOf(TextTooltip.class, menu.tooltip());
+            manager.update(0.01f);
+            manager.update(0.02f);
+            assertNotNull(tooltip.context());
+
+            manager.handle(new PointerMoved(400, 300));
+            assertEquals(-1, menu.hoveredIndex());
+            assertNull(menu.tooltip());
+            manager.update(0.02f);
+            assertNull(tooltip.context());
+
+            manager.handle(new PointerMoved(400, 200));
+            assertSame(tooltip, menu.tooltip());
+            manager.handle(new KeyPressed(Key.ESCAPE, Modifiers.NONE, false));
+            assertFalse(menu.isOpen());
+            assertNull(menu.tooltip());
+            manager.update(0.02f);
+            assertNull(tooltip.context());
+
+            menu.open(manager.context(), 400, 300);
+            manager.layout();
+            manager.handle(new PointerMoved(400, 200));
+            assertSame(tooltip, menu.tooltip());
+            menu.close();
+            assertNull(menu.tooltip());
+            manager.update(0.02f);
+            assertNull(tooltip.context());
+        }
+    }
+
+    @Test
+    void disabledSectorStillShowsItsTooltip() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            RadialMenu menu = menu(4);
+            menu.setTooltipSettings(new TooltipSettings(0, 0, 0, 12, 18));
+            RadialMenu.Item disabled = menu.items().getFirst();
+            disabled.setLabel("Archive the selected document");
+            disabled.setTooltip("Locked: archives are unavailable in this demo.");
+            disabled.setEnabled(false);
+            menu.open(manager.context(), 400, 300);
+            manager.layout();
+            manager.render();
+
+            manager.handle(new PointerMoved(400, 200));
+            assertEquals(0, menu.hoveredIndex());
+            TextTooltip tooltip = assertInstanceOf(TextTooltip.class, menu.tooltip());
+            assertEquals("Locked: archives are unavailable in this demo.", tooltip.text());
+            manager.update(0.01f);
+            manager.update(0.02f);
+            assertNotNull(tooltip.context());
+            assertTrue(menu.isOpen());
+        }
     }
 
     @Test

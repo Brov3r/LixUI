@@ -23,6 +23,7 @@ import com.lixui.theme.Theme;
 import com.lixui.widget.FrameInfo;
 import com.lixui.widget.UiContext;
 import com.lixui.widget.Widget;
+import com.lixui.widget.tooltip.TextTooltip;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,8 +34,9 @@ import java.util.Objects;
  * Every sector shows an optional icon and a label; the inner circle shows a title and acts as a
  * close button. Opening scales the ring up, closing scales it down, Escape dismisses the menu, and
  * a press outside the ring or center closes it. The menu requests keyboard focus while open and
- * restores the previous focus when it closes normally. The center and the whole ring are clamped
- * to the viewport, including the label extents.
+ * restores the previous focus when it closes normally. Hovering a sector shows a tooltip with the
+ * full label or the item tooltip text. The center and the whole ring are clamped to the viewport,
+ * including the label extents.
  */
 public class RadialMenu extends Widget {
     /**
@@ -45,6 +47,7 @@ public class RadialMenu extends Widget {
         private Texture icon;
         private Runnable action;
         private boolean enabled = true;
+        private String tooltip;
         private PlacementKey placementKey;
         private Placement placement;
 
@@ -155,6 +158,30 @@ public class RadialMenu extends Widget {
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
         }
+
+        /**
+         * Returns the tooltip text shown while the sector is hovered.
+         *
+         * @return the custom tooltip text, or null when the full label is used
+         */
+        public String tooltip() {
+            return tooltip;
+        }
+
+        /**
+         * Replaces the tooltip text shown while the sector is hovered.
+         * Null or empty text falls back to the full label, which stays available even when the
+         * drawn label is truncated.
+         *
+         * @param tooltip custom tooltip text, or null to use the full label
+         */
+        public void setTooltip(String tooltip) {
+            this.tooltip = tooltip == null || tooltip.isEmpty() ? null : tooltip;
+        }
+
+        private String tooltipText() {
+            return tooltip == null ? label : tooltip;
+        }
     }
 
     private static final float DEFAULT_RADIUS = 140;
@@ -184,6 +211,7 @@ public class RadialMenu extends Widget {
     private static final float ANIMATION_SNAP = 0.001f;
 
     private final List<Item> items = new ArrayList<>();
+    private final TextTooltip sectorTooltip = new TextTooltip();
 
     private float radius = DEFAULT_RADIUS;
     private float innerRadiusRatio = DEFAULT_INNER_RADIUS_RATIO;
@@ -269,6 +297,7 @@ public class RadialMenu extends Widget {
             return false;
         }
         hoveredIndex = -1;
+        clearSectorTooltip();
         if (items.isEmpty()) {
             close();
         }
@@ -281,6 +310,7 @@ public class RadialMenu extends Widget {
     public final void clearItems() {
         items.clear();
         hoveredIndex = -1;
+        clearSectorTooltip();
         close();
     }
 
@@ -533,6 +563,7 @@ public class RadialMenu extends Widget {
         openAmount = 0;
         hoveredIndex = -1;
         centerHovered = false;
+        clearSectorTooltip();
         previousFocus = context.focused();
         try {
             context.addTopLevel(this);
@@ -558,6 +589,7 @@ public class RadialMenu extends Widget {
             return;
         }
         closing = true;
+        clearSectorTooltip();
         startCloseAnimation();
     }
 
@@ -604,6 +636,7 @@ public class RadialMenu extends Widget {
     @Override
     protected void onDetached() {
         cancelAnimation();
+        clearSectorTooltip();
         if (open) {
             open = false;
             closing = false;
@@ -633,6 +666,7 @@ public class RadialMenu extends Widget {
         if (closePending) {
             finishClose();
         }
+        syncTooltip();
     }
 
     /**
@@ -669,6 +703,7 @@ public class RadialMenu extends Widget {
         }
         hoveredIndex = itemAt(x, y);
         centerHovered = centerAt(x, y);
+        syncTooltip();
         return false;
     }
 
@@ -679,6 +714,7 @@ public class RadialMenu extends Widget {
     protected void onPointerExit() {
         hoveredIndex = -1;
         centerHovered = false;
+        syncTooltip();
     }
 
     /**
@@ -798,6 +834,35 @@ public class RadialMenu extends Widget {
         }
         return hoveredIndex >= 0 && hoveredIndex < items.size() && items.get(hoveredIndex).enabled
                 ? Cursor.POINTER : Cursor.DEFAULT;
+    }
+
+    private void syncTooltip() {
+        if (tooltip() != null && tooltip() != sectorTooltip) {
+            return;
+        }
+        String text = hoveredTooltipText();
+        if (text == null) {
+            clearSectorTooltip();
+            return;
+        }
+        if (tooltip() == null) {
+            setTooltip(sectorTooltip);
+        }
+        sectorTooltip.setText(text);
+    }
+
+    private String hoveredTooltipText() {
+        if (!open || closing || hoveredIndex < 0 || hoveredIndex >= items.size()) {
+            return null;
+        }
+        String text = items.get(hoveredIndex).tooltipText();
+        return text.isEmpty() ? null : text;
+    }
+
+    private void clearSectorTooltip() {
+        if (tooltip() == sectorTooltip) {
+            setTooltip(null);
+        }
     }
 
     private void drawMenu(RenderManager renderer, Theme theme, Font font, float amount) {
@@ -1245,6 +1310,7 @@ public class RadialMenu extends Widget {
         openAmount = 0;
         hoveredIndex = -1;
         centerHovered = false;
+        clearSectorTooltip();
         cancelAnimation();
         UiContext owner = context();
         Widget focused = owner == null ? null : owner.focused();

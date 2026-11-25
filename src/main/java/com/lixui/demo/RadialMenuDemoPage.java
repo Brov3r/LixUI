@@ -53,7 +53,8 @@ final class RadialMenuDemoPage {
         RadialMenu edit = createEditMenu(status);
         RadialMenu tools = createToolsMenu(status);
         RadialMenu longLabels = createLongLabelMenu(status);
-        List<RadialMenu> menus = List.of(file, edit, tools, longLabels);
+        RadialMenu tooltips = createTooltipMenu(status);
+        List<RadialMenu> menus = List.of(file, edit, tools, longLabels, tooltips);
 
         Button fileButton = new Button("File actions");
         fileButton.setOnAction(() -> openAt(fileButton, file));
@@ -63,6 +64,8 @@ final class RadialMenuDemoPage {
         toolsButton.setOnAction(() -> openAt(toolsButton, tools));
         Button longButton = new Button("Long labels");
         longButton.setOnAction(() -> openAt(longButton, longLabels));
+        Button tooltipButton = new Button("Long labels + tooltips");
+        tooltipButton.setOnAction(() -> openAt(tooltipButton, tooltips));
         Button cornerButton = new Button("Open near corner");
         cornerButton.setOnAction(() -> {
             UiContext context = cornerButton.context();
@@ -74,7 +77,8 @@ final class RadialMenuDemoPage {
 
         Flow buttons = new Flow();
         buttons.setGap(8);
-        buttons.add(fileButton).add(editButton).add(toolsButton).add(longButton).add(cornerButton);
+        buttons.add(fileButton).add(editButton).add(toolsButton).add(longButton)
+                .add(tooltipButton).add(cornerButton);
 
         CheckBox outside = new CheckBox("Close on outside click");
         outside.setChecked(true);
@@ -101,8 +105,9 @@ final class RadialMenuDemoPage {
         page.setGap(CONTENT_GAP);
         page.add(caption("File has six icon sectors around a titled center, Edit has eight "
                         + "compact sectors, Tools has four large sectors, and Long labels uses "
-                        + "narrow sectors with ellipsized continuous tokens. The center closes "
-                        + "the menu; the last button opens the file menu at the viewport edge."))
+                        + "narrow sectors with ellipsized continuous tokens. The tooltip menu pairs "
+                        + "long labels with custom hint texts, including a disabled sector. The center "
+                        + "closes the menu; the last button opens the file menu at the viewport edge."))
                 .add(buttons)
                 .add(controls)
                 .add(status);
@@ -172,10 +177,38 @@ final class RadialMenuDemoPage {
         return menu;
     }
 
+    private RadialMenu createTooltipMenu(Label status) {
+        RadialMenu menu = new RadialMenu();
+        menu.setRadius(132);
+        menu.setInnerRadiusRatio(0.4f);
+        menu.setIconSize(ICON_SIZE);
+        menu.setTitle("Hints");
+        add(menu, "Export the current document as a portable archive",
+                "Writes a copy and leaves the original untouched.", "file.svg", status);
+        RadialMenu.Item locked = add(menu, "Archive the selected document",
+                "Locked: archives are unavailable in this demo.", "folder.svg", status);
+        locked.setEnabled(false);
+        add(menu, "Share with every collaborator",
+                "Opens the sharing dialog for the selected item.", "share.svg", status);
+        add(menu, "SupercalifragilisticexpialidociousTokenWithoutSpaces0123456789",
+                null, "pen.svg", status);
+        add(menu, "Medium label", "Hover text set explicitly for this compact sector.",
+                "save.svg", status);
+        add(menu, "Done", null, "tick.svg", status);
+        return menu;
+    }
+
     private RadialMenu.Item add(RadialMenu menu, String label, String iconName, Label status) {
         RadialMenu.Item item = menu.addItem(new RadialMenu.Item(label,
                 () -> status.setText("Radial action: " + label + ".")));
         iconBinder.bind(iconName, ICON_SIZE, item::setIcon);
+        return item;
+    }
+
+    private RadialMenu.Item add(RadialMenu menu, String label, String tooltip, String iconName,
+                                Label status) {
+        RadialMenu.Item item = add(menu, label, iconName, status);
+        item.setTooltip(tooltip);
         return item;
     }
 
