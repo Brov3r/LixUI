@@ -77,6 +77,7 @@ public final class WidgetManager implements AutoCloseable {
     private TooltipSettings tooltipSettings = TooltipSettings.defaults();
     private boolean tooltipsEnabled = true;
     private boolean pointerInside;
+    private boolean pointerExited;
     private boolean windowFocused = true;
     private long focusRevision;
     private long hoverRevision;
@@ -514,6 +515,7 @@ public final class WidgetManager implements AutoCloseable {
         }
         resetClickSequence();
         pointerInside = false;
+        pointerExited = false;
         for (Widget widget : widgetSnapshot()) {
             try {
                 widget.detach();
@@ -780,7 +782,8 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     private void pointerEntered(float x, float y) {
-        pointerInside = true;
+        pointerExited = false;
+        pointerInside = windowFocused;
         pointerX = x;
         pointerY = y;
         updateHover();
@@ -790,13 +793,16 @@ public final class WidgetManager implements AutoCloseable {
         pointerX = x;
         pointerY = y;
         pointerInside = false;
+        pointerExited = true;
         updateHover();
     }
 
     private void pointerMoved(float x, float y) {
-        pointerInside = true;
         pointerX = x;
         pointerY = y;
+        if (windowFocused && !pointerExited) {
+            pointerInside = true;
+        }
         Widget target = updateHover();
         Set<Widget> delivered = UiContext.identitySet();
         if (target != null) {
@@ -812,6 +818,7 @@ public final class WidgetManager implements AutoCloseable {
 
     private void pointerPressed(PointerPressed pressed) {
         pointerInside = true;
+        pointerExited = false;
         pointerX = pressed.x();
         pointerY = pressed.y();
         Widget target = updateHover();
@@ -845,7 +852,9 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     private void pointerReleased(PointerReleased released) {
-        pointerInside = true;
+        if (!pointerExited) {
+            pointerInside = true;
+        }
         pointerX = released.x();
         pointerY = released.y();
         updateHover();
@@ -877,7 +886,9 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     private void pointerScrolled(PointerScrolled scrolled) {
-        pointerInside = true;
+        if (windowFocused && !pointerExited) {
+            pointerInside = true;
+        }
         pointerX = scrolled.x();
         pointerY = scrolled.y();
         Widget target = updateHover();

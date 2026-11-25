@@ -14,6 +14,8 @@ import com.lixui.input.event.KeyPressed;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
 import com.lixui.input.event.PointerMoved;
+import com.lixui.input.event.PointerEntered;
+import com.lixui.input.event.PointerExited;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.platform.Cursor;
@@ -397,6 +399,53 @@ class WidgetManagerTest {
 
         assertNull(manager.hovered());
         assertEquals(Cursor.DEFAULT, platform.cursor);
+    }
+
+    @Test
+    void focusRestoreKeepsHoverUnknownUntilThePointerMovesAgain() {
+        RecordingPlatform platform = new RecordingPlatform();
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend(), platform);
+        CursorProbe root = new CursorProbe();
+        root.setBounds(new Rect(0, 0, 100, 100));
+        manager.add(root);
+        manager.handle(new PointerMoved(10, 10));
+        assertSame(root, manager.hovered());
+        assertEquals(Cursor.POINTER, platform.cursor);
+
+        manager.handle(new FocusChanged(false));
+        manager.handle(new PointerMoved(20, 20));
+        manager.handle(new FocusChanged(true));
+        manager.layout();
+
+        assertNull(manager.hovered());
+        assertEquals(Cursor.DEFAULT, platform.cursor);
+
+        manager.handle(new PointerMoved(10, 10));
+
+        assertSame(root, manager.hovered());
+        assertEquals(Cursor.POINTER, platform.cursor);
+    }
+
+    @Test
+    void realPointerExitRequiresANewEnterBeforeHoverReturns() {
+        RecordingPlatform platform = new RecordingPlatform();
+        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend(), platform);
+        CursorProbe root = new CursorProbe();
+        root.setBounds(new Rect(0, 0, 100, 100));
+        manager.add(root);
+        manager.handle(new PointerMoved(10, 10));
+        assertSame(root, manager.hovered());
+
+        manager.handle(new PointerExited(500, 500));
+        manager.handle(new PointerMoved(10, 10));
+
+        assertNull(manager.hovered());
+        assertEquals(Cursor.DEFAULT, platform.cursor);
+
+        manager.handle(new PointerEntered(10, 10));
+
+        assertSame(root, manager.hovered());
+        assertEquals(Cursor.POINTER, platform.cursor);
     }
 
     @Test
