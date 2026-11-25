@@ -398,8 +398,19 @@ public class Popup extends Panel {
     }
 
     private void notifyClosed() {
-        if (closeListener != null) {
-            closeListener.run();
+        try {
+            if (closeListener != null) {
+                closeListener.run();
+            }
+        } finally {
+            onClosed();
         }
+    }
+
+    /**
+     * Called after the popup has closed, been removed from the manager and run its close listener.
+     * The default does nothing. Subclasses can release transient state or restore focus here.
+     */
+    protected void onClosed() {
     }
 }

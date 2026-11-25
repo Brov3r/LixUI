@@ -143,6 +143,15 @@ public final class UiContext implements AutoCloseable {
     }
 
     /**
+     * Returns the widget that currently owns keyboard focus.
+     *
+     * @return the focused widget, or null when nothing is focused or no manager is attached
+     */
+    public Widget focused() {
+        return manager == null ? null : manager.focused();
+    }
+
+    /**
      * Returns the animator updated with every widget-manager frame.
      *
      * @return the shared animator

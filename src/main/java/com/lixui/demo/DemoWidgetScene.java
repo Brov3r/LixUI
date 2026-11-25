@@ -1396,7 +1396,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(multiselect)
                 .add(sliderCaption("Context menu table"))
                 .add(createContextMenuTable(contextStatus))
-                .add(contextStatus);
+                .add(contextStatus)
+                .add(new DemoModalPage(fontFamily).page());
         return page;
     }
 
