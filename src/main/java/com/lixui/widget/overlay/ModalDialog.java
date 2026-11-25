@@ -8,6 +8,7 @@ import com.lixui.input.Key;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
 import com.lixui.render.RenderManager;
+import com.lixui.render.Texture;
 import com.lixui.theme.WidgetState;
 import com.lixui.theme.WidgetStyle;
 import com.lixui.widget.FrameInfo;
@@ -15,8 +16,10 @@ import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.UiContext;
 import com.lixui.widget.Widget;
 import com.lixui.widget.control.Button;
+import com.lixui.widget.control.Image;
 import com.lixui.widget.control.Label;
 import com.lixui.widget.control.Spacer;
+import com.lixui.widget.image.ImageSource;
 import com.lixui.widget.layout.HBox;
 import com.lixui.widget.layout.VBox;
 
@@ -31,6 +34,8 @@ import java.util.Objects;
  * dialog. Pointer and keyboard input reach only the dialog while it is open. Escape activates the
  * negative action, and a press on the dimmed background can optionally do the same. The scrim can
  * be hidden without changing the dialog modality or the backdrop dismissal behavior.
+ * The title can be prefixed with an icon that is scaled to the configured icon size and reloaded
+ * when the display density changes.
  */
 public class ModalDialog extends Popup {
     private static final float DEFAULT_WIDTH = 420;
@@ -38,10 +43,13 @@ public class ModalDialog extends Popup {
     private static final float DEFAULT_GAP = 14;
     private static final float DEFAULT_VIEWPORT_MARGIN = 24;
     private static final float ACTION_GAP = 8;
+    private static final float DEFAULT_ICON_SIZE = 24;
+    private static final float ICON_GAP = 10;
     private static final Color DEFAULT_SCRIM = new Color(0, 0, 0, 0.55f);
 
     private final VBox contentBox = new VBox();
     private final Label titleLabel = new Label();
+    private final TitleRow titleRow = new TitleRow(titleLabel);
     private final Label messageLabel = new Label();
     private final BodySlot bodySlot = new BodySlot();
     private final HBox actionRow = new HBox();
@@ -73,7 +81,7 @@ public class ModalDialog extends Popup {
         actionRow.setGap(ACTION_GAP);
         actionRow.add(new Spacer());
         contentBox.setGap(DEFAULT_GAP);
-        contentBox.add(titleLabel).add(messageLabel).add(bodySlot).add(actionRow);
+        contentBox.add(titleRow).add(messageLabel).add(bodySlot).add(actionRow);
         super.setContent(contentBox);
     }
 
@@ -96,6 +104,7 @@ public class ModalDialog extends Popup {
     public final void setTitle(String title) {
         titleLabel.setText(Objects.requireNonNull(title, "title"));
         titleLabel.setVisible(!title.isEmpty());
+        titleRow.refreshVisibility();
     }
 
     /**
@@ -117,6 +126,84 @@ public class ModalDialog extends Popup {
     public final void setMessage(String message) {
         messageLabel.setText(Objects.requireNonNull(message, "message"));
         messageLabel.setVisible(!message.isEmpty());
+    }
+
+    /**
+     * Returns the icon shown to the left of the title.
+     *
+     * @return the icon source, or null when no icon is shown
+     */
+    public final ImageSource icon() {
+        return titleRow.icon();
+    }
+
+    /**
+     * Assigns an icon drawn to the left of the title.
+     * Bundled icons are rasterized at the configured icon size and display density, while a texture
+     * source draws the supplied texture. Passing null removes the icon and restores the layout
+     * without an icon.
+     *
+     * @param icon image source, or null to remove the icon
+     */
+    public final void setIcon(ImageSource icon) {
+        titleRow.setIcon(icon);
+    }
+
+    /**
+     * Assigns a caller-owned texture icon drawn to the left of the title.
+     * The dialog never releases the texture. Passing null removes the icon and restores the layout
+     * without an icon.
+     *
+     * @param icon icon texture, or null to remove the icon
+     */
+    public final void setIcon(Texture icon) {
+        titleRow.setIcon(icon);
+    }
+
+    /**
+     * Removes the title icon and restores the layout without an icon.
+     */
+    public final void clearIcon() {
+        titleRow.clearIcon();
+    }
+
+    /**
+     * Returns the square title icon size.
+     *
+     * @return the icon edge length in logical UI units
+     */
+    public final float iconSize() {
+        return titleRow.iconSize();
+    }
+
+    /**
+     * Sets the square title icon size.
+     * The title width shrinks by the icon size and the icon gap so the icon never covers the text.
+     *
+     * @param iconSize positive edge length in logical UI units
+     * @throws IllegalArgumentException if the size is non-positive or non-finite
+     */
+    public final void setIconSize(float iconSize) {
+        titleRow.setIconSize(iconSize);
+    }
+
+    /**
+     * Returns the explicit title icon tint.
+     *
+     * @return the icon tint, or null when the dialog text color is used
+     */
+    public final Color iconTint() {
+        return titleRow.iconTint();
+    }
+
+    /**
+     * Assigns an explicit title icon tint.
+     * Passing null restores the dialog text color, so bundled monochrome icons match the title.
+     *
+     * @param iconTint icon tint, or null to follow the dialog text color
+     */
+    public final void setIconTint(Color iconTint) {
+        titleRow.setIconTint(iconTint);
     }
 
     /**
@@ -525,6 +612,141 @@ public class ModalDialog extends Popup {
     private void applyPrimaryStyle(Button button) {
         if (context() != null) {
             button.setStyle(context().theme().primaryStyle());
+        }
+    }
+
+    /**
+     * A header row that places an optional icon before the title.
+     * Without an icon the row measures and lays out exactly like the title label, so dialogs that
+     * do not use an icon keep their original layout. With an icon the title width shrinks by the
+     * icon size and gap, and both children are vertically centered against each other.
+     */
+    private static final class TitleRow extends Widget {
+        private final Image icon = new Image();
+        private final Label title;
+        private float iconSize = DEFAULT_ICON_SIZE;
+        private Color iconTint;
+
+        private TitleRow(Label title) {
+            this.title = title;
+            icon.setAutoSize(false);
+            icon.setBounds(new Rect(0, 0, DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE));
+            icon.setVisible(false);
+            add(icon).add(title);
+            setVisible(false);
+        }
+
+        private ImageSource icon() {
+            return icon.source();
+        }
+
+        private void setIcon(ImageSource source) {
+            icon.setSource(source);
+            icon.setVisible(source != null);
+            refreshVisibility();
+        }
+
+        private void setIcon(Texture texture) {
+            icon.setTexture(texture);
+            icon.setVisible(texture != null);
+            refreshVisibility();
+        }
+
+        private void clearIcon() {
+            icon.clearSource();
+            icon.setVisible(false);
+            refreshVisibility();
+        }
+
+        private void refreshVisibility() {
+            setVisible(icon.isVisible() || title.isVisible());
+        }
+
+        private float iconSize() {
+            return iconSize;
+        }
+
+        private void setIconSize(float iconSize) {
+            if (!Float.isFinite(iconSize) || iconSize <= 0) {
+                throw new IllegalArgumentException("Icon size must be finite and positive.");
+            }
+            this.iconSize = iconSize;
+            icon.setBounds(new Rect(0, 0, iconSize, iconSize));
+        }
+
+        private Color iconTint() {
+            return iconTint;
+        }
+
+        private void setIconTint(Color iconTint) {
+            this.iconTint = iconTint;
+            applyTint();
+        }
+
+        /**
+         * Applies the resolved icon tint when the row attaches.
+         */
+        @Override
+        protected void onAttached() {
+            applyTint();
+        }
+
+        /**
+         * Reapplies the resolved icon tint after a theme or display density change.
+         */
+        @Override
+        protected void onContextChanged() {
+            applyTint();
+        }
+
+        /**
+         * Measures the optional icon and the title wrapped in the remaining width.
+         * Without an icon the result matches the title label measurement.
+         *
+         * @param constraints available and required dimensions
+         * @return the header size within the constraints
+         */
+        @Override
+        protected Size onMeasure(LayoutConstraints constraints) {
+            boolean hasIcon = icon.isVisible();
+            float titleWidth = hasIcon
+                    ? Math.max(0, constraints.maxWidth() - iconSize - ICON_GAP)
+                    : constraints.maxWidth();
+            Size titleSize = title.measure(
+                    LayoutConstraints.loose(titleWidth, constraints.maxHeight()));
+            if (!hasIcon) {
+                return titleSize;
+            }
+            float height = Math.max(iconSize, titleSize.height());
+            return new Size(Math.min(constraints.maxWidth(), iconSize + ICON_GAP + titleSize.width()),
+                    height);
+        }
+
+        /**
+         * Places the icon and the title and vertically centers the shorter one.
+         * The icon occupies its own column, so it never covers the wrapped title text.
+         */
+        @Override
+        protected void onLayout() {
+            float width = bounds().width();
+            if (!icon.isVisible()) {
+                title.layout(new Rect(0, 0, width, bounds().height()));
+                return;
+            }
+            float titleWidth = Math.max(0, width - iconSize - ICON_GAP);
+            Size titleSize = title.measure(LayoutConstraints.loose(titleWidth, bounds().height()));
+            float rowHeight = Math.max(iconSize, titleSize.height());
+            float iconY = (rowHeight - iconSize) / 2;
+            float titleY = (rowHeight - titleSize.height()) / 2;
+            icon.layout(new Rect(0, iconY, iconSize, iconSize));
+            title.layout(new Rect(iconSize + ICON_GAP, titleY, titleWidth, titleSize.height()));
+        }
+
+        private void applyTint() {
+            WidgetStyle style = style();
+            Color tint = iconTint != null ? iconTint
+                    : style == null ? Color.WHITE : style.text(WidgetState.NORMAL);
+            icon.setTint(tint);
         }
     }
 

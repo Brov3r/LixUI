@@ -2,6 +2,7 @@ package com.lixui.widget.overlay;
 
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
+import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
 import com.lixui.input.Key;
@@ -11,16 +12,22 @@ import com.lixui.input.event.CharTyped;
 import com.lixui.input.event.KeyPressed;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
+import com.lixui.render.ImageData;
+import com.lixui.render.Texture;
 import com.lixui.render.Viewport;
+import com.lixui.render.command.ImageCommand;
 import com.lixui.render.command.RoundedRectCommand;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.control.Button;
 import com.lixui.widget.control.Input;
+import com.lixui.widget.control.Label;
+import com.lixui.widget.image.ImageSource;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.testsupport.TestViewports;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -368,12 +375,172 @@ class ModalDialogTest {
     }
 
     @Test
+    void drawsTheTitleIconBeforeTheTitle() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = manager(backend);
+        Texture icon = texture(manager, 24, 24);
+        ModalDialog dialog = new ModalDialog();
+        dialog.setTitle("Update ready");
+        dialog.setMessage("Restart when convenient.");
+        dialog.addAction("Close", true, null);
+        dialog.setIcon(icon);
+        dialog.setIconSize(24);
+
+        dialog.show(manager.context());
+        manager.render();
+
+        ImageCommand command = imageCommand(backend, icon);
+        Rect iconRect = drawnBounds(command);
+        Rect titleRect = absoluteBounds(findLabel(dialog, "Update ready"));
+        float contentX = dialog.panelBounds().x() + dialog.padding();
+
+        assertEquals(new Rect(0, 0, 24, 24), command.bounds());
+        assertEquals(contentX, iconRect.x(), 0.001f);
+        assertEquals(titleRect.y() + (titleRect.height() - 24) / 2, iconRect.y(), 0.001f);
+        assertEquals(24, iconRect.width(), 0.001f);
+        assertEquals(24, iconRect.height(), 0.001f);
+        assertTrue(iconRect.right() <= titleRect.x());
+        assertTrue(titleRect.x() > contentX);
+    }
+
+    @Test
+    void layoutWithoutAnIconKeepsTheTitleFullWidth() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = manager(backend);
+        ModalDialog dialog = new ModalDialog();
+        dialog.setTitle("No icon");
+        dialog.setMessage("The header keeps its original layout.");
+        dialog.addAction("Close", true, null);
+
+        dialog.show(manager.context());
+        manager.render();
+
+        Rect panel = dialog.panelBounds();
+        float contentX = panel.x() + dialog.padding();
+        float contentWidth = panel.width() - dialog.padding() * 2;
+        Rect titleRect = absoluteBounds(findLabel(dialog, "No icon"));
+        Rect messageRect = absoluteBounds(findLabel(dialog,
+                "The header keeps its original layout."));
+
+        assertTrue(imageCommands(backend).isEmpty());
+        assertEquals(contentX, titleRect.x(), 0.001f);
+        assertEquals(panel.y() + dialog.padding(), titleRect.y(), 0.001f);
+        assertEquals(contentWidth, titleRect.width(), 0.001f);
+        assertEquals(titleRect.x(), messageRect.x(), 0.001f);
+        assertEquals(titleRect.width(), messageRect.width(), 0.001f);
+        assertTrue(messageRect.y() >= titleRect.bottom());
+
+        Texture icon = texture(manager, 24, 24);
+        dialog.setIcon(icon);
+        manager.render();
+        Rect iconTitleRect = absoluteBounds(findLabel(dialog, "No icon"));
+        assertTrue(iconTitleRect.x() > titleRect.x());
+
+        dialog.clearIcon();
+        manager.render();
+        Rect restoredTitleRect = absoluteBounds(findLabel(dialog, "No icon"));
+        assertEquals(titleRect, restoredTitleRect);
+        assertEquals(panel, dialog.panelBounds());
+        assertTrue(imageCommands(backend).isEmpty());
+    }
+
+    @Test
+    void titlelessDialogWithoutAnIconKeepsTheMessageAtTheTop() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = manager(backend);
+        ModalDialog dialog = new ModalDialog();
+        dialog.setMessage("Without a title the message is the first row.");
+        dialog.addAction("Close", true, null);
+
+        dialog.show(manager.context());
+        manager.render();
+
+        Rect panel = dialog.panelBounds();
+        Rect messageRect = absoluteBounds(findLabel(dialog,
+                "Without a title the message is the first row."));
+        assertEquals(panel.x() + dialog.padding(), messageRect.x(), 0.001f);
+        assertEquals(panel.y() + dialog.padding(), messageRect.y(), 0.001f);
+        assertEquals(panel.width() - dialog.padding() * 2, messageRect.width(), 0.001f);
+    }
+
+    @Test
+    void longTitleWrapsBesideTheIconWithoutOverlapping() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = manager(backend);
+        Texture icon = texture(manager, 24, 24);
+        String longTitle = "A very long patch note title that has to wrap over several lines "
+                + "while the icon keeps its own column in the header";
+        ModalDialog dialog = new ModalDialog();
+        dialog.setPreferredWidth(320);
+        dialog.setTitle(longTitle);
+        dialog.setMessage("The message stays below the wrapped title.");
+        dialog.addAction("Close", true, null);
+        dialog.setIcon(icon);
+        dialog.setIconSize(24);
+
+        dialog.show(manager.context());
+        manager.render();
+
+        Rect panel = dialog.panelBounds();
+        Rect titleRect = absoluteBounds(findLabel(dialog, longTitle));
+        Rect messageRect = absoluteBounds(findLabel(dialog,
+                "The message stays below the wrapped title."));
+        Rect iconRect = drawnBounds(imageCommand(backend, icon));
+
+        assertEquals(320, panel.width(), 0.001f);
+        assertTrue(iconRect.right() <= titleRect.x());
+        assertTrue(titleRect.right() <= panel.right() - dialog.padding() + 0.001f);
+        assertTrue(titleRect.width() < panel.width() - dialog.padding() * 2);
+        assertTrue(messageRect.y() >= titleRect.bottom());
+        assertEquals(panel.x() + dialog.padding(), iconRect.x(), 0.001f);
+    }
+
+    @Test
+    void presetsInheritTheTitleIconAndAcceptRemoval() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = manager(backend);
+        ConfirmDialog confirm = new ConfirmDialog("Remove the save",
+                "This cannot be undone.");
+        confirm.setIcon(ImageSource.icon("info.svg"));
+
+        confirm.show(manager.context());
+        manager.render();
+
+        Rect panel = confirm.panelBounds();
+        float contentX = panel.x() + confirm.padding();
+        Rect confirmTitle = absoluteBounds(findLabel(confirm, "Remove the save"));
+        assertEquals(1, imageCommands(backend).size());
+        assertTrue(confirmTitle.x() > contentX);
+
+        confirm.setIcon((ImageSource) null);
+        manager.render();
+        Rect restoredTitle = absoluteBounds(findLabel(confirm, "Remove the save"));
+        assertEquals(contentX, restoredTitle.x(), 0.001f);
+        assertTrue(imageCommands(backend).isEmpty());
+        confirm.close();
+
+        PromptDialog prompt = new PromptDialog("Rename the party",
+                "Enter a new name.", "Aria");
+        prompt.setIcon(ImageSource.icon("exclamation.svg"));
+        prompt.setIconSize(20);
+        prompt.show(manager.context());
+        manager.render();
+
+        Rect promptTitle = absoluteBounds(findLabel(prompt, "Rename the party"));
+        assertEquals(1, imageCommands(backend).size());
+        assertTrue(promptTitle.x() > prompt.panelBounds().x() + prompt.padding());
+        assertEquals(new Rect(0, 0, 20, 20), imageCommands(backend).getFirst().bounds());
+    }
+
+    @Test
     void rejectsInvalidConfiguration() {
         ModalDialog dialog = new ModalDialog();
 
         assertThrows(IllegalArgumentException.class, () -> dialog.setPreferredWidth(0));
         assertThrows(IllegalArgumentException.class, () -> dialog.setPreferredWidth(Float.NaN));
         assertThrows(IllegalArgumentException.class, () -> dialog.setPadding(-1));
+        assertThrows(IllegalArgumentException.class, () -> dialog.setIconSize(0));
+        assertThrows(IllegalArgumentException.class, () -> dialog.setIconSize(Float.NaN));
         assertThrows(NullPointerException.class, () -> dialog.setScrimColor(null));
         assertThrows(NullPointerException.class, () -> dialog.show(null));
         assertThrows(IllegalArgumentException.class, () -> dialog.setBody(dialog));
@@ -469,5 +636,71 @@ class ModalDialogTest {
         WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         manager.resize(VIEWPORT);
         return manager;
+    }
+
+    private static WidgetManager manager(TestBackend backend) {
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
+        manager.resize(VIEWPORT);
+        return manager;
+    }
+
+    private static Texture texture(WidgetManager manager, int width, int height) {
+        return manager.context().createTexture(new ImageData(width, height,
+                new byte[width * height * 4]));
+    }
+
+    private static ImageCommand imageCommand(TestBackend backend, Texture texture) {
+        return imageCommands(backend).stream()
+                .filter(command -> command.texture() == texture)
+                .findFirst().orElseThrow();
+    }
+
+    private static List<ImageCommand> imageCommands(TestBackend backend) {
+        return backend.lastDrawList().commands().stream()
+                .filter(ImageCommand.class::isInstance)
+                .map(ImageCommand.class::cast)
+                .toList();
+    }
+
+    private static Rect drawnBounds(ImageCommand command) {
+        Transform transform = command.transform();
+        Rect bounds = command.bounds();
+        return new Rect(bounds.x() * transform.m00() + bounds.y() * transform.m01()
+                + transform.m02(),
+                bounds.x() * transform.m10() + bounds.y() * transform.m11()
+                        + transform.m12(),
+                bounds.width() * transform.m00(), bounds.height() * transform.m11());
+    }
+
+    private static Rect absoluteBounds(Widget widget) {
+        Point position = widget.absolutePosition();
+        return new Rect(position.x(), position.y(), widget.bounds().width(),
+                widget.bounds().height());
+    }
+
+    private static Label findLabel(Widget root, String text) {
+        for (Widget child : root.children()) {
+            if (child instanceof Label label && text.equals(label.text())) {
+                return label;
+            }
+            Label nested = findLabelOrNull(child, text);
+            if (nested != null) {
+                return nested;
+            }
+        }
+        throw new AssertionError("Label not found: " + text);
+    }
+
+    private static Label findLabelOrNull(Widget root, String text) {
+        for (Widget child : root.children()) {
+            if (child instanceof Label label && text.equals(label.text())) {
+                return label;
+            }
+            Label nested = findLabelOrNull(child, text);
+            if (nested != null) {
+                return nested;
+            }
+        }
+        return null;
     }
 }

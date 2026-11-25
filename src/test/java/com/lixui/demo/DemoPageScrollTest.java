@@ -44,7 +44,7 @@ class DemoPageScrollTest {
     }
 
     @Test
-    void modalPageKeepsAllSixVariantsInOrder() {
+    void modalPageKeepsEveryVariantInOrder() {
         Widget modalPage = new DemoModalPage(null).page();
         DemoScrollPage scroll = new DemoScrollPage(modalPage);
 
@@ -61,7 +61,7 @@ class DemoPageScrollTest {
                     .toList();
 
             assertEquals(List.of("Information", "Confirmation", "Prompt", "Custom content",
-                    "Backdrop dismiss", "No scrim"), labels);
+                    "Backdrop dismiss", "No scrim", "Icon header"), labels);
             for (Widget action : actions.children()) {
                 float actionBottom = actions.bounds().y() + action.bounds().y()
                         + action.bounds().height();

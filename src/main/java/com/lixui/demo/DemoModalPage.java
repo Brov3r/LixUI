@@ -6,6 +6,7 @@ import com.lixui.widget.Widget;
 import com.lixui.widget.control.Button;
 import com.lixui.widget.control.CheckBox;
 import com.lixui.widget.control.Label;
+import com.lixui.widget.image.ImageSource;
 import com.lixui.widget.layout.Flow;
 import com.lixui.widget.layout.VBox;
 import com.lixui.widget.overlay.ConfirmDialog;
@@ -48,13 +49,16 @@ final class DemoModalPage {
         backdrop.setOnAction(() -> openBackdropDismiss(backdrop));
         Button noScrim = new Button("No scrim");
         noScrim.setOnAction(() -> openWithoutScrim(noScrim));
+        Button iconHeader = new Button("Icon header");
+        iconHeader.setOnAction(() -> openIconHeader(iconHeader));
         custom.setTooltipText("Uses a translucent custom scrim color.");
         noScrim.setTooltipText("Keeps the background visible while input stays blocked.");
+        iconHeader.setTooltipText("Draws an information icon to the left of the title.");
 
         Flow actions = new Flow();
         actions.setGap(GAP);
         actions.add(information).add(confirmation).add(prompt).add(custom).add(backdrop)
-                .add(noScrim);
+                .add(noScrim).add(iconHeader);
 
         Label caption = new Label("Modal dialogs trap focus and close on Escape. The default and "
                 + "colored variants dim the scene, while the no-scrim variant keeps the "
@@ -150,6 +154,20 @@ final class DemoModalPage {
         dialog.addAction("Got it", true, () -> status.setText("Closed the no-scrim dialog."));
         dialog.setOnCancel(() -> status.setText("No-scrim dialog dismissed."));
         dialog.setScrimEnabled(false);
+        dialog.show(source.context());
+    }
+
+    private void openIconHeader(Button source) {
+        ConfirmDialog dialog = new ConfirmDialog("Patch 1.5 is available",
+                "The update adds title icons to modal dialogs while the confirmation preset "
+                        + "keeps its usual actions.");
+        dialog.setIcon(ImageSource.icon("info.svg"));
+        dialog.setIconTint(source.context().theme().primary());
+        dialog.setIconSize(28);
+        dialog.setConfirmText("Restart");
+        dialog.setCancelText("Later");
+        dialog.setOnConfirm(() -> status.setText("Update accepted."));
+        dialog.setOnCancel(() -> status.setText("Update postponed."));
         dialog.show(source.context());
     }
 }
