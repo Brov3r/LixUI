@@ -15,6 +15,7 @@ import com.lixui.widget.WidgetManager;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.testsupport.TestViewports;
 import com.lixui.widget.tooltip.TextTooltip;
+import com.lixui.widget.tooltip.TooltipSettings;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -23,7 +24,9 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -57,6 +60,43 @@ class ChartTest {
             manager.handle(new PointerMoved(200, 232));
             assertEquals(-1, chart.hoveredValueIndex());
             assertNull(chart.tooltip());
+        }
+    }
+
+    @Test
+    void reclaimsAFadingPointTooltipWhenReturningToAnotherPoint() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            manager.setTooltipSettings(TooltipSettings.defaults()
+                    .withDelay(0).withFade(0.01f, 0.2f));
+            Chart chart = new Chart();
+            chart.setLabels(List.of("Mon", "Tue", "Wed"));
+            chart.addSeries("Trend", List.of(0f, 50f, 100f), BLUE);
+            chart.setBounds(new Rect(0, 0, 400, 240));
+            chart.setAnimationDuration(0);
+            manager.add(chart);
+            manager.render();
+
+            manager.handle(new PointerMoved(72, 232));
+            manager.update(0.01f);
+            manager.update(0.03f);
+            TextTooltip tooltip = assertInstanceOf(TextTooltip.class, chart.tooltip());
+            assertEquals("Trend \u00B7 Mon: 0", tooltip.text());
+            assertNotNull(tooltip.context());
+
+            manager.handle(new PointerMoved(200, 232));
+            assertNull(chart.tooltip());
+            assertNotNull(tooltip.context());
+
+            manager.handle(new PointerMoved(200, 124));
+            assertSame(tooltip, chart.tooltip());
+            assertEquals("Trend \u00B7 Tue: 50", tooltip.text());
+
+            manager.update(0.05f);
+            manager.render();
+            assertSame(tooltip, chart.tooltip());
+            assertNotNull(tooltip.context());
+            assertEquals("Trend \u00B7 Tue: 50", tooltip.text());
         }
     }
 
