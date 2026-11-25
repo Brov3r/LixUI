@@ -12,6 +12,7 @@ import com.lixui.text.TextStyle;
 import com.lixui.text.VerticalAlignment;
 import com.lixui.theme.WidgetState;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -232,13 +233,17 @@ public class Dropdown extends PopupSelect {
     }
 
     /**
-     * Clears the selection when the selected option disappears or becomes disabled.
+     * Keeps the selected option when it is still present and enabled.
+     *
+     * @param selectedOptions options that were selected before the change
      */
     @Override
-    protected void clampSelection() {
-        if (selectedIndex >= optionCount()
-                || (selectedIndex >= 0 && optionAt(selectedIndex).isDisabled())) {
+    protected void remapSelection(List<SelectOption> selectedOptions) {
+        if (selectedOptions.size() != 1) {
             selectedIndex = -1;
+            return;
         }
+        int index = optionIndexOf(selectedOptions.get(0));
+        selectedIndex = index >= 0 && !optionAt(index).isDisabled() ? index : -1;
     }
 }

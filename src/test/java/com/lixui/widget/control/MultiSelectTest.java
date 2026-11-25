@@ -22,6 +22,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -56,6 +57,45 @@ class MultiSelectTest {
 
         manager.handle(new KeyPressed(Key.ESCAPE, Modifiers.NONE, false));
         assertFalse(multi.isPopupOpen());
+        assertSame(multi, manager.focused());
+    }
+
+    @Test
+    void keepsTheSelectedOptionsWhenAnEarlierOptionIsRemoved() {
+        MultiSelect multi = multiSelect();
+        multi.setSelected(1, true);
+
+        multi.removeOption(multi.options().get(0));
+
+        assertEquals(List.of(0), multi.selectedIndices());
+        assertEquals(List.of("Beta"),
+                multi.selectedOptions().stream().map(SelectOption::label).toList());
+
+        multi.removeOption(multi.options().get(0));
+
+        assertTrue(multi.selectedIndices().isEmpty());
+    }
+
+    @Test
+    void scrollsToTheSelectedRowOnTheFirstOpen() {
+        WidgetManager manager = manager();
+        MultiSelect multi = new MultiSelect();
+        multi.setBounds(new Rect(10, 10, 240, 36));
+        multi.setMinimumSize(240, 36);
+        multi.setMaxPopupHeight(150);
+        for (int index = 0; index < 30; index++) {
+            multi.addOption(new SelectOption("Option " + index, index));
+        }
+        multi.setSelected(25, true);
+        manager.add(multi);
+        manager.render();
+
+        click(manager, 60, 20);
+        manager.render();
+
+        OptionList list = (OptionList) popup(manager).content();
+        assertEquals(25, list.highlighted());
+        assertTrue(list.scrollY() > 0);
     }
 
     @Test

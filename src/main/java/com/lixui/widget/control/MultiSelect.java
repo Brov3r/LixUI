@@ -343,11 +343,20 @@ public class MultiSelect extends PopupSelect {
     }
 
     /**
-     * Removes invalid or disabled indices from the selection.
+     * Keeps every selected option that is still present and enabled.
+     *
+     * @param selectedOptions options that were selected before the change
      */
     @Override
-    protected void clampSelection() {
-        selected.removeIf(index -> index < 0 || index >= optionCount()
-                || optionAt(index).isDisabled());
+    protected void remapSelection(List<SelectOption> selectedOptions) {
+        List<Integer> remapped = new ArrayList<>();
+        for (SelectOption option : selectedOptions) {
+            int index = optionIndexOf(option);
+            if (index >= 0 && !optionAt(index).isDisabled()) {
+                remapped.add(index);
+            }
+        }
+        selected.clear();
+        selected.addAll(remapped);
     }
 }

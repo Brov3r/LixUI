@@ -58,7 +58,7 @@ abstract class PopupSelect extends Panel {
             public void activate(int index) {
                 activateOption(index);
             }
-        }, this::closePopup, icons, itemHeight, iconSize);
+        }, this::dismissPopup, icons, itemHeight, iconSize);
         popup.setContent(optionList);
     }
 
@@ -91,6 +91,31 @@ abstract class PopupSelect extends Panel {
     }
 
     /**
+     * Finds an option by reference in the current list.
+     *
+     * @param option option to find
+     * @return the zero-based index, or -1 when the option is not present
+     */
+    protected final int optionIndexOf(SelectOption option) {
+        for (int index = 0; index < options.size(); index++) {
+            if (options.get(index) == option) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private List<SelectOption> selectedOptionsSnapshot() {
+        List<SelectOption> selected = new ArrayList<>();
+        for (int index = 0; index < options.size(); index++) {
+            if (isOptionSelected(index)) {
+                selected.add(options.get(index));
+            }
+        }
+        return selected;
+    }
+
+    /**
      * Replaces every option and closes the popup.
      *
      * @param options new options
@@ -98,12 +123,13 @@ abstract class PopupSelect extends Panel {
      */
     public final void setOptions(List<SelectOption> options) {
         Objects.requireNonNull(options, "options");
+        List<SelectOption> selected = selectedOptionsSnapshot();
         closePopup();
         this.options.clear();
         for (SelectOption option : options) {
             this.options.add(Objects.requireNonNull(option, "option"));
         }
-        clampSelection();
+        remapSelection(selected);
     }
 
     /**
@@ -140,10 +166,11 @@ abstract class PopupSelect extends Panel {
      */
     public final boolean removeOption(SelectOption option) {
         Objects.requireNonNull(option, "option");
+        List<SelectOption> selected = selectedOptionsSnapshot();
         boolean removed = options.remove(option);
         if (removed) {
             closePopup();
-            clampSelection();
+            remapSelection(selected);
         }
         return removed;
     }
@@ -154,7 +181,7 @@ abstract class PopupSelect extends Panel {
     public final void clearOptions() {
         closePopup();
         options.clear();
-        clampSelection();
+        remapSelection(List.of());
     }
 
     /**
@@ -258,6 +285,19 @@ abstract class PopupSelect extends Panel {
      */
     protected final void closePopup() {
         popup.close();
+    }
+
+    /**
+     * Closes the popup after returning keyboard focus to the closed field.
+     */
+    protected final void dismissPopup() {
+        if (!popup.isOpen()) {
+            return;
+        }
+        if (context() != null && isEnabled() && isVisible()) {
+            context().requestFocus(this);
+        }
+        closePopup();
     }
 
     /**
@@ -392,7 +432,7 @@ abstract class PopupSelect extends Panel {
     @Override
     protected boolean onKeyPressed(Key key, Modifiers modifiers, boolean repeat) {
         if (key == Key.ESCAPE && popup.isOpen()) {
-            closePopup();
+            dismissPopup();
             return true;
         }
         if (key == Key.ENTER || key == Key.SPACE || key == Key.UP || key == Key.DOWN) {
@@ -426,10 +466,10 @@ abstract class PopupSelect extends Panel {
         if (index < 0 || index >= options.size() || options.get(index).isDisabled()) {
             return;
         }
-        activate(index);
         if (closesOnActivate()) {
-            closePopup();
+            dismissPopup();
         }
+        activate(index);
     }
 
     private void ensureIcons() {
@@ -492,7 +532,9 @@ abstract class PopupSelect extends Panel {
     protected abstract int initialHighlight();
 
     /**
-     * Clamps selection state after options change.
+     * Rebuilds the selection after the option list changes.
+     *
+     * @param selectedOptions options that were selected before the change, in display order
      */
-    protected abstract void clampSelection();
+    protected abstract void remapSelection(List<SelectOption> selectedOptions);
 }

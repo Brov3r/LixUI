@@ -70,6 +70,7 @@ final class OptionList extends Widget {
     private float scrollY;
     private int highlighted = -1;
     private int hovered = -1;
+    private boolean highlightScrollPending;
 
     /**
      * Creates an option list for a popup.
@@ -104,6 +105,7 @@ final class OptionList extends Widget {
         scrollY = 0;
         highlighted = -1;
         hovered = -1;
+        highlightScrollPending = false;
         verticalBar.setValue(0);
     }
 
@@ -141,6 +143,7 @@ final class OptionList extends Widget {
      */
     void setHighlighted(int index) {
         highlighted = index >= 0 && index < options.size() ? index : -1;
+        highlightScrollPending = highlighted >= 0;
         scrollToHighlighted();
     }
 
@@ -201,6 +204,10 @@ final class OptionList extends Widget {
                     ? height / (options.size() * itemHeight) : 1);
         }
         verticalBar.setValue(maximumScroll > 0 ? scrollY / maximumScroll : 0);
+        if (highlightScrollPending) {
+            highlightScrollPending = false;
+            scrollToHighlighted();
+        }
     }
 
     /**

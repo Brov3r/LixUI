@@ -30,6 +30,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -59,6 +60,7 @@ class DropdownTest {
         assertEquals("Beta", dropdown.selectedOption().label());
         assertEquals(2, dropdown.selectedValue());
         assertEquals(List.of("Beta"), changes.stream().map(SelectOption::label).toList());
+        assertSame(dropdown, manager.focused());
     }
 
     @Test
@@ -151,6 +153,46 @@ class DropdownTest {
 
         manager.handle(new KeyPressed(Key.ESCAPE, Modifiers.NONE, false));
         assertFalse(dropdown.isPopupOpen());
+        assertSame(dropdown, manager.focused());
+    }
+
+    @Test
+    void keepsTheSelectedOptionWhenAnEarlierOptionIsRemoved() {
+        Dropdown dropdown = dropdown();
+        dropdown.setSelectedIndex(1);
+
+        dropdown.removeOption(dropdown.options().get(0));
+
+        assertEquals(0, dropdown.selectedIndex());
+        assertEquals("Beta", dropdown.selectedOption().label());
+        assertEquals(2, dropdown.selectedValue());
+
+        dropdown.removeOption(dropdown.options().get(0));
+
+        assertEquals(-1, dropdown.selectedIndex());
+        assertNull(dropdown.selectedValue());
+    }
+
+    @Test
+    void scrollsToTheSelectedRowOnTheFirstOpen() {
+        WidgetManager manager = manager();
+        Dropdown dropdown = new Dropdown();
+        dropdown.setBounds(new Rect(10, 10, 200, 36));
+        dropdown.setMinimumSize(200, 36);
+        dropdown.setMaxPopupHeight(150);
+        for (int index = 0; index < 30; index++) {
+            dropdown.addOption(new SelectOption("Option " + index, index));
+        }
+        dropdown.setSelectedIndex(25);
+        manager.add(dropdown);
+        manager.render();
+
+        click(manager, 60, 20);
+        manager.render();
+
+        OptionList list = (OptionList) popup(manager).content();
+        assertEquals(25, list.highlighted());
+        assertTrue(list.scrollY() > 0);
     }
 
     private static Dropdown dropdown() {
