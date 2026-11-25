@@ -261,6 +261,50 @@ class InputTest {
     }
 
     @Test
+    void keepsFilledMaskContentWhenInsertingWithoutFreeSlots() {
+        try (WidgetManager manager = manager(new TestBackend(), new ClipboardPlatform())) {
+            Input date = new Input();
+            date.setMask("99.99.9999");
+            date.setText("31.12.2025");
+            date.setBounds(FIELD_BOUNDS);
+            manager.add(date);
+            manager.focus(date);
+
+            date.setCaretIndex(0);
+            manager.handle(new CharTyped('9'));
+            assertEquals("31.12.2025", date.text());
+            assertEquals("31122025", date.rawText());
+
+            date.setCaretIndex(2);
+            manager.handle(new CharTyped('9'));
+            assertEquals("31.12.2025", date.text());
+            assertEquals("31122025", date.rawText());
+            assertEquals(2, date.caretIndex());
+        }
+    }
+
+    @Test
+    void limitsMaskInsertionToFreeSlotsWithoutDroppingTheTail() {
+        ClipboardPlatform platform = new ClipboardPlatform();
+        platform.clipboardText = "999";
+        try (WidgetManager manager = manager(new TestBackend(), platform)) {
+            Input date = new Input();
+            date.setMask("99.99.9999");
+            date.setText("31.12.20");
+            date.setBounds(FIELD_BOUNDS);
+            manager.add(date);
+            manager.focus(date);
+
+            date.setCaretIndex(0);
+            manager.handle(new KeyPressed(Key.V, CTRL, false));
+
+            assertEquals("99.31.1220", date.text());
+            assertEquals("99311220", date.rawText());
+            assertEquals(2, date.caretIndex());
+        }
+    }
+
+    @Test
     void restrictsAcceptedCharacterKinds() {
         Input input = new Input("abc123!@#");
         input.setAllowedCharacters(Input.CharacterKind.DIGITS);

@@ -1223,7 +1223,7 @@ public class Input extends Panel {
         String after = text.substring(end);
         String extracted = pasted ? parseMaskedInput(sanitized, Integer.MAX_VALUE) : sanitized;
         String accepted = filterForMaskSlots(extracted, countCodePoints(before));
-        accepted = truncateToCodePoints(accepted, allowance(start, end));
+        accepted = truncateToCodePoints(accepted, insertionAllowance(start, end));
         if (accepted.isEmpty()) {
             return true;
         }
@@ -1241,6 +1241,26 @@ public class Input extends Panel {
         }
         int removed = countCodePoints(text.substring(start, end));
         return Math.max(0, maxLength - (countCodePoints(text) - removed));
+    }
+
+    private int insertionAllowance(int start, int end) {
+        int allowed = allowance(start, end);
+        if (!maskSlots.isEmpty()) {
+            int removed = countCodePoints(text.substring(start, end));
+            int filled = countCodePoints(text) - removed;
+            allowed = Math.min(allowed, Math.max(0, maskTokenCount() - filled));
+        }
+        return allowed;
+    }
+
+    private int maskTokenCount() {
+        int tokens = 0;
+        for (MaskSlot slot : maskSlots) {
+            if (!slot.literal()) {
+                tokens++;
+            }
+        }
+        return tokens;
     }
 
     private int valueLimit() {
