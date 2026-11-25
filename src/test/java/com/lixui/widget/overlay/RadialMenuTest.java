@@ -454,12 +454,25 @@ class RadialMenuTest {
         }
     }
 
+    @Test
+    void iconsNeverHideLabelsThatFitWithoutThem() {
+        // A large font leaves no room for both an icon and a label in a narrow sector.
+        int labelsWithoutIcons = assertLongLabelsStayInsideSectors(false, 20);
+        int labelsWithIcons = assertLongLabelsStayInsideSectors(true, 20);
+        assertTrue(labelsWithIcons >= 3);
+        assertEquals(labelsWithoutIcons, labelsWithIcons);
+    }
+
     private static void assertLongLabelsStayInsideSectors(boolean withIcons) {
+        assertLongLabelsStayInsideSectors(withIcons, 14);
+    }
+
+    private static int assertLongLabelsStayInsideSectors(boolean withIcons, float fontSize) {
         FontData data = fontData();
         TestBackend backend = new TestBackend();
         Viewport viewport = new Viewport(400, 400, 400, 400);
         try (WidgetManager manager = manager(backend, viewport)) {
-            manager.setDefaultFont(manager.context().createFont(data, 14));
+            manager.setDefaultFont(manager.context().createFont(data, fontSize));
             RadialMenu menu = new RadialMenu();
             menu.setRadius(100);
             menu.setInnerRadiusRatio(0.4f);
@@ -494,6 +507,7 @@ class RadialMenuTest {
             }
             assertTrue(quadrants.size() >= 2);
             assertEquals(token, menu.items().getFirst().label());
+            return labels.size();
         }
     }
 

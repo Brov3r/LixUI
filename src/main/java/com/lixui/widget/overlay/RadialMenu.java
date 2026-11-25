@@ -999,15 +999,31 @@ public class RadialMenu extends Widget {
             return new Placement(iconRadius, iconEdge, iconVisible, 0, null);
         }
         float textHeight = height + LABEL_GLYPH_PADDING * 2;
-        float iconExtent = iconVisible
-                ? iconRadius + (float) Math.hypot(iconEdge / 2, iconEdge / 2) : 0;
+        Label label = fitLabel(font, item.label, inner, outer, angle, alpha, textHeight,
+                iconVisible ? iconRadius : 0, iconVisible ? iconEdge : 0);
+        if (label == null && iconVisible) {
+            label = fitLabel(font, item.label, inner, outer, angle, alpha, textHeight, 0, 0);
+            if (label != null) {
+                // A readable label carries more information than the decoration next to it.
+                iconVisible = false;
+            }
+        }
+        if (label == null) {
+            return new Placement(iconRadius, iconEdge, iconVisible, 0, null);
+        }
+        return new Placement(iconRadius, iconEdge, iconVisible, label.radius(), label.text());
+    }
+
+    private static Label fitLabel(Font font, String text, float inner, float outer, float angle,
+                                  float alpha, float textHeight, float iconRadius, float iconEdge) {
         float labelMin = inner + LABEL_INNER_MARGIN + textHeight / 2;
-        if (iconVisible) {
+        if (iconEdge > 0) {
+            float iconExtent = iconRadius + (float) Math.hypot(iconEdge / 2, iconEdge / 2);
             labelMin = Math.max(labelMin, iconExtent + ICON_LABEL_GAP + textHeight / 2);
         }
         float labelMax = outer - LABEL_OUTER_MARGIN - textHeight / 2;
         if (labelMax < labelMin) {
-            return new Placement(iconRadius, iconEdge, iconVisible, 0, null);
+            return null;
         }
         float bestWidth = 0;
         float bestRadius = 0;
@@ -1022,14 +1038,14 @@ public class RadialMenu extends Widget {
             }
         }
         if (bestWidth <= 0) {
-            return new Placement(iconRadius, iconEdge, iconVisible, 0, null);
+            return null;
         }
         float textWidth = bestWidth - LABEL_GLYPH_PADDING * 2;
-        String fitted = textWidth <= 0 ? null : fitLabelText(font, item.label, textWidth);
+        String fitted = textWidth <= 0 ? null : fitLabelText(font, text, textWidth);
         if (fitted == null) {
-            return new Placement(iconRadius, iconEdge, iconVisible, 0, null);
+            return null;
         }
-        return new Placement(iconRadius, iconEdge, iconVisible, bestRadius, fitted);
+        return new Label(bestRadius, fitted);
     }
 
     private static float fitSquare(float radius, float maxEdge, float angle, float alpha,
@@ -1375,6 +1391,9 @@ public class RadialMenu extends Widget {
 
     private record PlacementKey(Font font, String text, float inner, float outer,
                                 float sweep, float angle, float iconSize, boolean icon) {
+    }
+
+    private record Label(float radius, String text) {
     }
 
     private record Placement(float iconRadius, float iconEdge, boolean iconVisible,
