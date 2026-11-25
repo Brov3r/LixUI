@@ -33,6 +33,7 @@ import java.util.function.Predicate;
  * <p>
  * The input is the only focusable part; pressing anywhere on the surface focuses it. A validator
  * and a tag limit reject new values without discarding the typed text, so the user can correct it.
+ * Rejected submissions are reported through {@link #setOnTagRejected(Consumer)}.
  */
 public class TagInput extends Panel {
     private static final float CHIP_GAP = 4;
@@ -51,6 +52,7 @@ public class TagInput extends Panel {
     private int maxRows;
     private Predicate<String> validator;
     private Consumer<List<String>> onTagsChanged;
+    private Consumer<String> onTagRejected;
     private Chip overflowChip = new Chip("", false);
 
     /**
@@ -272,6 +274,26 @@ public class TagInput extends Panel {
     }
 
     /**
+     * Returns the callback invoked when a submitted value cannot be added.
+     *
+     * @return the rejection callback, or null when none is assigned
+     */
+    public final Consumer<String> onTagRejected() {
+        return onTagRejected;
+    }
+
+    /**
+     * Assigns a callback invoked with the normalized value when Enter is pressed and the tag cannot
+     * be added because of the validator, a duplicate or the tag limit.
+     * The typed text is kept in the field so the user can correct it or remove a tag.
+     *
+     * @param onTagRejected callback receiving the rejected value, or null to clear it
+     */
+    public final void setOnTagRejected(Consumer<String> onTagRejected) {
+        this.onTagRejected = onTagRejected;
+    }
+
+    /**
      * Reports whether the nested field currently holds keyboard focus.
      *
      * @return true when the text field is focused
@@ -409,12 +431,14 @@ public class TagInput extends Panel {
     }
 
     private void commitField() {
-        String pending = field.text();
-        if (pending.isEmpty()) {
+        String pending = normalize(field.text());
+        if (pending == null) {
             return;
         }
         if (addTag(pending)) {
             field.setText("");
+        } else if (onTagRejected != null) {
+            onTagRejected.accept(pending);
         }
     }
 

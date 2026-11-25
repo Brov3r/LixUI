@@ -1,5 +1,6 @@
 package com.lixui.widget.control;
 
+import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.input.InputState;
 import com.lixui.input.Key;
@@ -7,6 +8,7 @@ import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
 import com.lixui.input.event.CharTyped;
 import com.lixui.input.event.KeyPressed;
+import com.lixui.input.event.KeyReleased;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.render.Viewport;
@@ -17,6 +19,7 @@ import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.layout.Flow;
+import com.lixui.widget.layout.VBox;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.testsupport.TestViewports;
 import org.junit.jupiter.api.Assumptions;
@@ -54,6 +57,102 @@ class TagInputTest {
             assertEquals(List.of("alpha"), input.tags());
             assertTrue(field.text().isEmpty());
             assertEquals(List.of(List.of("alpha")), changes);
+        }
+    }
+
+    @Test
+    void enterAddsExactlyOneTagPerSubmissionAndKeepsTypingFocus() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            manager.setDefaultFont(font(manager));
+            TagInput input = new TagInput();
+            VBox group = new VBox();
+            group.setGap(6);
+            group.add(input);
+            group.setFillViewport(true);
+            manager.add(group);
+            manager.update(0.016f);
+            manager.render();
+            Input field = (Input) input.children().get(1);
+            Point origin = field.absolutePosition();
+            manager.handle(new PointerPressed(origin.x() + 4, origin.y() + 4,
+                    MouseButton.LEFT, Modifiers.NONE));
+            manager.handle(new PointerReleased(origin.x() + 4, origin.y() + 4,
+                    MouseButton.LEFT, Modifiers.NONE));
+            manager.update(0.016f);
+            assertTrue(field.isFocused());
+
+            type(manager, "alpha");
+            pressEnter(manager);
+            manager.update(0.016f);
+            manager.render();
+            assertEquals(List.of("alpha"), input.tags());
+            assertTrue(field.isFocused());
+
+            pressEnter(manager);
+            manager.update(0.016f);
+            assertEquals(List.of("alpha"), input.tags());
+
+            type(manager, "beta");
+            manager.update(0.016f);
+            pressEnter(manager);
+            manager.update(0.016f);
+            manager.render();
+            assertEquals(List.of("alpha", "beta"), input.tags());
+            assertTrue(field.text().isEmpty());
+            assertTrue(field.isFocused());
+
+            type(manager, "gamma");
+            pressEnter(manager);
+            manager.update(0.016f);
+            assertEquals(List.of("alpha", "beta", "gamma"), input.tags());
+            assertTrue(field.isFocused());
+
+            manager.handle(new KeyPressed(Key.BACKSPACE, Modifiers.NONE, false));
+            assertEquals(List.of("alpha", "beta"), input.tags());
+
+            type(manager, "delta");
+            pressEnter(manager);
+            manager.update(0.016f);
+            assertEquals(List.of("alpha", "beta", "delta"), input.tags());
+            assertTrue(field.isFocused());
+        }
+    }
+
+    @Test
+    void enterReportsARejectedTagAndKeepsTheTypedValue() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            manager.setDefaultFont(font(manager));
+            TagInput input = new TagInput(List.of("alpha"));
+            input.setMaxTags(1);
+            input.setBounds(new Rect(0, 0, 320, 120));
+            List<List<String>> changes = new ArrayList<>();
+            List<String> rejected = new ArrayList<>();
+            input.setOnTagsChanged(changes::add);
+            input.setOnTagRejected(rejected::add);
+            manager.add(input);
+            manager.render();
+            Input field = (Input) input.children().get(1);
+            manager.focus(field);
+
+            type(manager, "beta");
+            pressEnter(manager);
+            pressEnter(manager);
+
+            assertEquals(List.of("alpha"), input.tags());
+            assertEquals("beta", field.text());
+            assertTrue(field.isFocused());
+            assertEquals(List.of(), changes);
+            assertEquals(List.of("beta", "beta"), rejected);
+
+            input.removeTag("alpha");
+            pressEnter(manager);
+
+            assertEquals(List.of("beta"), input.tags());
+            assertTrue(field.text().isEmpty());
+            assertEquals(List.of(List.of(), List.of("beta")), changes);
+            assertEquals(2, rejected.size());
         }
     }
 
@@ -209,6 +308,16 @@ class TagInputTest {
             manager.handle(new CharTyped('z'));
             assertEquals("z", field.text());
         }
+    }
+
+    private static void pressEnter(WidgetManager manager) {
+        manager.handle(new KeyPressed(Key.ENTER, Modifiers.NONE, false));
+        manager.handle(new CharTyped('\r'));
+        manager.handle(new KeyReleased(Key.ENTER, Modifiers.NONE));
+    }
+
+    private static void type(WidgetManager manager, String text) {
+        text.codePoints().forEach(codepoint -> manager.handle(new CharTyped(codepoint)));
     }
 
     private static Font font(WidgetManager manager) {
