@@ -136,6 +136,7 @@ final class DemoWidgetScene implements AutoCloseable {
     private final Window window;
     private final TabPanel outerTabs;
     private final TabPanel innerTabs;
+    private final List<TabPanel> groupTabs = new ArrayList<>();
     private final Label titleLabel;
     private final Label bodyLabel;
     private final Label elidedLabel;
@@ -197,66 +198,75 @@ final class DemoWidgetScene implements AutoCloseable {
         labelsPage.add(titleLabel).add(bodyLabel).add(elidedLabel)
                 .add(decoratedLabel).add(justifiedLabel).add(richLabel);
         innerTabs = createInnerTabs();
+
+        TabPanel basics = createGroupTabs();
+        basics.addTab("Components", new DemoScrollPage(createComponentsPage()));
+        basics.addTab("Elements", new DemoScrollPage(createElementsPage()));
+        basics.addTab("Interactive", createInteractivePage());
+        basics.addTab("Labels", new DemoScrollPage(labelsPage));
+
+        TabPanel inputs = createGroupTabs();
+        inputs.addTab("Input", createInputPage());
+        inputs.addTab("Text area", createInputAreaPage());
+        inputs.addTab("Code", createCodePage());
+        inputs.addTab("Keybind", new DemoScrollPage(createKeybindPage()));
+
+        TabPanel forms = createGroupTabs();
+        forms.addTab("Form", createFormPage());
+        forms.addTab("Controls", createControlsPage());
+        forms.addTab("Sliders", new DemoScrollPage(createSlidersPage()));
+        forms.addTab("Pickers", createPickersPage());
+        forms.addTab("Select", new DemoSelectPage(fontFamily, this::bindIcon).create());
+
+        TabPanel data = createGroupTabs();
+        data.addTab("Tables", createTablePage());
+        data.addTab("Virtual list", VirtualListDemo.create(fontFamily));
+        data.addTab("Tree", TreeViewDemo.create(fontFamily));
+        data.addTab("Reorder", createReorderPage());
+        data.addTab("Gallery", ImageGalleryDemo.create(fontFamily));
+        data.addTab("Timeline", TimelineDemo.create(fontFamily));
+
+        TabPanel feedback = createGroupTabs();
+        feedback.addTab("Progress", new DemoScrollPage(createProgressPage()));
+        feedback.addTab("Steps", new StepperDemoPage(fontFamily, this::bindIcon).build());
+        feedback.addTab("Donut", new DonutChartDemoPage(fontFamily).build());
+        feedback.addTab("Chart", new ChartDemoPage(fontFamily).build());
+        feedback.addTab("Toasts", new DemoScrollPage(createToastPage()));
+
+        TabPanel navigation = createGroupTabs();
+        navigation.addTab("Menu bar", new DemoMenuPage(fontFamily, this::bindIcon).create());
+        navigation.addTab("Breadcrumbs", new DemoBreadcrumbsPage(fontFamily).create());
+        navigation.addTab("Radial", new RadialMenuDemoPage(fontFamily, this::bindIcon).build());
+
+        TabPanel overlays = createGroupTabs();
+        overlays.addTab("Dropdowns", createDropdownsPage());
+        overlays.addTab("Context menu", createContextMenuPage());
+        overlays.addTab("Modals", new DemoScrollPage(new DemoModalPage(fontFamily).page()));
+
+        TabPanel structure = createGroupTabs();
+        structure.addTab("Layouts", new DemoScrollPage(createLayoutsPage()));
+        structure.addTab("Containers", new DemoScrollPage(createContainersPage()));
+        structure.addTab("Split", createSplitPage());
+        structure.addTab("Tabs", innerTabs);
+        structure.addTab("Accordion", new DemoScrollPage(createAccordionPage()));
+
         outerTabs = new TabPanel();
         bindIcon("puzzle-03.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Components", createComponentsPage())::setIcon);
-        bindIcon("puzzle-02.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Interactive", createInteractivePage())::setIcon);
-        bindIcon("puzzle-01.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Elements", createElementsPage())::setIcon);
-        bindIcon("user-list.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Form", createFormPage())::setIcon);
-        bindIcon("clock.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Pickers", createPickersPage())::setIcon);
-        bindIcon("grid.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Layouts", createLayoutsPage())::setIcon);
-        bindIcon("frame.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Containers", createContainersPage())::setIcon);
-        bindIcon("progress.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Progress", createProgressPage())::setIcon);
-        bindIcon("progress-02.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Steps",
-                        new StepperDemoPage(fontFamily, this::bindIcon).build())::setIcon);
-        bindIcon("circle-ring.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Donut",
-                        new DonutChartDemoPage(fontFamily).build())::setIcon);
-        bindIcon("linear.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Chart", new ChartDemoPage(fontFamily).build())::setIcon);
-        bindIcon("target.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Radial",
-                        new RadialMenuDemoPage(fontFamily, this::bindIcon).build())::setIcon);
+                outerTabs.addTab("Basics", basics)::setIcon);
         bindIcon("keyboard.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Input", createInputPage())::setIcon);
-        bindIcon("key.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Keybind", createKeybindPage())::setIcon);
-        bindIcon("a-to-z.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Text area", createInputAreaPage())::setIcon);
-        bindIcon("code.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Code", createCodePage())::setIcon);
+                outerTabs.addTab("Inputs", inputs)::setIcon);
+        bindIcon("adjustment.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Forms", forms)::setIcon);
+        bindIcon("table.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Data", data)::setIcon);
+        bindIcon("progress.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Feedback", feedback)::setIcon);
         bindIcon("menu.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Popup", createPopupPage())::setIcon);
-        bindIcon("arrow-down-04.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Select", new DemoSelectPage(fontFamily, this::bindIcon).create())::setIcon);
-        bindIcon("menu-02.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Menu bar", new DemoMenuPage(fontFamily, this::bindIcon).create())::setIcon);
-        bindIcon("arrow-right-04.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Breadcrumbs", new DemoBreadcrumbsPage(fontFamily).create())::setIcon);
-        bindIcon("text.svg", outerTabs.iconSize(), outerTabs.addTab("Labels", labelsPage)::setIcon);
-        bindIcon("ui.svg", outerTabs.iconSize(), outerTabs.addTab("Tabs", innerTabs)::setIcon);
-        bindIcon("adjustment.svg", outerTabs.iconSize(), outerTabs.addTab("Controls", createControlsPage())::setIcon);
-        bindIcon("split.svg", outerTabs.iconSize(), outerTabs.addTab("Split", createSplitPage())::setIcon);
-        bindIcon("slider.svg", outerTabs.iconSize(), outerTabs.addTab("Sliders", createSlidersPage())::setIcon);
-        bindIcon("table.svg", outerTabs.iconSize(), outerTabs.addTab("Table", createTablePage())::setIcon);
-        bindIcon("time.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Timeline", TimelineDemo.create(fontFamily))::setIcon);
-        bindIcon("image.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Gallery", ImageGalleryDemo.create(fontFamily))::setIcon);
-        bindIcon("cursor-move.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Reorder", createReorderPage())::setIcon);
+                outerTabs.addTab("Navigation", navigation)::setIcon);
         bindIcon("menu-open.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Accordion", createAccordionPage())::setIcon);
-        bindIcon("notification.svg", outerTabs.iconSize(),
-                outerTabs.addTab("Toasts", createToastPage())::setIcon);
+                outerTabs.addTab("Overlays", overlays)::setIcon);
+        bindIcon("ui.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Structure", structure)::setIcon);
         window = new Window();
         window.setTitle("LixUI - Demo Window");
         bindIcon("ui.svg", THEME_ICON_SIZE, window::setHeaderIcon);
@@ -304,6 +314,12 @@ final class DemoWidgetScene implements AutoCloseable {
         float windowX = Math.max(0, (viewport.logicalWidth() - WINDOW_WIDTH) / 2);
         float windowY = Math.max(0, (viewport.logicalHeight() - WINDOW_HEIGHT) / 2);
         window.setBounds(new Rect(windowX, windowY, WINDOW_WIDTH, WINDOW_HEIGHT));
+    }
+
+    private TabPanel createGroupTabs() {
+        TabPanel tabs = new TabPanel();
+        groupTabs.add(tabs);
+        return tabs;
     }
 
     private TabPanel createInnerTabs() {
@@ -1459,7 +1475,7 @@ final class DemoWidgetScene implements AutoCloseable {
         return page;
     }
 
-    private Widget createPopupPage() {
+    private Widget createDropdownsPage() {
         Dropdown dropdown = new Dropdown();
         dropdown.setMinimumSize(320, 40);
         dropdown.setMaximumSize(420, 46);
@@ -1488,6 +1504,18 @@ final class DemoWidgetScene implements AutoCloseable {
         multiselect.setSelected(0, true);
         multiselect.setSelected(2, true);
 
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(10);
+        page.setCrossAlignment(VBox.CrossAlignment.START);
+        page.add(sliderCaption("Dropdown"))
+                .add(dropdown)
+                .add(sliderCaption("Multi-select"))
+                .add(multiselect);
+        return new DemoScrollPage(page);
+    }
+
+    private Widget createContextMenuPage() {
         Label contextStatus = new Label("Right-click a table row to open its context menu.");
         contextStatus.setFontFamily(fontFamily);
         contextStatus.setAutoSize(false);
@@ -1497,14 +1525,9 @@ final class DemoWidgetScene implements AutoCloseable {
         page.setPadding(CONTENT_PADDING);
         page.setGap(10);
         page.setCrossAlignment(VBox.CrossAlignment.START);
-        page.add(sliderCaption("Dropdown"))
-                .add(dropdown)
-                .add(sliderCaption("Multi-select"))
-                .add(multiselect)
-                .add(sliderCaption("Context menu table"))
+        page.add(sliderCaption("Context menu table"))
                 .add(createContextMenuTable(contextStatus))
-                .add(contextStatus)
-                .add(new DemoModalPage(fontFamily).page());
+                .add(contextStatus);
         return new DemoScrollPage(page);
     }
 
@@ -1812,7 +1835,7 @@ final class DemoWidgetScene implements AutoCloseable {
         return binding == null ? "cleared" : binding.text();
     }
 
-    private Widget createTablePage() {
+    private SplitPanel createTablePage() {
         SplitPanel stacked = new SplitPanel(SplitPanel.Orientation.VERTICAL);
         stacked.setDividerThickness(8);
         stacked.setDividerPosition(0.5f);
@@ -1826,12 +1849,7 @@ final class DemoWidgetScene implements AutoCloseable {
         tables.setMinimumPaneSize(140);
         tables.setFirst(stacked);
         tables.setSecond(createMarketTable());
-
-        TabPanel dataTabs = new TabPanel();
-        dataTabs.addTab("Tables", tables);
-        dataTabs.addTab("Virtual list", VirtualListDemo.create(fontFamily));
-        dataTabs.addTab("Tree", TreeViewDemo.create(fontFamily));
-        return dataTabs;
+        return tables;
     }
 
     private Table createPartyTable() {
@@ -2029,6 +2047,9 @@ final class DemoWidgetScene implements AutoCloseable {
         window.setStyle(withRadius(theme.panelStyle(), 12));
         statsPanel.setStyle(withRadius(theme.panelStyle(), 8));
         outerTabs.setStyle(transparentPanelStyle(theme));
+        for (TabPanel tabs : groupTabs) {
+            tabs.setStyle(transparentPanelStyle(theme));
+        }
         innerTabs.setStyle(withRadius(theme.panelStyle(), 8));
         for (GroupBox groupBox : groupBoxes) {
             groupBox.setStyle(groupBoxStyle(theme));
