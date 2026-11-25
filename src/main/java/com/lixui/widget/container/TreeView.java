@@ -20,6 +20,7 @@ import com.lixui.widget.FrameInfo;
 import com.lixui.widget.IconSet;
 import com.lixui.widget.UiContext;
 import com.lixui.widget.Widget;
+import com.lixui.widget.image.ImageSource;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +34,8 @@ import java.util.function.Consumer;
  * branch grow or shrink with the expansion animation. Arrow clicks and the Left, Right, Enter and
  * Space keys toggle branches, while the remaining navigation keys and pointer selection follow the
  * virtual list conventions.
+ * A node optionally draws an icon between the expansion arrow and its label. Disabled nodes and
+ * all of their descendants are drawn muted and ignore pointer and keyboard interaction.
  */
 public class TreeView extends Widget {
     /**
@@ -45,6 +48,9 @@ public class TreeView extends Widget {
         private final AnimationSlot animation = new AnimationSlot();
         private Node parent;
         private String label;
+        private ImageSource icon;
+        private IconSet iconSet;
+        private boolean disabled;
         private boolean expanded;
         private float expandedAmount;
 
@@ -70,6 +76,65 @@ public class TreeView extends Widget {
          */
         public void setLabel(String label) {
             this.label = Objects.requireNonNull(label, "label");
+        }
+
+        /**
+         * Returns the node icon source.
+         *
+         * @return the icon source, or null when the node has no icon
+         */
+        public ImageSource icon() {
+            return icon;
+        }
+
+        /**
+         * Assigns the node icon drawn in the slot before the label.
+         * Caller-owned texture sources are never released by the tree. Bundled icons are acquired
+         * through the shared context icon cache, reloaded when the display density changes, and
+         * released when the tree detaches. Remote sources are not supported.
+         *
+         * @param icon icon source, or null to clear the icon
+         * @throws IllegalArgumentException if the source is a remote image
+         */
+        public void setIcon(ImageSource icon) {
+            if (icon instanceof ImageSource.RemoteSource) {
+                throw new IllegalArgumentException("Remote node icons are not supported.");
+            }
+            if (Objects.equals(this.icon, icon)) {
+                return;
+            }
+            owner.releaseNodeIcon(this);
+            this.icon = icon;
+            this.iconSet = icon instanceof ImageSource.IconSource iconSource
+                    ? new IconSet(iconSource.name()) : null;
+            owner.ensureNodeIcon(this);
+        }
+
+        /**
+         * Reports whether this node or one of its ancestors is disabled.
+         * Disabled nodes and their descendants draw muted, ignore pointer and keyboard
+         * interaction, and cannot be selected programmatically.
+         *
+         * @return true when this node or an ancestor is disabled
+         */
+        public boolean isDisabled() {
+            for (Node node = this; node != null; node = node.parent) {
+                if (node.disabled) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * Disables or enables this node and its descendants.
+         * Disabling a branch clears a selection inside it. Expansion and collapse can still be
+         * changed programmatically so the branch can be inspected.
+         *
+         * @param disabled true to draw the branch muted and ignore interaction
+         */
+        public void setDisabled(boolean disabled) {
+            owner.setNodeDisabled(this, disabled);
         }
 
         /**
@@ -149,6 +214,9 @@ public class TreeView extends Widget {
     private static final float ROW_PADDING = 10;
     private static final float ARROW_SIZE = 10;
     private static final float ARROW_GAP = 8;
+    private static final float NODE_ICON_SIZE = 16;
+    private static final float NODE_ICON_GAP = 8;
+    private static final float DISABLED_ALPHA = 0.45f;
     private static final float MIN_ANIMATED_ROW_HEIGHT = 0.01f;
     private static final float ANIMATION_SNAP = 0.001f;
 
@@ -267,10 +335,14 @@ public class TreeView extends Widget {
      * @param node node to select
      * @throws NullPointerException if the node is null
      * @throws IllegalArgumentException if the node does not belong to this tree or is hidden
+     * @throws IllegalStateException if the node or one of its ancestors is disabled
      */
     public void select(Node node) {
         Objects.requireNonNull(node, "node");
         requireOwned(node);
+        if (node.isDisabled()) {
+            throw new IllegalStateException("Node is disabled.");
+        }
         int index = indexOf(node);
         if (index < 0) {
             throw new IllegalArgumentException("Node is not visible.");
@@ -299,7 +371,8 @@ public class TreeView extends Widget {
 
     /**
      * Expands a node with the configured animation.
-     * Nodes without children ignore the call.
+     * Nodes without children ignore the call. Disabled nodes may still be expanded
+     * programmatically, but their descendants stay muted and inert.
      *
      * @param node node to expand
      * @throws NullPointerException if the node is null
@@ -452,7 +525,7 @@ public class TreeView extends Widget {
 
     /**
      * Cancels running expansion animations, snaps branches to their target state and releases the
-     * expansion arrow.
+     * expansion arrow and node icons.
      */
     @Override
     protected void onDetached() {
@@ -464,14 +537,16 @@ public class TreeView extends Widget {
             }
         }
         onStructureChanged();
+        releaseNodeIcons();
         icons.release(context());
     }
 
     /**
-     * Drops the cached expansion arrow so it reloads at the new pixel density.
+     * Drops the cached expansion arrow and node icons so they reload at the new pixel density.
      */
     @Override
     protected void onContextChanged() {
+        releaseNodeIcons();
         icons.release(context());
     }
 
@@ -484,6 +559,14 @@ public class TreeView extends Widget {
     @Override
     protected void onDraw(RenderManager renderer, FrameInfo frame) {
         ensureIcons();
+    }
+
+    private void setNodeDisabled(Node node, boolean disabled) {
+        if (node.disabled == disabled) {
+            return;
+        }
+        node.disabled = disabled;
+        onStructureChanged();
     }
 
     private void setNodeExpanded(Node node, boolean expanded, boolean animate) {
@@ -540,12 +623,12 @@ public class TreeView extends Widget {
                 previous = fallback;
                 index = indexOf(fallback);
             }
-            if (index >= 0) {
+            if (index >= 0 && !previous.isDisabled()) {
                 selectedNode = previous;
                 list.setSelectedIndices(List.of(index));
             } else {
                 selectedNode = null;
-                list.clearSelection();
+                list.setSelectedIndices(List.of());
             }
         } finally {
             syncingSelection = false;
@@ -619,10 +702,12 @@ public class TreeView extends Widget {
                            RenderManager renderer) {
         Row row = rows.get(index);
         Theme theme = context().theme();
+        boolean disabled = row.node.isDisabled();
+        Color contentColor = disabled ? theme.textMuted().withAlpha(DISABLED_ALPHA) : theme.text();
         float left = ROW_PADDING + row.depth * indent;
         float centerY = bounds.y() + bounds.height() / 2;
-        Color arrowColor = state.hovered() || state.active()
-                ? theme.primary() : theme.textMuted();
+        Color arrowColor = disabled ? contentColor
+                : state.hovered() || state.active() ? theme.primary() : theme.textMuted();
         if (row.node.hasChildren()) {
             drawExpansionIcon(renderer,
                     new Rect(left, centerY - ARROW_SIZE / 2, ARROW_SIZE, ARROW_SIZE),
@@ -630,11 +715,50 @@ public class TreeView extends Widget {
         }
         Font font = font();
         float textX = left + ARROW_SIZE + ARROW_GAP;
+        if (row.node.icon() != null) {
+            Texture icon = nodeIcon(row.node);
+            if (icon != null) {
+                renderer.icon(icon, new Rect(textX, centerY - NODE_ICON_SIZE / 2,
+                        NODE_ICON_SIZE, NODE_ICON_SIZE), ImageStyle.ICON, contentColor);
+            }
+            textX += NODE_ICON_SIZE + NODE_ICON_GAP;
+        }
         float textWidth = Math.max(0, bounds.right() - textX - ROW_PADDING);
         if (font != null && textWidth > 0) {
-            renderer.text(font, row.node.label(), textX, centerY, theme.text(),
+            renderer.text(font, row.node.label(), textX, centerY, contentColor,
                     new TextStyle(textWidth, 0, 1, TextOverflow.ELLIPSIS,
                             HorizontalAlignment.LEFT, VerticalAlignment.CENTER));
+        }
+    }
+
+    private Texture nodeIcon(Node node) {
+        ensureNodeIcon(node);
+        if (node.icon() instanceof ImageSource.TextureSource textureSource) {
+            return textureSource.texture();
+        }
+        return node.iconSet == null ? null : node.iconSet.get(0);
+    }
+
+    private void ensureNodeIcon(Node node) {
+        UiContext context = context();
+        if (context == null || node.iconSet == null) {
+            return;
+        }
+        int size = Math.max(1, Math.round(NODE_ICON_SIZE * context.density()));
+        if (!node.iconSet.matches(context, size)) {
+            node.iconSet.reload(context, size);
+        }
+    }
+
+    private void releaseNodeIcon(Node node) {
+        if (node.iconSet != null) {
+            node.iconSet.release(context());
+        }
+    }
+
+    private void releaseNodeIcons() {
+        for (Node node : allNodes()) {
+            releaseNodeIcon(node);
         }
     }
 
@@ -811,6 +935,9 @@ public class TreeView extends Widget {
 
     private boolean isRowSelectable(int index) {
         Node node = rows.get(index).node;
+        if (node.isDisabled()) {
+            return false;
+        }
         for (Node parent = node.parent; parent != null; parent = parent.parent) {
             if (!parent.expanded) {
                 return false;
@@ -852,6 +979,9 @@ public class TreeView extends Widget {
                 int index = rowAt(y);
                 if (index >= 0) {
                     Row row = rows.get(index);
+                    if (row.node.isDisabled()) {
+                        return true;
+                    }
                     if (row.node.hasChildren() && arrowContains(row, x)) {
                         toggle(row.node);
                         return true;

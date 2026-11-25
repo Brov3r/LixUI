@@ -9,7 +9,9 @@ import com.lixui.input.event.KeyPressed;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.render.command.ImageCommand;
+import com.lixui.render.Texture;
 import com.lixui.widget.WidgetManager;
+import com.lixui.widget.image.ImageSource;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.testsupport.TestViewports;
 import org.junit.jupiter.api.Test;
@@ -319,6 +321,143 @@ class TreeViewTest {
         assertEquals(1, tree.visibleRowCount());
     }
 
+    @Test
+    void drawsNodeIconsBeforeTheLabelAndKeepsTheDepthIndent() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            TreeView tree = tree();
+            TreeView.Node root = tree.addRoot("Root", true);
+            TreeView.Node child = root.addChild("Child");
+            root.setIcon(ImageSource.icon("folder.svg"));
+            child.setIcon(ImageSource.icon("file.svg"));
+            manager.add(tree);
+            manager.render();
+
+            List<ImageCommand> icons = imageCommands(backend, 32);
+            assertEquals(2, icons.size());
+            assertEquals(28, icons.get(0).bounds().x(), 0.001f);
+            assertEquals(6, icons.get(0).bounds().y(), 0.001f);
+            assertEquals(16, icons.get(0).bounds().width(), 0.001f);
+            assertEquals(46, icons.get(1).bounds().x(), 0.001f);
+            assertEquals(34, icons.get(1).bounds().y(), 0.001f);
+        }
+    }
+
+    @Test
+    void drawsDisabledNodeIconsMuted() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            TreeView tree = tree();
+            TreeView.Node root = tree.addRoot("Locked");
+            root.setIcon(ImageSource.icon("folder.svg"));
+            root.setDisabled(true);
+            manager.add(tree);
+            manager.render();
+
+            ImageCommand icon = imageCommands(backend, 32).getFirst();
+            assertEquals(manager.context().theme().textMuted().withAlpha(0.45f), icon.color());
+        }
+    }
+
+    @Test
+    void disabledNodesIgnoreClicksAndKeyboard() {
+        TreeView tree = tree();
+        tree.setExpansionDuration(0);
+        TreeView.Node enabled = tree.addRoot("Enabled");
+        TreeView.Node locked = tree.addRoot("Locked");
+        TreeView.Node lockedChild = locked.addChild("Locked child");
+        TreeView.Node other = tree.addRoot("Other");
+        locked.setExpanded(true);
+        locked.setDisabled(true);
+        WidgetManager manager = manager();
+        manager.add(tree);
+        manager.render();
+        assertEquals(4, tree.visibleRowCount());
+
+        click(manager, 100, 43);
+        assertNull(tree.selectedNode());
+
+        click(manager, 100, 15);
+        assertSame(enabled, tree.selectedNode());
+        click(manager, 100, 43);
+        assertSame(enabled, tree.selectedNode());
+        click(manager, 100, 71);
+        assertSame(enabled, tree.selectedNode());
+
+        click(manager, 15, 43);
+        assertTrue(locked.isExpanded());
+
+        press(manager, Key.DOWN);
+        assertSame(other, tree.selectedNode());
+        press(manager, Key.UP);
+        assertSame(enabled, tree.selectedNode());
+        assertThrows(IllegalStateException.class, () -> tree.select(locked));
+        assertThrows(IllegalStateException.class, () -> tree.select(lockedChild));
+
+        locked.setDisabled(false);
+        tree.select(locked);
+        assertSame(locked, tree.selectedNode());
+    }
+
+    @Test
+    void disablingASelectedBranchClearsTheSelection() {
+        TreeView tree = tree();
+        tree.setExpansionDuration(0);
+        TreeView.Node root = tree.addRoot("Root", true);
+        TreeView.Node child = root.addChild("Child");
+        WidgetManager manager = manager();
+        manager.add(tree);
+        manager.render();
+        tree.select(child);
+        assertSame(child, tree.selectedNode());
+
+        List<TreeView.Node> changes = new ArrayList<>();
+        tree.setSelectionListener(changes::add);
+        root.setDisabled(true);
+
+        assertNull(tree.selectedNode());
+        assertEquals(1, changes.size());
+        assertNull(changes.getFirst());
+        assertTrue(child.isDisabled());
+        assertThrows(IllegalStateException.class, () -> tree.select(child));
+
+        root.setDisabled(false);
+        assertNull(tree.selectedNode());
+        assertFalse(child.isDisabled());
+    }
+
+    @Test
+    void rejectsRemoteNodeIcons() {
+        TreeView tree = new TreeView();
+        TreeView.Node root = tree.addRoot("Root");
+
+        assertThrows(IllegalArgumentException.class,
+                () -> root.setIcon(ImageSource.remote("https://example.com/icon.png")));
+        assertNull(root.icon());
+    }
+
+    @Test
+    void reloadsAndReleasesNodeIconsWithTheContext() {
+        TestBackend backend = new TestBackend();
+        TreeView tree = tree();
+        TreeView.Node root = tree.addRoot("Root");
+        root.setIcon(ImageSource.icon("folder.svg"));
+        try (WidgetManager manager = manager(backend)) {
+            manager.add(tree);
+            manager.render();
+            Texture hidpiIcon = texture(backend, 32, 32);
+            texture(backend, 20, 20);
+
+            manager.resize(TestViewports.LOGICAL);
+            manager.render();
+
+            assertTrue(backend.destroyed().contains(hidpiIcon));
+            texture(backend, 16, 16);
+            texture(backend, 10, 10);
+        }
+        assertTrue(backend.destroyed().containsAll(backend.created()));
+    }
+
     private static TreeView tree() {
         TreeView tree = new TreeView();
         tree.setBounds(new Rect(0, 0, 300, 300));
@@ -340,6 +479,20 @@ class TreeViewTest {
                 .filter(ImageCommand.class::isInstance)
                 .map(ImageCommand.class::cast)
                 .filter(command -> command.texture().width() == 20)
+                .findFirst().orElseThrow();
+    }
+
+    private static List<ImageCommand> imageCommands(TestBackend backend, int width) {
+        return backend.lastDrawList().commands().stream()
+                .filter(ImageCommand.class::isInstance)
+                .map(ImageCommand.class::cast)
+                .filter(command -> command.texture().width() == width)
+                .toList();
+    }
+
+    private static Texture texture(TestBackend backend, int width, int height) {
+        return backend.created().stream()
+                .filter(texture -> texture.width() == width && texture.height() == height)
                 .findFirst().orElseThrow();
     }
 

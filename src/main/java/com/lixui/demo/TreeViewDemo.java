@@ -7,6 +7,7 @@ import com.lixui.widget.control.CheckBox;
 import com.lixui.widget.control.Label;
 import com.lixui.widget.container.SplitPanel;
 import com.lixui.widget.container.TreeView;
+import com.lixui.widget.image.ImageSource;
 import com.lixui.widget.layout.VBox;
 
 import java.util.ArrayList;
@@ -27,19 +28,27 @@ final class TreeViewDemo {
     }
 
     /**
-     * Creates the interactive tree and the compact project tree side by side.
+     * Creates the interactive and compact trees above the icon and disabled branch example.
      *
      * @param fontFamily demo font family, or null when no system font is available
      * @return the tree demo page
      */
     static Widget create(FontFamily fontFamily) {
-        SplitPanel split = new SplitPanel();
+        SplitPanel examples = new SplitPanel();
+        examples.setDividerThickness(8);
+        examples.setDividerPosition(0.6f);
+        examples.setMinimumPaneSize(150);
+        examples.setGrow(1);
+        examples.setFirst(createInteractivePane(fontFamily));
+        examples.setSecond(createCompactPane(fontFamily));
+
+        SplitPanel split = new SplitPanel(SplitPanel.Orientation.VERTICAL);
         split.setDividerThickness(8);
-        split.setDividerPosition(0.6f);
+        split.setDividerPosition(0.62f);
         split.setMinimumPaneSize(150);
         split.setGrow(1);
-        split.setFirst(createInteractivePane(fontFamily));
-        split.setSecond(createCompactPane(fontFamily));
+        split.setFirst(examples);
+        split.setSecond(createIconPane(fontFamily));
 
         VBox page = new VBox();
         page.setPadding(8);
@@ -90,6 +99,72 @@ final class TreeViewDemo {
                         + "Right/Left expand, collapse or move between parent and child."))
                 .add(tree)
                 .add(animate)
+                .add(status);
+        return pane;
+    }
+
+    private static Widget createIconPane(FontFamily fontFamily) {
+        TreeView tree = new TreeView();
+        tree.setGrow(1);
+        tree.setRowHeight(26);
+        tree.setIndent(16);
+        tree.setExpansionDuration(0);
+
+        TreeView.Node project = tree.addRoot("LixUI", true);
+        project.setIcon(ImageSource.icon("folder.svg"));
+        TreeView.Node assets = project.addChild("assets");
+        assets.setIcon(ImageSource.icon("folder.svg"));
+        TreeView.Node icons = assets.addChild("icons");
+        icons.setIcon(ImageSource.icon("folder.svg"));
+        TreeView.Node folderIcon = icons.addChild("folder.svg");
+        folderIcon.setIcon(ImageSource.icon("file.svg"));
+        TreeView.Node fileIcon = icons.addChild("file.svg");
+        fileIcon.setIcon(ImageSource.icon("file.svg"));
+
+        TreeView.Node source = project.addChild("src");
+        source.setIcon(ImageSource.icon("folder.svg"));
+        TreeView.Node main = source.addChild("main");
+        main.setIcon(ImageSource.icon("folder.svg"));
+        TreeView.Node sourceFile = main.addChild("TreeView.java");
+        sourceFile.setIcon(ImageSource.icon("file.svg"));
+        TreeView.Node tests = project.addChild("tests");
+        tests.setIcon(ImageSource.icon("folder.svg"));
+        TreeView.Node testFile = tests.addChild("TreeViewTest.java");
+        testFile.setIcon(ImageSource.icon("file.svg"));
+
+        TreeView.Node build = project.addChild("build");
+        build.setIcon(ImageSource.icon("lock.svg"));
+        build.setDisabled(true);
+        TreeView.Node classes = build.addChild("classes");
+        classes.setIcon(ImageSource.icon("folder.svg"));
+        TreeView.Node libs = build.addChild("libs");
+        libs.setIcon(ImageSource.icon("folder.svg"));
+        build.setExpanded(true);
+
+        TreeView.Node secrets = project.addChild("local.properties");
+        secrets.setIcon(ImageSource.icon("lock.svg"));
+        secrets.setDisabled(true);
+
+        assets.setExpanded(true);
+        icons.setExpanded(true);
+        source.setExpanded(true);
+        main.setExpanded(true);
+        tests.setExpanded(true);
+
+        Label status = label(fontFamily, "");
+        status.setFontStyle(FontStyle.ITALIC);
+        tree.setSelectionListener(node -> status.setText(node == null
+                ? "No node selected." : "Selected: " + path(node)));
+        tree.select(sourceFile);
+
+        VBox pane = new VBox();
+        pane.setPadding(8);
+        pane.setGap(6);
+        pane.add(caption(fontFamily, "Project explorer - node icons and disabled branches"))
+                .add(label(fontFamily, "Folder, file and lock icons sit before the label. "
+                        + "build and local.properties are disabled: they and their children are "
+                        + "muted and ignore clicks and keys."))
+                .add(tree)
                 .add(status);
         return pane;
     }
