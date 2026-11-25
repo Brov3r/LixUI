@@ -67,7 +67,6 @@ import com.lixui.widget.control.UnitInput;
 import com.lixui.widget.container.Accordion;
 import com.lixui.widget.container.GroupBox;
 import com.lixui.widget.container.ReorderableList;
-import com.lixui.widget.container.ScrollPanel;
 import com.lixui.widget.container.SplitPanel;
 import com.lixui.widget.container.Table;
 import com.lixui.widget.container.TabPanel;
@@ -1663,9 +1662,7 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(columns)
                 .add(queueStatus)
                 .add(boardStatus);
-        ScrollPanel scroll = new ScrollPanel();
-        scroll.setContent(content);
-        return scroll;
+        return new DemoScrollPage(content);
     }
 
     private Label reorderStatus(String text) {
