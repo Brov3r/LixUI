@@ -1505,7 +1505,7 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(createContextMenuTable(contextStatus))
                 .add(contextStatus)
                 .add(new DemoModalPage(fontFamily).page());
-        return page;
+        return new DemoScrollPage(page);
     }
 
     private Table createContextMenuTable(Label status) {
