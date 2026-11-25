@@ -26,6 +26,7 @@ import com.lixui.widget.control.Avatar;
 import com.lixui.widget.control.Badge;
 import com.lixui.widget.control.Button;
 import com.lixui.widget.control.CheckBox;
+import com.lixui.widget.control.DatePicker;
 import com.lixui.widget.control.Dropdown;
 import com.lixui.widget.control.DurationInput;
 import com.lixui.widget.control.EmptyState;
@@ -80,6 +81,7 @@ import com.lixui.widget.layout.Stack;
 import com.lixui.widget.layout.VBox;
 import com.lixui.widget.overlay.ContextMenu;
 
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -596,7 +598,8 @@ final class DemoWidgetScene implements AutoCloseable {
     }
 
     private Widget createPickersPage() {
-        Label status = new Label("Start: 09:30    Reminder: 18:45");
+        Label status = new Label("Start: 09:30    Reminder: 18:45\nUS date: " + LocalDate.now()
+                + "    RU date: " + LocalDate.now());
         status.setFontFamily(fontFamily);
         status.setAutoSize(false);
         status.setWrap(true);
@@ -611,22 +614,41 @@ final class DemoWidgetScene implements AutoCloseable {
         reminderTime.setMinimumSize(160, 36);
         reminderTime.setMaximumSize(240, 46);
         reminderTime.setTooltipText("One-minute steps and manual entry.");
+        DatePicker enDate = new DatePicker(LocalDate.now(), Locale.US);
+        enDate.setMinimumSize(200, 36);
+        enDate.setMaximumSize(280, 46);
+        enDate.setTooltipText("Weeks start on Sunday and names use en-US.");
+        DatePicker ruDate = new DatePicker(LocalDate.now(), Locale.forLanguageTag("ru-RU"));
+        ruDate.setMinimumSize(200, 36);
+        ruDate.setMaximumSize(280, 46);
+        ruDate.setTooltipText("Weeks start on Monday and month names use ru.");
         Runnable updateStatus = () -> status.setText("Start: " + startTime.time()
-                + "    Reminder: " + reminderTime.time());
+                + "    Reminder: " + reminderTime.time()
+                + "\nUS date: " + enDate.date() + "    RU date: " + ruDate.date());
         startTime.setOnChange(value -> updateStatus.run());
         reminderTime.setOnChange(value -> updateStatus.run());
+        enDate.setOnChange(value -> updateStatus.run());
+        ruDate.setOnChange(value -> updateStatus.run());
 
-        HBox row = new HBox();
-        row.setGap(12);
-        row.setCrossAlignment(HBox.CrossAlignment.CENTER);
-        row.add(startTime).add(reminderTime);
+        HBox timeRow = new HBox();
+        timeRow.setGap(12);
+        timeRow.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        timeRow.add(startTime).add(reminderTime);
+
+        HBox dateRow = new HBox();
+        dateRow.setGap(12);
+        dateRow.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        dateRow.add(enDate).add(ruDate);
 
         VBox page = new VBox();
         page.setPadding(CONTENT_PADDING);
         page.setGap(10);
         page.add(sliderCaption("Time picker: clock button opens hour and minute columns; "
                         + "the popup field accepts a typed time"))
-                .add(row)
+                .add(timeRow)
+                .add(sliderCaption("Date pickers: en-US weeks start on Sunday, ru weeks start "
+                        + "on Monday; month and weekday names are localized"))
+                .add(dateRow)
                 .add(status);
         return page;
     }

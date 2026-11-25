@@ -2,30 +2,11 @@ package com.lixui.widget.control;
 
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
-import com.lixui.graphics.Paint;
-import com.lixui.input.Key;
-import com.lixui.input.Modifiers;
-import com.lixui.input.MouseButton;
-import com.lixui.platform.Cursor;
-import com.lixui.render.ImageStyle;
-import com.lixui.render.RenderManager;
-import com.lixui.render.Texture;
-import com.lixui.text.Font;
-import com.lixui.text.HorizontalAlignment;
-import com.lixui.text.TextOverflow;
-import com.lixui.text.TextStyle;
-import com.lixui.text.VerticalAlignment;
-import com.lixui.theme.WidgetState;
-import com.lixui.theme.WidgetStyle;
-import com.lixui.widget.FrameInfo;
 import com.lixui.widget.IconSet;
 import com.lixui.widget.LayoutConstraints;
-import com.lixui.widget.Panel;
-import com.lixui.widget.UiContext;
 import com.lixui.widget.Widget;
 import com.lixui.widget.layout.HBox;
 import com.lixui.widget.layout.VBox;
-import com.lixui.widget.overlay.Popup;
 
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -45,9 +26,7 @@ import java.util.regex.Pattern;
  * keeps any hour already applied, matching the immediate update contract. Every accepted change is
  * reported through {@link #setOnChange(Consumer)}.
  */
-public class TimePicker extends Panel {
-    private static final float DEFAULT_ICON_SIZE = 16;
-    private static final float ICON_GAP = 6;
+public class TimePicker extends PickerField {
     private static final float LIST_WIDTH = 84;
     private static final float LIST_GAP = 6;
     private static final float ITEM_HEIGHT = 24;
@@ -57,17 +36,14 @@ public class TimePicker extends Panel {
     private static final int MAX_MANUAL_LENGTH = 8;
     private static final Pattern MANUAL_PATTERN = Pattern.compile("^(\\d{1,2})\\s*[:.]\\s*(\\d{1,2})$");
 
-    private final Popup popup = new Popup();
     private final VBox popupContent = new VBox();
     private final Input manualInput = new Input();
     private final HBox listRow = new HBox();
-    private final IconSet clockIcons = new IconSet("clock.svg");
     // OptionList draws its check mark from index 1, so the first slot is unused here.
     private final IconSet listIcons = new IconSet("tick.svg", "tick.svg");
     private final OptionList hours;
     private final OptionList minutes;
 
-    private float iconSize = DEFAULT_ICON_SIZE;
     private int hour;
     private int minute;
     private int minuteStep = 5;
@@ -87,10 +63,10 @@ public class TimePicker extends Panel {
      * @throws NullPointerException if {@code time} is null
      */
     public TimePicker(LocalTime time) {
+        super("clock.svg");
         Objects.requireNonNull(time, "time");
         hour = time.getHour();
         minute = time.getMinute();
-        setFocusable(true);
         hours = createOptionList(false);
         minutes = createOptionList(true);
         manualInput.setPlaceholder("HH:mm");
@@ -101,10 +77,8 @@ public class TimePicker extends Panel {
         listRow.add(new ListSlot(hours)).add(new ListSlot(minutes));
         popupContent.setGap(CONTENT_GAP);
         popupContent.add(manualInput).add(listRow);
-        popup.setPadding(6);
-        popup.setFocusScope(true);
-        popup.setContent(popupContent);
-        popup.setCloseListener(this::restoreFieldFocus);
+        popup().setPadding(6);
+        popup().setContent(popupContent);
         syncManualInput();
     }
 
@@ -215,28 +189,6 @@ public class TimePicker extends Panel {
     }
 
     /**
-     * Returns the icon edge length used by the field.
-     *
-     * @return the icon size in logical UI units
-     */
-    public final float iconSize() {
-        return iconSize;
-    }
-
-    /**
-     * Sets the icon edge length used by the field.
-     *
-     * @param iconSize positive icon size in logical UI units
-     * @throws IllegalArgumentException if the size is non-finite or not positive
-     */
-    public final void setIconSize(float iconSize) {
-        if (!Float.isFinite(iconSize) || iconSize <= 0) {
-            throw new IllegalArgumentException("Icon size must be finite and positive.");
-        }
-        this.iconSize = iconSize;
-    }
-
-    /**
      * Returns the time change callback.
      *
      * @return the callback, or null when none is assigned
@@ -255,164 +207,57 @@ public class TimePicker extends Panel {
     }
 
     /**
-     * Reports whether the selection popup is open.
+     * Returns the field text.
      *
-     * @return true while the popup is visible
+     * @return the formatted time
      */
-    public final boolean isPopupOpen() {
-        return popup.isOpen();
+    @Override
+    protected String fieldText() {
+        return formattedTime();
     }
 
     /**
-     * Measures the time text and the trailing clock icon.
-     *
-     * @param constraints available and required dimensions
-     * @return the natural field size
+     * Opens the popup and focuses the manual entry field.
      */
     @Override
-    protected Size onMeasure(LayoutConstraints constraints) {
-        WidgetStyle style = resolvedStyle();
-        if (style == null) {
-            return super.onMeasure(constraints);
-        }
-        Font font = font();
-        Size textSize = font == null ? new Size(0, 0) : font.measure(formattedTime());
-        float contentWidth = textSize.width() + iconSize + ICON_GAP;
-        float contentHeight = Math.max(textSize.height(), iconSize);
-        float padding = style.padding();
-        return new Size(contentWidth + padding * 2, contentHeight + padding * 2);
-    }
-
-    /**
-     * Paints the field surface, the time text and the clock icon.
-     *
-     * @param renderer drawing manager for the current frame
-     * @param frame timing information for the current frame
-     */
-    @Override
-    protected void onDraw(RenderManager renderer, FrameInfo frame) {
-        WidgetStyle style = resolvedStyle();
-        if (style == null || localBounds().isEmpty()) {
+    protected void openPopup() {
+        if (context() == null || popup().isOpen()) {
             return;
         }
-        WidgetState state = state();
-        renderer.roundedRect(localBounds(), style.cornerRadius(), style.background(state));
-        drawBorder(renderer, style, state);
-        Font font = font();
-        float padding = style.padding();
-        float iconX = localBounds().width() - padding - iconSize;
-        float contentWidth = Math.max(0, iconX - ICON_GAP - padding);
-        if (font != null) {
-            renderer.text(font, formattedTime(), padding, localBounds().height() / 2,
-                    style.text(state), new TextStyle(contentWidth, 0, 1, TextOverflow.ELLIPSIS,
-                            HorizontalAlignment.LEFT, VerticalAlignment.CENTER));
+        List<SelectOption> hourOptions = new ArrayList<>(24);
+        for (int value = 0; value < 24; value++) {
+            hourOptions.add(new SelectOption(twoDigits(value)));
         }
-        ensureClockIcon();
-        Texture clock = clockIcons.get(0);
-        if (clock != null) {
-            renderer.icon(clock, new Rect(iconX, (localBounds().height() - iconSize) / 2,
-                    iconSize, iconSize), ImageStyle.ICON, style.text(state));
+        List<SelectOption> minuteOptions = new ArrayList<>();
+        for (int value = 0; value < 60; value += minuteStep) {
+            minuteOptions.add(new SelectOption(twoDigits(value)));
         }
-    }
-
-    private void drawBorder(RenderManager renderer, WidgetStyle style, WidgetState state) {
-        float width = style.borderWidth();
-        if (width <= 0) {
-            return;
-        }
-        float inset = width / 2;
-        Rect bounds = localBounds();
-        Rect border = new Rect(inset, inset,
-                Math.max(0, bounds.width() - width), Math.max(0, bounds.height() - width));
-        if (border.isEmpty()) {
-            return;
-        }
-        renderer.strokeRoundedRect(border, Math.max(0, style.cornerRadius() - inset),
-                width, Paint.solid(style.border(state)));
+        hours.setOptions(hourOptions);
+        minutes.setOptions(minuteOptions);
+        syncManualInput();
+        Rect anchor = new Rect(absolutePosition().x(), absolutePosition().y(),
+                bounds().width(), bounds().height());
+        popup().open(context(), anchor);
+        hours.setHighlighted(hour);
+        minutes.setHighlighted(minute / minuteStep);
+        context().requestFocus(manualInput);
     }
 
     /**
-     * Returns the pointer cursor for the field.
-     *
-     * @return the pointer cursor
-     */
-    @Override
-    public Cursor cursor() {
-        return Cursor.POINTER;
-    }
-
-    /**
-     * Opens the popup on a completed left click.
-     *
-     * @param x horizontal pointer position relative to the widget
-     * @param y vertical pointer position relative to the widget
-     * @param button clicked button
-     * @param modifiers active modifiers
-     * @return true when the click was consumed
-     */
-    @Override
-    protected boolean onClick(float x, float y, MouseButton button, Modifiers modifiers) {
-        if (button != MouseButton.LEFT || !isEnabled()) {
-            return false;
-        }
-        openPopup();
-        return true;
-    }
-
-    /**
-     * Opens the popup on a double click.
-     *
-     * @param x horizontal pointer position relative to the widget
-     * @param y vertical pointer position relative to the widget
-     * @param button double-clicked button
-     * @param modifiers active modifiers
-     * @return true when the double click was consumed
-     */
-    @Override
-    protected boolean onDoubleClick(float x, float y, MouseButton button, Modifiers modifiers) {
-        return onClick(x, y, button, modifiers);
-    }
-
-    /**
-     * Opens the popup with Enter, Space or an arrow key and closes it on Escape.
-     *
-     * @param key pressed key
-     * @param modifiers active modifiers
-     * @param repeat whether this is a key repeat
-     * @return true when the key was consumed
-     */
-    @Override
-    protected boolean onKeyPressed(Key key, Modifiers modifiers, boolean repeat) {
-        if (key == Key.ESCAPE && popup.isOpen()) {
-            closePopup();
-            return true;
-        }
-        if (key == Key.ENTER || key == Key.SPACE || key == Key.UP || key == Key.DOWN) {
-            openPopup();
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Closes the popup and releases the field icons when the picker leaves the tree.
+     * Closes the popup and releases the list icons when the picker leaves the tree.
      */
     @Override
     protected void onDetached() {
-        closePopup();
         super.onDetached();
-        clockIcons.release(context());
         listIcons.release(context());
     }
 
     /**
-     * Closes the popup and drops cached icons after a context change.
+     * Drops the cached list icons after a context change.
      */
     @Override
     protected void onContextChanged() {
         super.onContextChanged();
-        closePopup();
-        clockIcons.release(context());
         listIcons.release(context());
     }
 
@@ -433,33 +278,6 @@ public class TimePicker extends Panel {
                 }
             }
         }, this::closePopup, listIcons, ITEM_HEIGHT, CHECK_SIZE);
-    }
-
-    private void openPopup() {
-        if (context() == null || popup.isOpen()) {
-            return;
-        }
-        List<SelectOption> hourOptions = new ArrayList<>(24);
-        for (int value = 0; value < 24; value++) {
-            hourOptions.add(new SelectOption(twoDigits(value)));
-        }
-        List<SelectOption> minuteOptions = new ArrayList<>();
-        for (int value = 0; value < 60; value += minuteStep) {
-            minuteOptions.add(new SelectOption(twoDigits(value)));
-        }
-        hours.setOptions(hourOptions);
-        minutes.setOptions(minuteOptions);
-        syncManualInput();
-        Rect anchor = new Rect(absolutePosition().x(), absolutePosition().y(),
-                bounds().width(), bounds().height());
-        popup.open(context(), anchor);
-        hours.setHighlighted(hour);
-        minutes.setHighlighted(minute / minuteStep);
-        context().requestFocus(manualInput);
-    }
-
-    private void closePopup() {
-        popup.close();
     }
 
     private void commitManualInput() {
@@ -500,33 +318,16 @@ public class TimePicker extends Panel {
         return String.format(Locale.ROOT, "%02d", value);
     }
 
-    private void ensureClockIcon() {
-        UiContext context = context();
-        if (context == null) {
-            return;
-        }
-        int size = Math.max(1, Math.round(iconSize * context.density()));
-        if (!clockIcons.matches(context, size)) {
-            clockIcons.reload(context, size);
+    private static void requireHour(int hour) {
+        if (hour < 0 || hour > 23) {
+            throw new IllegalArgumentException("Hour must be between zero and twenty-three.");
         }
     }
 
-    private void restoreFieldFocus() {
-        if (context() == null || !isEnabled()) {
-            return;
+    private static void requireMinute(int minute) {
+        if (minute < 0 || minute > 59) {
+            throw new IllegalArgumentException("Minute must be between zero and fifty-nine.");
         }
-        try {
-            requestFocus();
-        } catch (IllegalArgumentException ignored) {
-            // The picker may be detaching while its popup is being closed.
-        }
-    }
-
-    private WidgetStyle resolvedStyle() {
-        if (hasLocalStyle()) {
-            return style();
-        }
-        return context() == null ? null : context().theme().controlStyle();
     }
 
     /**
@@ -560,18 +361,6 @@ public class TimePicker extends Panel {
         @Override
         protected void onLayout() {
             list.layout(new Rect(0, 0, bounds().width(), bounds().height()));
-        }
-    }
-
-    private static void requireHour(int hour) {
-        if (hour < 0 || hour > 23) {
-            throw new IllegalArgumentException("Hour must be between zero and twenty-three.");
-        }
-    }
-
-    private static void requireMinute(int minute) {
-        if (minute < 0 || minute > 59) {
-            throw new IllegalArgumentException("Minute must be between zero and fifty-nine.");
         }
     }
 }
