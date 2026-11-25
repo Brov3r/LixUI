@@ -87,6 +87,8 @@ public class DropZone extends Panel {
 
     /**
      * Reports whether the active drag session points at this zone.
+     * A hidden or disabled zone is never reported as a target, even when the pointer stayed still
+     * while the zone changed state.
      *
      * @return true while this zone is the current drag target
      */
@@ -96,11 +98,13 @@ public class DropZone extends Panel {
             return false;
         }
         DragSession session = context.dragSession();
-        return session != null && session.isActive() && session.target() == this;
+        return session != null && session.isActive() && session.target() == this && isReachable();
     }
 
     /**
      * Reports whether the active drag session points at this zone and the zone accepts its kind.
+     * The result is false while the zone or one of its ancestors is hidden or disabled, because a
+     * drop there would not invoke the callback.
      *
      * @return true when a drop here would invoke the callback
      */
@@ -111,7 +115,24 @@ public class DropZone extends Panel {
         }
         DragSession session = context.dragSession();
         return session != null && session.isActive() && session.target() == this
-                && accepts(session.kind());
+                && isReachable() && accepts(session.kind());
+    }
+
+    /**
+     * Reports whether this zone would be found by a drop hit test in its current state.
+     *
+     * @return true when the zone is attached and the zone and all its ancestors are visible and enabled
+     */
+    boolean isReachable() {
+        if (context() == null) {
+            return false;
+        }
+        for (Widget widget = this; widget != null; widget = widget.parent()) {
+            if (!widget.isVisible() || !widget.isEnabled()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

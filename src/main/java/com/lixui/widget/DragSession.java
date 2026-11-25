@@ -105,11 +105,13 @@ public final class DragSession {
 
     /**
      * Reports whether the current target accepts the payload kind.
+     * A target that became hidden or disabled mid-drag no longer accepts anything, because a drop
+     * would be skipped by hit testing.
      *
-     * @return true when a drop zone is under the pointer and accepts {@link #kind()}
+     * @return true when a reachable drop zone is under the pointer and accepts {@link #kind()}
      */
     public boolean isAccepted() {
-        return active && target != null && target.accepts(kind);
+        return active && target != null && target.isReachable() && target.accepts(kind);
     }
 
     /**

@@ -373,6 +373,7 @@ public final class WidgetManager implements AutoCloseable {
             }
         }
         pruneOffscreenWidgets(viewport);
+        refreshDragTarget();
         updateHover();
         refreshCursor();
     }
@@ -433,6 +434,7 @@ public final class WidgetManager implements AutoCloseable {
                 widget.update(frame);
             }
         }
+        refreshDragTarget();
         updateHover();
         if (tooltipsEnabled) {
             tooltips.update(hovered, frame, pointerX, pointerY, tooltipSettings);
@@ -799,6 +801,7 @@ public final class WidgetManager implements AutoCloseable {
         pointerX = x;
         pointerY = y;
         updateHover();
+        updateDragSession(x, y);
     }
 
     private void pointerExited(float x, float y) {
@@ -944,6 +947,24 @@ public final class WidgetManager implements AutoCloseable {
                 bubbleDrag(state.target, x, y, button, state.modifiers);
                 updateDragSession(x, y, button);
             }
+        }
+    }
+
+    private void updateDragSession(float x, float y) {
+        DragSession session = context.activeDrag();
+        if (session != null) {
+            context.updateDrag(x, y, findDropZone(x, y));
+        }
+    }
+
+    /**
+     * Re-evaluates the drop target at the last pointer position.
+     * Layout and scroll animations can move zones under a stationary pointer, so the cached target
+     * would otherwise stay stale until the next pointer move.
+     */
+    private void refreshDragTarget() {
+        if (pointerInside && context.activeDrag() != null) {
+            updateDragSession(pointerX, pointerY);
         }
     }
 
