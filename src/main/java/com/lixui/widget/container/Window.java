@@ -715,9 +715,13 @@ public class Window extends ScrollPanel {
     }
 
     private void updateContentInsets() {
-        setContentInsets(headerHeight + contentPaddingTop, contentPaddingRight,
-                contentPaddingBottom, contentPaddingLeft);
-        setScrollBarInsets(0, RESIZE_SIZE, RESIZE_SIZE, 0);
+        float corner = reservesResizeCorner() ? RESIZE_SIZE : 0;
+        setContentInsets(headerHeight + contentPaddingTop, contentPaddingRight + corner,
+                contentPaddingBottom + corner, contentPaddingLeft);
+    }
+
+    private boolean reservesResizeCorner() {
+        return isResizable() && !collapsed && !maximized;
     }
 
     private void updatePinnedHover() {
@@ -817,7 +821,7 @@ public class Window extends ScrollPanel {
     }
 
     private void updateResizeHandleVisibility() {
-        setVisibleIfChanged(resizeHandle, isResizable() && !collapsed && !maximized);
+        setVisibleIfChanged(resizeHandle, reservesResizeCorner());
     }
 
     private void updateButtonStyles() {

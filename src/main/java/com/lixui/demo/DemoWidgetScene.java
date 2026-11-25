@@ -2156,8 +2156,11 @@ final class DemoWidgetScene implements AutoCloseable {
      * Lays out and renders the widget tree.
      */
     void render() {
-        float contentWidth = Math.max(0, window.bounds().width());
-        float contentHeight = Math.max(0, window.bounds().height() - window.headerHeight());
+        // Lay out first so the window corner reserved for the resize handle is up to date.
+        window.layout(window.bounds());
+        float contentWidth = Math.max(0, window.bounds().width() - window.contentInsetRight());
+        float contentHeight = Math.max(0, window.bounds().height()
+                - window.contentInsetTop() - window.contentInsetBottom());
         outerTabs.setSize(contentWidth, contentHeight);
         statsPanel.resizeToContent(manager.renderer(), THEME_BUTTON_SIZE);
         manager.render();

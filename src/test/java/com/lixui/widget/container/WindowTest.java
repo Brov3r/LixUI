@@ -160,8 +160,10 @@ class WindowTest {
 
             manager.layout();
 
-            assertEquals(200, window.bounds().width(), 0.001f);
-            assertEquals(window.headerHeight() + 100, window.bounds().height(), 0.001f);
+            // A resizable window also wraps the corner reserved for the resize handle.
+            float corner = resizeHandle(window).bounds().width();
+            assertEquals(200 + corner, window.bounds().width(), 0.001f);
+            assertEquals(window.headerHeight() + 100 + corner, window.bounds().height(), 0.001f);
 
             window.setCollapsed(true);
             manager.layout();
