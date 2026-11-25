@@ -5,6 +5,7 @@ import com.lixui.text.FontStyle;
 import com.lixui.widget.Widget;
 import com.lixui.widget.control.Label;
 import com.lixui.widget.control.MenuBar;
+import com.lixui.widget.layout.HBox;
 import com.lixui.widget.layout.VBox;
 import com.lixui.widget.overlay.ContextMenu;
 
@@ -46,15 +47,65 @@ final class DemoMenuPage {
         createViewMenu(bar, status);
         createHelpMenu(bar, status);
 
+        MenuBar compact = new MenuBar();
+        compact.setMinimumSize(0, 28);
+        createCompactMenus(compact, status);
+        HBox compactRow = new HBox();
+        compactRow.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        compactRow.add(compact);
+
         VBox page = new VBox();
         page.setPadding(10);
         page.setGap(10);
         page.add(caption("Menu bar: hover switches menus, outside press and Escape close them"))
                 .add(bar)
+                .add(caption("Compact bar: short icon-free menus with shortcuts, checked commands "
+                        + "and a disabled row"))
+                .add(compactRow)
                 .add(caption("Dropdowns reuse the context menu: icons, shortcuts, check marks, "
                         + "disabled rows and nested submenus"))
                 .add(status);
         return new DemoScrollPage(page);
+    }
+
+    private void createCompactMenus(MenuBar bar, Label status) {
+        MenuBar.Menu actions = bar.addMenu("Actions");
+        item(actions, "New", null, "Ctrl+N", () -> status.setText("Compact: new."));
+        item(actions, "Open", null, "Ctrl+O", () -> status.setText("Compact: open."));
+        item(actions, "Save", null, "Ctrl+S", () -> status.setText("Compact: saved."));
+        actions.addSeparator();
+
+        ContextMenu.Item autosave = actions.addItem("Autosave", null);
+        autosave.setShortcut("Ctrl+Shift+A");
+        autosave.setChecked(true);
+        autosave.setAction(() -> {
+            autosave.setChecked(!autosave.isChecked());
+            status.setText("Compact: autosave " + (autosave.isChecked() ? "on." : "off."));
+        });
+        ContextMenu.Item sync = actions.addItem("Cloud sync", null);
+        sync.setShortcut("Ctrl+Shift+C");
+        sync.setEnabled(false);
+
+        MenuBar.Menu options = bar.addMenu("Options");
+        ContextMenu.Item hints = options.addItem("Show hints", null);
+        hints.setShortcut("Ctrl+H");
+        hints.setChecked(true);
+        hints.setAction(() -> {
+            hints.setChecked(!hints.isChecked());
+            status.setText("Compact: hints " + (hints.isChecked() ? "shown." : "hidden."));
+        });
+        ContextMenu.Item density = options.addItem("Compact density", null);
+        density.setShortcut("Ctrl+D");
+        density.setAction(() -> {
+            density.setChecked(!density.isChecked());
+            status.setText("Compact: density "
+                    + (density.isChecked() ? "compact." : "comfortable."));
+        });
+
+        MenuBar.Menu help = bar.addMenu("Help");
+        item(help, "Keyboard map", null, "F1",
+                () -> status.setText("Compact: keyboard map."));
+        item(help, "About", null, null, () -> status.setText("Compact: about."));
     }
 
     private void createFileMenu(MenuBar bar, Label status) {
@@ -153,7 +204,9 @@ final class DemoMenuPage {
     private ContextMenu.Item item(MenuBar.Menu menu, String label, String icon,
                                   String shortcut, Runnable action) {
         ContextMenu.Item item = menu.addItem(label, action);
-        icon(menu, item, icon);
+        if (icon != null) {
+            icon(menu, item, icon);
+        }
         item.setShortcut(shortcut);
         return item;
     }
