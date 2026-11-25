@@ -38,6 +38,7 @@ import com.lixui.widget.control.KnobSlider;
 import com.lixui.widget.control.Label;
 import com.lixui.widget.control.MultiSelect;
 import com.lixui.widget.Panel;
+import com.lixui.widget.control.Pagination;
 import com.lixui.widget.control.ProgressBar;
 import com.lixui.widget.control.RadioBox;
 import com.lixui.widget.control.RangeSlider;
@@ -153,6 +154,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(decoratedLabel).add(justifiedLabel).add(richLabel);
         innerTabs = createInnerTabs();
         outerTabs = new TabPanel();
+        bindIcon("puzzle-02.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Interactive", createInteractivePage())::setIcon);
         bindIcon("puzzle-01.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Elements", createElementsPage())::setIcon);
         bindIcon("user-list.svg", outerTabs.iconSize(),
@@ -234,6 +237,27 @@ final class DemoWidgetScene implements AutoCloseable {
         tabs.setTabClosable(tabList.get(0), false);
         tabs.setTabMovable(tabList.get(11), false);
         return tabs;
+    }
+
+    private Widget createInteractivePage() {
+        Label status = new Label("Pagination: click an arrow to change the page.");
+        status.setFontFamily(fontFamily);
+        status.setAutoSize(false);
+        status.setWrap(true);
+
+        Pagination pagination = new Pagination();
+        pagination.setPageCount(12);
+        pagination.setMaxButtons(7);
+        pagination.setOnChange(page -> status.setText("Page " + (page + 1)
+                + " of " + pagination.pageCount() + "."));
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(10);
+        page.add(sliderCaption("Pagination: ellipses keep the first, current and last pages visible"))
+                .add(pagination)
+                .add(status);
+        return page;
     }
 
     private Widget createElementsPage() {
