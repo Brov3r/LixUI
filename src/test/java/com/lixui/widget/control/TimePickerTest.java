@@ -11,7 +11,11 @@ import com.lixui.input.event.KeyPressed;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.render.Viewport;
+import com.lixui.render.command.TextCommand;
+import com.lixui.text.FontData;
 import com.lixui.text.HorizontalAlignment;
+import com.lixui.text.SystemFonts;
+import com.lixui.theme.Theme;
 import com.lixui.theme.WidgetStyle;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
@@ -19,6 +23,7 @@ import com.lixui.widget.overlay.Popup;
 import com.lixui.widget.overlay.PromptDialog;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.testsupport.TestViewports;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalTime;
@@ -164,6 +169,39 @@ class TimePickerTest {
 
         Input manual = findInput(popup(manager).content());
         assertEquals(HorizontalAlignment.CENTER, manual.textAlignment());
+    }
+
+    @Test
+    void centersTheRenderedValueInTheFieldAndTheManualField() {
+        FontData data = SystemFonts.findDefault().orElse(null);
+        Assumptions.assumeTrue(data != null, "No readable system font is installed.");
+        for (Viewport viewport : List.of(TestViewports.LOGICAL, TestViewports.HIDPI)) {
+            for (Theme theme : List.of(Theme.dark(), Theme.light())) {
+                TestBackend backend = new TestBackend();
+                try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
+                    manager.resize(viewport);
+                    manager.setTheme(theme);
+                    manager.setDefaultFont(manager.context().createFont(data, 16));
+                    TimePicker picker = picker(LocalTime.of(9, 30), 15);
+                    manager.add(picker);
+                    manager.render();
+
+                    WidgetStyle style = manager.context().theme().controlStyle();
+                    assertFieldTextCentered(backend, picker, style);
+
+                    picker.setTime(23, 59);
+                    manager.render();
+                    assertFieldTextCentered(backend, picker, style);
+
+                    clickField(manager, picker);
+                    manager.render();
+                    assertManualTextCentered(backend,
+                            findInput(popup(manager).content()), style);
+
+                    manager.handle(new KeyPressed(Key.ESCAPE, Modifiers.NONE, false));
+                }
+            }
+        }
     }
 
     @Test
@@ -324,6 +362,53 @@ class TimePickerTest {
             }
         }
         return null;
+    }
+
+    private static void assertFieldTextCentered(TestBackend backend, TimePicker picker,
+                                                WidgetStyle style) {
+        TextCommand text = textCommandIn(backend, localBounds(picker));
+        Rect area = picker.fieldTextBounds(style);
+        float center = area.x() + area.width() / 2;
+        assertEquals(center, text.bounds().center().x(), 1.5f, "field text center");
+        assertTrue(text.bounds().x() >= area.x() - 0.5f, "field text starts inside its area");
+        float iconLeft = picker.bounds().width() - style.padding() - picker.iconSize();
+        assertTrue(text.bounds().right() <= iconLeft, "field text must not reach the icon");
+    }
+
+    private static void assertManualTextCentered(TestBackend backend, Input manual,
+                                                 WidgetStyle style) {
+        Rect content = manual.contentRect(style);
+        Point origin = manual.absolutePosition();
+        Rect clip = new Rect(origin.x() + content.x(), origin.y() + content.y(),
+                content.width(), content.height());
+        TextCommand text = textCommandWithClip(backend, clip);
+        float center = content.x() + content.width() / 2;
+        assertEquals(center, text.bounds().center().x(), 1.5f, "manual text center");
+        assertTrue(text.bounds().x() >= content.x() - 0.5f,
+                "manual text starts inside its area");
+    }
+
+    private static TextCommand textCommandIn(TestBackend backend, Rect bounds) {
+        return backend.lastDrawList().commands().stream()
+                .filter(TextCommand.class::isInstance)
+                .map(TextCommand.class::cast)
+                .filter(command -> bounds.contains(command.bounds().center().x(),
+                        command.bounds().center().y()))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static TextCommand textCommandWithClip(TestBackend backend, Rect clip) {
+        return backend.lastDrawList().commands().stream()
+                .filter(TextCommand.class::isInstance)
+                .map(TextCommand.class::cast)
+                .filter(command -> command.clip().equals(clip))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static Rect localBounds(Widget widget) {
+        return new Rect(0, 0, widget.bounds().width(), widget.bounds().height());
     }
 
     private static WidgetManager manager() {

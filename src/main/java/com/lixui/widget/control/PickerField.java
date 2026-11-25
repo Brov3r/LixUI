@@ -200,10 +200,15 @@ abstract class PickerField extends Panel {
                 Math.max(0, localBounds().height() - padding * 2)), state, style);
         Rect textBounds = fieldTextBounds(style);
         if (font != null) {
-            renderer.text(font, fieldText(), textBounds.x(), localBounds().height() / 2,
+            HorizontalAlignment alignment = fieldTextAlignment();
+            float anchorX = switch (alignment) {
+                case CENTER -> textBounds.x() + textBounds.width() / 2;
+                case RIGHT -> textBounds.right();
+                default -> textBounds.x();
+            };
+            renderer.text(font, fieldText(), anchorX, localBounds().height() / 2,
                     style.text(state), new TextStyle(textBounds.width(), 0, 1,
-                            TextOverflow.ELLIPSIS, fieldTextAlignment(),
-                            VerticalAlignment.CENTER));
+                            TextOverflow.ELLIPSIS, alignment, VerticalAlignment.CENTER));
         }
         ensureFieldIcon();
         Texture icon = fieldIcons.get(0);
