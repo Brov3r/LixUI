@@ -26,6 +26,7 @@ public class Dropdown extends PopupSelect {
     private int selectedIndex = -1;
     private String placeholder = "Select...";
     private Consumer<SelectOption> onChange;
+    private Consumer<SelectOption> changeObserver;
 
     /**
      * Creates an empty dropdown with the default placeholder.
@@ -130,9 +131,22 @@ public class Dropdown extends PopupSelect {
         this.onChange = onChange;
     }
 
+    /**
+     * Assigns an internal observer invoked after every selection change in addition to the public
+     * callback. Coordinating controls use it without taking over {@link #setOnChange(Consumer)}.
+     *
+     * @param changeObserver observer, or null to clear it
+     */
+    final void setChangeObserver(Consumer<SelectOption> changeObserver) {
+        this.changeObserver = changeObserver;
+    }
+
     private void notifyChange() {
         if (onChange != null) {
             onChange.accept(selectedOption());
+        }
+        if (changeObserver != null) {
+            changeObserver.accept(selectedOption());
         }
     }
 

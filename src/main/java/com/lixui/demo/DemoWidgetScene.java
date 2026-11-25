@@ -1354,8 +1354,9 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(sliderCaption("Split button"))
                 .add(split)
                 .add(splitStatus)
+                .add(DemoFormWidgets.filterBars())
                 .add(status);
-        return page;
+        return new DemoScrollPage(page);
     }
 
     private Widget createInputAreaPage() {
