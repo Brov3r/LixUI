@@ -46,6 +46,7 @@ import com.lixui.widget.control.Pagination;
 import com.lixui.widget.control.PasswordInput;
 import com.lixui.widget.control.ProgressBar;
 import com.lixui.widget.control.RadioBox;
+import com.lixui.widget.control.RadioGroup;
 import com.lixui.widget.control.RangeSlider;
 import com.lixui.widget.control.RichLabel;
 import com.lixui.widget.control.SearchInput;
@@ -690,7 +691,7 @@ final class DemoWidgetScene implements AutoCloseable {
         return page;
     }
 
-    private VBox createControlsPage() {
+    private Widget createControlsPage() {
         VBox page = new VBox();
         page.setPadding(CONTENT_PADDING);
         page.setGap(10);
@@ -725,6 +726,47 @@ final class DemoWidgetScene implements AutoCloseable {
         medium.setGroup(sizeGroup);
         large.setGroup(sizeGroup);
         sizeGroup.setMinimumSelected(1);
+
+        Label alignmentStatus = new Label("Alignment: Left");
+        alignmentStatus.setFontFamily(fontFamily);
+        alignmentStatus.setAutoSize(false);
+        alignmentStatus.setWrap(true);
+
+        Label alignmentPreview = new Label("This paragraph follows the radio group selection "
+                + "and shows the chosen alignment across the available width.");
+        alignmentPreview.setFontFamily(fontFamily);
+        alignmentPreview.setAutoSize(false);
+        alignmentPreview.setWrap(true);
+        alignmentPreview.setAlignment(HorizontalAlignment.LEFT);
+
+        RadioGroup alignmentGroup = new RadioGroup();
+        alignmentGroup.addOption("Left");
+        alignmentGroup.addOption("Center");
+        alignmentGroup.addOption("Right");
+        alignmentGroup.setSelectedIndex(0);
+        alignmentGroup.setOnChange(index -> {
+            alignmentPreview.setAlignment(switch (index) {
+                case 1 -> HorizontalAlignment.CENTER;
+                case 2 -> HorizontalAlignment.RIGHT;
+                default -> HorizontalAlignment.LEFT;
+            });
+            alignmentStatus.setText("Alignment: "
+                    + alignmentGroup.options().get(index).text());
+        });
+
+        Label deliveryStatus = new Label("Notifications: Daily digest");
+        deliveryStatus.setFontFamily(fontFamily);
+        deliveryStatus.setAutoSize(false);
+        deliveryStatus.setWrap(true);
+
+        RadioGroup deliveryGroup = new RadioGroup();
+        deliveryGroup.addOption("Immediately");
+        deliveryGroup.addOption("Daily digest");
+        RadioBox weeklyDigest = deliveryGroup.addOption("Weekly digest");
+        weeklyDigest.setEnabled(false);
+        deliveryGroup.setSelectedIndex(1);
+        deliveryGroup.setOnChange(index -> deliveryStatus.setText("Notifications: "
+                + deliveryGroup.options().get(index).text()));
 
         Label status = new Label("Segmented button: no action yet");
         status.setFontFamily(fontFamily);
@@ -767,9 +809,14 @@ final class DemoWidgetScene implements AutoCloseable {
 
         page.add(sound).add(grid).add(togglesSeparator)
                 .add(bold).add(italic).add(underline)
-                .add(small).add(medium).add(large).add(segmentsSeparator)
+                .add(small).add(medium).add(large)
+                .add(sliderCaption("Radio groups: click an option or use the arrow keys. "
+                        + "Disabled options are skipped."))
+                .add(alignmentGroup).add(alignmentPreview).add(alignmentStatus)
+                .add(deliveryGroup).add(deliveryStatus)
+                .add(segmentsSeparator)
                 .add(icons).add(actions).add(alignment).add(multiple).add(status);
-        return page;
+        return new DemoScrollPage(page);
     }
 
     private SplitPanel createSplitPage() {

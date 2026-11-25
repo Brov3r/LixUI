@@ -54,6 +54,7 @@ public class CheckBox extends Panel {
     private boolean checked;
     private Indicator indicator = Indicator.BOX;
     private Consumer<Boolean> onChange;
+    private Consumer<Boolean> changeObserver;
     private ToggleGroup group;
     private float boxSize = DEFAULT_BOX_SIZE;
     private float gap = DEFAULT_GAP;
@@ -688,6 +689,19 @@ public class CheckBox extends Panel {
         if (onChange != null) {
             onChange.accept(checked);
         }
+        if (changeObserver != null) {
+            changeObserver.accept(checked);
+        }
+    }
+
+    /**
+     * Assigns an internal observer invoked after every selection change in addition to the public
+     * callback. Coordinating controls use it without taking over {@link #setOnChange(Consumer)}.
+     *
+     * @param changeObserver observer, or null to clear it
+     */
+    final void setChangeObserver(Consumer<Boolean> changeObserver) {
+        this.changeObserver = changeObserver;
     }
 
     /**
