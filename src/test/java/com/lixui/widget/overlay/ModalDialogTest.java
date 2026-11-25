@@ -202,6 +202,62 @@ class ModalDialogTest {
     }
 
     @Test
+    void everyDialogPresetDrawsItsScrimOverTheWholeViewport() {
+        assertScrimCoversViewport(new ModalDialog());
+        assertScrimCoversViewport(new ConfirmDialog("Remove the item", "This cannot be undone."));
+        assertScrimCoversViewport(new PromptDialog("Rename the item", "Enter a name.", "Aria"));
+    }
+
+    @Test
+    void disablingTheScrimKeepsItsColorAndBlocksTheBackground() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
+        manager.resize(VIEWPORT);
+        AtomicInteger backgroundClicks = new AtomicInteger();
+        Button background = new Button("Behind");
+        background.setBounds(new Rect(10, 10, 120, 36));
+        background.setOnAction(backgroundClicks::incrementAndGet);
+        manager.add(background);
+
+        Color scrim = new Color(0.18f, 0.32f, 0.64f, 0.37f);
+        ModalDialog dialog = new ModalDialog();
+        dialog.setTitle("Visible background");
+        dialog.setMessage("The scrim is hidden without making the dialog non-modal.");
+        dialog.addAction("Close", true, null);
+        dialog.setScrimColor(scrim);
+
+        dialog.show(manager.context());
+        manager.render();
+
+        assertTrue(dialog.isScrimEnabled());
+        assertCoversViewport(dialog);
+        assertScrimCommand(backend, scrim);
+
+        dialog.setScrimEnabled(false);
+        assertFalse(dialog.isScrimEnabled());
+        assertEquals(scrim, dialog.scrimColor());
+        manager.render();
+
+        assertCoversViewport(dialog);
+        assertNull(viewportRect(backend));
+        click(manager, 20, 20);
+        assertTrue(dialog.isOpen());
+        assertEquals(0, backgroundClicks.get());
+        assertTrue(isWithin(manager.focused(), dialog));
+
+        dialog.setScrimEnabled(true);
+        manager.render();
+        assertScrimCommand(backend, scrim);
+
+        dialog.setScrimEnabled(false);
+        dialog.setCloseOnOutsideClick(true);
+        click(manager, 5, 5);
+
+        assertFalse(dialog.isOpen());
+        assertTrue(dialog.panelBounds().isEmpty());
+    }
+
+    @Test
     void keyboardOpenedConfirmCancelsAndRestoresFocus() {
         WidgetManager manager = manager();
         AtomicInteger cancelled = new AtomicInteger();
@@ -322,6 +378,45 @@ class ModalDialogTest {
         assertThrows(NullPointerException.class, () -> dialog.show(null));
         assertThrows(IllegalArgumentException.class, () -> dialog.setBody(dialog));
         assertNotNull(dialog.addAction("Close", null));
+    }
+
+    private static void assertScrimCoversViewport(ModalDialog dialog) {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
+        manager.resize(VIEWPORT);
+
+        dialog.show(manager.context());
+        manager.render();
+
+        assertTrue(dialog.isScrimEnabled(), dialog.getClass().getSimpleName());
+        assertCoversViewport(dialog);
+        assertScrimCommand(backend, dialog.scrimColor());
+    }
+
+    private static void assertCoversViewport(ModalDialog dialog) {
+        assertEquals(VIEWPORT.logicalWidth(), dialog.bounds().width(), 0.001f);
+        assertEquals(VIEWPORT.logicalHeight(), dialog.bounds().height(), 0.001f);
+    }
+
+    private static void assertScrimCommand(TestBackend backend, Color expected) {
+        RoundedRectCommand command = viewportRect(backend);
+        assertNotNull(command);
+        assertEquals(new Rect(0, 0, VIEWPORT.logicalWidth(), VIEWPORT.logicalHeight()),
+                command.bounds());
+        assertEquals(expected.r(), command.color().r(), 0.0f);
+        assertEquals(expected.g(), command.color().g(), 0.0f);
+        assertEquals(expected.b(), command.color().b(), 0.0f);
+        assertEquals(expected.a(), command.color().a(), 0.0f);
+    }
+
+    private static RoundedRectCommand viewportRect(TestBackend backend) {
+        Rect viewport = new Rect(0, 0, VIEWPORT.logicalWidth(), VIEWPORT.logicalHeight());
+        return backend.lastDrawList().commands().stream()
+                .filter(RoundedRectCommand.class::isInstance)
+                .map(RoundedRectCommand.class::cast)
+                .filter(command -> command.bounds().equals(viewport))
+                .findFirst()
+                .orElse(null);
     }
 
     private static Button findButton(Widget root, String text) {

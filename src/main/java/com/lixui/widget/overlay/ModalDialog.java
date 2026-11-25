@@ -29,7 +29,8 @@ import java.util.Objects;
  * content and action buttons.
  * The overlay fills the viewport, stays above regular widgets and confines Tab traversal to the
  * dialog. Pointer and keyboard input reach only the dialog while it is open. Escape activates the
- * negative action, and a press on the dimmed background can optionally do the same.
+ * negative action, and a press on the dimmed background can optionally do the same. The scrim can
+ * be hidden without changing the dialog modality or the backdrop dismissal behavior.
  */
 public class ModalDialog extends Popup {
     private static final float DEFAULT_WIDTH = 420;
@@ -48,6 +49,7 @@ public class ModalDialog extends Popup {
 
     private Rect panelBounds = Rect.EMPTY;
     private Color scrimColor = DEFAULT_SCRIM;
+    private boolean scrimEnabled = true;
     private float preferredWidth = DEFAULT_WIDTH;
     private Runnable cancelAction;
     private UiContext ownerContext;
@@ -177,6 +179,27 @@ public class ModalDialog extends Popup {
      */
     public final void setScrimColor(Color scrimColor) {
         this.scrimColor = Objects.requireNonNull(scrimColor, "scrimColor");
+    }
+
+    /**
+     * Reports whether the background scrim is painted behind the dialog.
+     *
+     * @return true when the scrim is painted
+     */
+    public final boolean isScrimEnabled() {
+        return scrimEnabled;
+    }
+
+    /**
+     * Enables or disables the background scrim.
+     * The dialog still fills the viewport and blocks background input while the scrim is disabled,
+     * and the configured scrim color is kept for when the scrim is enabled again. This setting is
+     * independent of backdrop dismissal.
+     *
+     * @param scrimEnabled true to paint the configured scrim color
+     */
+    public final void setScrimEnabled(boolean scrimEnabled) {
+        this.scrimEnabled = scrimEnabled;
     }
 
     /**
@@ -332,7 +355,7 @@ public class ModalDialog extends Popup {
     }
 
     /**
-     * Paints the scrim, the dialog panel and its border.
+     * Paints the dialog panel and its border, and the scrim when it is enabled.
      *
      * @param renderer drawing manager for the current frame
      * @param frame timing information for the current frame
@@ -342,7 +365,9 @@ public class ModalDialog extends Popup {
         if (!isOpen()) {
             return;
         }
-        renderer.rect(localBounds(), scrimColor);
+        if (scrimEnabled) {
+            renderer.rect(localBounds(), scrimColor);
+        }
         if (panelBounds.isEmpty()) {
             return;
         }

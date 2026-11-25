@@ -46,12 +46,19 @@ final class DemoModalPage {
         custom.setOnAction(() -> openCustom(custom));
         Button backdrop = new Button("Backdrop dismiss");
         backdrop.setOnAction(() -> openBackdropDismiss(backdrop));
+        Button noScrim = new Button("No scrim");
+        noScrim.setOnAction(() -> openWithoutScrim(noScrim));
+        custom.setTooltipText("Uses a translucent custom scrim color.");
+        noScrim.setTooltipText("Keeps the background visible while input stays blocked.");
 
         Flow actions = new Flow();
         actions.setGap(GAP);
-        actions.add(information).add(confirmation).add(prompt).add(custom).add(backdrop);
+        actions.add(information).add(confirmation).add(prompt).add(custom).add(backdrop)
+                .add(noScrim);
 
-        Label caption = new Label("Modal dialogs dim the scene, trap focus and close on Escape.");
+        Label caption = new Label("Modal dialogs trap focus and close on Escape. The default and "
+                + "colored variants dim the scene, while the no-scrim variant keeps the "
+                + "background fully visible and still blocks input.");
         caption.setFontFamily(fontFamily);
         caption.setAutoSize(false);
         caption.setWrap(true);
@@ -132,6 +139,17 @@ final class DemoModalPage {
         dialog.setScrimColor(new Color(0.12f, 0.16f, 0.24f, 0.42f));
         dialog.setOnConfirm(() -> status.setText("Party left."));
         dialog.setOnCancel(() -> status.setText("Stayed in the party."));
+        dialog.show(source.context());
+    }
+
+    private void openWithoutScrim(Button source) {
+        ModalDialog dialog = new ModalDialog();
+        dialog.setTitle("No scrim");
+        dialog.setMessage("The scene stays fully visible, but the dialog still fills the viewport "
+                + "and keeps background input blocked until it closes.");
+        dialog.addAction("Got it", true, () -> status.setText("Closed the no-scrim dialog."));
+        dialog.setOnCancel(() -> status.setText("No-scrim dialog dismissed."));
+        dialog.setScrimEnabled(false);
         dialog.show(source.context());
     }
 }
