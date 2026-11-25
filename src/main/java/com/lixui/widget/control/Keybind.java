@@ -25,10 +25,10 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /**
- * A shortcut field that captures the next key press as a binding.
+ * A shortcut field that captures the next key or mouse button as a binding.
  * Clicking the field starts capture mode. Escape cancels capture without changing the current
  * binding, and the trailing cross clears it. The displayed value uses names such as
- * {@code Ctrl+Shift+K}. Modifier keys alone never complete a binding.
+ * {@code Ctrl+Shift+K} or {@code Ctrl+Mouse Left}. Modifier keys alone never complete a binding.
  */
 public final class Keybind extends Panel {
     private static final float PADDING = 10;
@@ -37,10 +37,11 @@ public final class Keybind extends Panel {
     private static final float MIN_WIDTH = 190;
     private static final float MIN_HEIGHT = 36;
     private static final String PLACEHOLDER = "Not set";
-    private static final String CAPTURING = "Press a key...";
+    private static final String CAPTURING = "Press a key or mouse button...";
 
     private Binding binding;
     private boolean capturing;
+    private boolean suppressClick;
     private Consumer<Binding> onChange;
     private float pointerX = -1;
     private float pointerY = -1;
@@ -64,6 +65,18 @@ public final class Keybind extends Panel {
     public Keybind(Key key, Modifiers modifiers) {
         this();
         setBinding(new Binding(key, modifiers));
+    }
+
+    /**
+     * Creates a shortcut field with an initial mouse binding.
+     *
+     * @param mouseButton bound mouse button
+     * @param modifiers bound modifiers
+     * @throws NullPointerException if an argument is null
+     */
+    public Keybind(MouseButton mouseButton, Modifiers modifiers) {
+        this();
+        setBinding(new Binding(mouseButton, modifiers));
     }
 
     /**
@@ -143,20 +156,42 @@ public final class Keybind extends Panel {
     public static String format(Key key, Modifiers modifiers) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(modifiers, "modifiers");
-        StringBuilder text = new StringBuilder();
-        if (modifiers.control()) {
-            text.append("Ctrl+");
-        }
-        if (modifiers.shift()) {
-            text.append("Shift+");
-        }
-        if (modifiers.alt()) {
-            text.append("Alt+");
-        }
-        if (modifiers.superKey()) {
-            text.append("Super+");
-        }
-        return text.append(keyName(key)).toString();
+        return modifierPrefix(modifiers) + keyName(key);
+    }
+
+    /**
+     * Formats a mouse button and its modifiers as a shortcut label.
+     *
+     * @param button mouse button to format
+     * @param modifiers active modifiers
+     * @return a label such as {@code Ctrl+Mouse Left}
+     * @throws NullPointerException if an argument is null
+     */
+    public static String format(MouseButton button, Modifiers modifiers) {
+        Objects.requireNonNull(button, "button");
+        Objects.requireNonNull(modifiers, "modifiers");
+        return modifierPrefix(modifiers) + mouseButtonName(button);
+    }
+
+    /**
+     * Returns a readable name for a mouse button.
+     *
+     * @param button mouse button to name
+     * @return a name such as {@code Mouse Left} or {@code Mouse 4}
+     * @throws NullPointerException if {@code button} is null
+     */
+    public static String mouseButtonName(MouseButton button) {
+        Objects.requireNonNull(button, "button");
+        return switch (button) {
+            case LEFT -> "Mouse Left";
+            case RIGHT -> "Mouse Right";
+            case MIDDLE -> "Mouse Middle";
+            case BUTTON_4 -> "Mouse 4";
+            case BUTTON_5 -> "Mouse 5";
+            case BUTTON_6 -> "Mouse 6";
+            case BUTTON_7 -> "Mouse 7";
+            case BUTTON_8 -> "Mouse 8";
+        };
     }
 
     /**
@@ -226,6 +261,26 @@ public final class Keybind extends Panel {
     }
 
     /**
+     * Returns the control style from the current UI context.
+     *
+     * @return the context control style, or null when the field is not attached
+     */
+    @Override
+    protected WidgetStyle defaultStyle() {
+        return context() == null ? null : context().theme().controlStyle();
+    }
+
+    /**
+     * Uses the local style or the context control style instead of an inherited panel style.
+     *
+     * @return the resolved field surface style, or null when the field is not attached
+     */
+    @Override
+    protected WidgetStyle surfaceStyle() {
+        return hasLocalStyle() ? style() : defaultStyle();
+    }
+
+    /**
      * Measures the field from its current text and the clear affordance.
      *
      * @param constraints available and required dimensions
@@ -250,7 +305,7 @@ public final class Keybind extends Panel {
     @Override
     protected void onDraw(RenderManager renderer, FrameInfo frame) {
         super.onDraw(renderer, frame);
-        WidgetStyle style = style();
+        WidgetStyle style = surfaceStyle();
         Font font = font();
         if (style == null || font == null || localBounds().isEmpty()) {
             return;
@@ -270,6 +325,28 @@ public final class Keybind extends Panel {
     }
 
     /**
+     * Captures the next pointer press as a mouse binding while capture mode is active.
+     * The click that entered capture mode completes on release, so it never becomes a binding.
+     *
+     * @param x horizontal pointer position relative to the field
+     * @param y vertical pointer position relative to the field
+     * @param button pressed button
+     * @param modifiers active modifiers
+     * @return true when capture mode consumed the press
+     */
+    @Override
+    protected boolean onPointerPress(float x, float y, MouseButton button, Modifiers modifiers) {
+        if (!capturing) {
+            suppressClick = false;
+            return false;
+        }
+        capturing = false;
+        suppressClick = true;
+        setBinding(new Binding(button, modifiers));
+        return true;
+    }
+
+    /**
      * Starts capture on a click and clears the binding from the cross.
      *
      * @param x horizontal pointer position relative to the field
@@ -280,6 +357,10 @@ public final class Keybind extends Panel {
      */
     @Override
     protected boolean onClick(float x, float y, MouseButton button, Modifiers modifiers) {
+        if (suppressClick) {
+            suppressClick = false;
+            return true;
+        }
         if (button != MouseButton.LEFT) {
             return false;
         }
@@ -448,6 +529,23 @@ public final class Keybind extends Panel {
         }
     }
 
+    private static String modifierPrefix(Modifiers modifiers) {
+        StringBuilder prefix = new StringBuilder();
+        if (modifiers.control()) {
+            prefix.append("Ctrl+");
+        }
+        if (modifiers.shift()) {
+            prefix.append("Shift+");
+        }
+        if (modifiers.alt()) {
+            prefix.append("Alt+");
+        }
+        if (modifiers.superKey()) {
+            prefix.append("Super+");
+        }
+        return prefix.toString();
+    }
+
     private static boolean isModifierKey(Key key) {
         return switch (key) {
             case SHIFT_LEFT, SHIFT_RIGHT, CONTROL_LEFT, CONTROL_RIGHT,
@@ -457,35 +555,127 @@ public final class Keybind extends Panel {
     }
 
     /**
-     * A key plus the modifiers required to trigger it.
-     *
-     * @param key non-modifier key
-     * @param modifiers required modifiers
+     * A key or mouse button plus the modifiers required to trigger it.
      */
-    public record Binding(Key key, Modifiers modifiers) {
+    public static final class Binding {
+        private final Key key;
+        private final MouseButton mouseButton;
+        private final Modifiers modifiers;
+
         /**
-         * Creates a binding.
+         * Creates a key binding.
          *
          * @param key non-modifier key
          * @param modifiers required modifiers
          * @throws NullPointerException if an argument is null
          * @throws IllegalArgumentException if {@code key} is a modifier key
          */
-        public Binding {
+        public Binding(Key key, Modifiers modifiers) {
             Objects.requireNonNull(key, "key");
             Objects.requireNonNull(modifiers, "modifiers");
             if (isModifierKey(key)) {
                 throw new IllegalArgumentException("A binding requires a non-modifier key.");
             }
+            this.key = key;
+            this.mouseButton = null;
+            this.modifiers = modifiers;
+        }
+
+        /**
+         * Creates a mouse binding.
+         *
+         * @param mouseButton bound mouse button
+         * @param modifiers required modifiers
+         * @throws NullPointerException if an argument is null
+         */
+        public Binding(MouseButton mouseButton, Modifiers modifiers) {
+            this.key = null;
+            this.mouseButton = Objects.requireNonNull(mouseButton, "mouseButton");
+            this.modifiers = Objects.requireNonNull(modifiers, "modifiers");
+        }
+
+        /**
+         * Returns the bound key.
+         *
+         * @return the key, or null when this is a mouse binding
+         */
+        public Key key() {
+            return key;
+        }
+
+        /**
+         * Returns the bound mouse button.
+         *
+         * @return the mouse button, or null when this is a key binding
+         */
+        public MouseButton mouseButton() {
+            return mouseButton;
+        }
+
+        /**
+         * Reports whether this binding uses a mouse button.
+         *
+         * @return true for a mouse binding
+         */
+        public boolean isMouse() {
+            return mouseButton != null;
+        }
+
+        /**
+         * Returns the required modifiers.
+         *
+         * @return the modifiers
+         */
+        public Modifiers modifiers() {
+            return modifiers;
         }
 
         /**
          * Returns the shortcut label.
          *
-         * @return a label such as {@code Ctrl+Shift+K}
+         * @return a label such as {@code Ctrl+Shift+K} or {@code Ctrl+Mouse Left}
          */
         public String text() {
-            return format(key, modifiers);
+            return isMouse() ? format(mouseButton, modifiers) : format(key, modifiers);
+        }
+
+        /**
+         * Compares bindings by their key or mouse button and modifiers.
+         *
+         * @param other object to compare with
+         * @return true when both bindings are equal
+         */
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof Binding binding)) {
+                return false;
+            }
+            return key == binding.key && mouseButton == binding.mouseButton
+                    && modifiers.equals(binding.modifiers);
+        }
+
+        /**
+         * Returns a hash code consistent with {@link #equals(Object)}.
+         *
+         * @return the hash code
+         */
+        @Override
+        public int hashCode() {
+            return Objects.hash(key, mouseButton, modifiers);
+        }
+
+        /**
+         * Returns a diagnostic representation of the binding.
+         *
+         * @return the binding components
+         */
+        @Override
+        public String toString() {
+            return "Binding[key=" + key + ", mouseButton=" + mouseButton
+                    + ", modifiers=" + modifiers + "]";
         }
     }
 }

@@ -6,6 +6,7 @@ import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
 import com.lixui.input.Key;
 import com.lixui.input.Modifiers;
+import com.lixui.input.MouseButton;
 import com.lixui.platform.UiPlatform;
 import com.lixui.render.RenderBackend;
 import com.lixui.render.RenderManager;
@@ -1793,7 +1794,8 @@ final class DemoWidgetScene implements AutoCloseable {
     }
 
     private Widget createKeybindPage() {
-        Label status = new Label("Click a field and press a shortcut. Escape cancels; the cross clears.");
+        Label status = new Label("Click a field and press a shortcut or mouse button. "
+                + "Escape cancels; the cross clears.");
         status.setFontFamily(fontFamily);
         status.setAutoSize(false);
         status.setWrap(true);
@@ -1817,6 +1819,11 @@ final class DemoWidgetScene implements AutoCloseable {
                 + keybindText(binding) + "."));
         unbound.setTooltipText("Empty fields wait for the first shortcut.");
 
+        Keybind mouse = new Keybind(MouseButton.RIGHT, Modifiers.NONE);
+        mouse.setOnChange(binding -> status.setText("Aim: "
+                + keybindText(binding) + "."));
+        mouse.setTooltipText("Click the field, then press a mouse button.");
+
         VBox page = new VBox();
         page.setPadding(CONTENT_PADDING);
         page.setGap(10);
@@ -1825,7 +1832,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(keybindRow("Interact", interact))
                 .add(keybindRow("Menu (Tab allowed)", menu))
                 .add(keybindRow("Unassigned", unbound))
-                .add(sliderCaption("Click to capture, Esc to cancel, cross to clear"))
+                .add(keybindRow("Aim (mouse allowed)", mouse))
+                .add(sliderCaption("Click to capture, press a key or mouse button, Esc to cancel"))
                 .add(status);
         return page;
     }
