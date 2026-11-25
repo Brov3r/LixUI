@@ -3,10 +3,18 @@ package com.lixui.widget.control;
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
+import com.lixui.graphics.Color;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
+import com.lixui.render.RenderManager;
+import com.lixui.text.Font;
+import com.lixui.theme.Theme;
+import com.lixui.theme.WidgetState;
+import com.lixui.theme.WidgetStyle;
+import com.lixui.widget.FrameInfo;
 import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.Panel;
+import com.lixui.widget.UiContext;
 import com.lixui.widget.layout.HBox;
 import com.lixui.widget.overlay.ContextMenu;
 
@@ -16,6 +24,8 @@ import java.util.Objects;
 
 /**
  * A permanent row of menu titles that opens dropdown menus on click or hover.
+ * Titles are flat text labels with a subtle hover highlight and an accented open state, so the bar
+ * reads as a menu strip rather than a row of buttons.
  * Each dropdown reuses {@link ContextMenu}, so it supports icons, shortcuts, check marks, disabled
  * rows and nested submenus. Moving the pointer to another title switches the open menu; an outside
  * press or Escape closes it and returns keyboard focus to the title when appropriate.
@@ -44,7 +54,7 @@ public class MenuBar extends Panel {
     public final Menu addMenu(String label) {
         Menu menu = new Menu(label);
         menus.add(menu);
-        row.add(menu.button);
+        row.add(menu.title);
         return menu;
     }
 
@@ -72,7 +82,7 @@ public class MenuBar extends Panel {
     public final void clearMenus() {
         closeMenus();
         for (Menu menu : menus) {
-            row.remove(menu.button);
+            row.remove(menu.title);
         }
         menus.clear();
     }
@@ -127,27 +137,32 @@ public class MenuBar extends Panel {
             return;
         }
         Menu next = menus.get(index);
+        if (!next.isEnabled()) {
+            return;
+        }
         if (openIndex >= 0 && openIndex != index) {
             menus.get(openIndex).menu.close();
         }
         if (next.menu.isOpen()) {
             openIndex = index;
+            syncOpenTitles();
             return;
         }
-        next.menu.setFocusReturn(next.button);
-        Point origin = next.button.absolutePosition();
-        Rect bounds = next.button.bounds();
+        next.menu.setFocusReturn(next.title);
+        Point origin = next.title.absolutePosition();
+        Rect bounds = next.title.bounds();
         next.menu.open(context(), origin.x(), origin.y() + bounds.height());
         openIndex = next.menu.isOpen() ? index : -1;
+        syncOpenTitles();
     }
 
     private void toggleMenu(Menu menu) {
         int index = menus.indexOf(menu);
-        if (index < 0) {
+        if (index < 0 || !menu.isEnabled()) {
             return;
         }
         if (openIndex == index && menu.menu.isOpen()) {
-            focus(menu.button);
+            focus(menu.title);
             menu.menu.close();
             return;
         }
@@ -159,20 +174,23 @@ public class MenuBar extends Panel {
             return;
         }
         Menu menu = menus.get(index);
+        if (!menu.isEnabled()) {
+            return;
+        }
         if (openIndex == index && menu.menu.isOpen()) {
-            focus(menu.button);
+            focus(menu.title);
             menu.menu.close();
             return;
         }
         openMenu(index);
     }
 
-    private void focus(Button button) {
-        if (context() == null || button.context() != context()) {
+    private void focus(MenuTitle title) {
+        if (context() == null || title.context() != context()) {
             return;
         }
         try {
-            context().requestFocus(button);
+            context().requestFocus(title);
         } catch (IllegalArgumentException ignored) {
             // The bar may have left the tree during the same event.
         }
@@ -185,6 +203,7 @@ public class MenuBar extends Panel {
             }
         }
         openIndex = -1;
+        syncOpenTitles();
     }
 
     private void menuClosed(ContextMenu closed) {
@@ -193,16 +212,24 @@ public class MenuBar extends Panel {
                 if (openIndex == index) {
                     openIndex = -1;
                 }
+                menus.get(index).title.setOpen(false);
                 return;
             }
         }
     }
 
+    private void syncOpenTitles() {
+        for (int index = 0; index < menus.size(); index++) {
+            Menu menu = menus.get(index);
+            menu.title.setOpen(index == openIndex && menu.menu.isOpen());
+        }
+    }
+
     private int menuIndexAt(float viewportX, float viewportY) {
         for (int index = 0; index < menus.size(); index++) {
-            Button button = menus.get(index).button;
-            Point origin = button.absolutePosition();
-            Rect bounds = button.bounds();
+            MenuTitle title = menus.get(index).title;
+            Point origin = title.absolutePosition();
+            Rect bounds = title.bounds();
             if (new Rect(origin.x(), origin.y(), bounds.width(), bounds.height())
                     .contains(viewportX, viewportY)) {
                 return index;
@@ -216,13 +243,36 @@ public class MenuBar extends Panel {
      */
     public final class Menu {
         private final BarMenu menu;
-        private final Button button;
+        private final MenuTitle title;
 
         private Menu(String label) {
             menu = new BarMenu();
             menu.setCloseListener(() -> menuClosed(menu));
-            button = new Button(Objects.requireNonNull(label, "label"));
-            button.setOnAction(() -> toggleMenu(this));
+            title = new MenuTitle(Objects.requireNonNull(label, "label"));
+            title.setOnAction(() -> toggleMenu(this));
+        }
+
+        /**
+         * Reports whether the title accepts pointer and keyboard input.
+         *
+         * @return true when the title can be activated
+         */
+        public boolean isEnabled() {
+            return title.isEnabled();
+        }
+
+        /**
+         * Enables or disables the title and its dropdown.
+         * A disabled title is drawn muted, ignores hover and clicks, and closes its dropdown when
+         * it becomes disabled.
+         *
+         * @param enabled true to accept input
+         */
+        public void setEnabled(boolean enabled) {
+            if (title.isEnabled() && !enabled && menu.isOpen()) {
+                menu.close();
+            }
+            title.setEnabled(enabled);
         }
 
         /**
@@ -277,6 +327,113 @@ public class MenuBar extends Panel {
 
         ContextMenu contextMenu() {
             return menu;
+        }
+    }
+
+    /**
+     * A flat menu title that paints text plus a menu-style hover or open highlight.
+     */
+    private static final class MenuTitle extends Button {
+        private static final float HORIZONTAL_PADDING = 10;
+        private static final float VERTICAL_PADDING = 8;
+        private static final float HIGHLIGHT_RADIUS = 3;
+        private static final float HOVER_ALPHA = 0.12f;
+        private static final float PRESSED_ALPHA = 0.18f;
+        private static final float OPEN_ALPHA = 0.16f;
+        private static final float UNDERLINE_HEIGHT = 2;
+
+        private boolean open;
+
+        private MenuTitle(String label) {
+            super(label);
+            setFocusOutlineEnabled(false);
+        }
+
+        private void setOpen(boolean open) {
+            this.open = open;
+        }
+
+        /**
+         * Uses a transparent, borderless style so the title never looks like a button.
+         *
+         * @return the flat title style, or null when the title is not attached
+         */
+        @Override
+        protected WidgetStyle defaultStyle() {
+            UiContext context = context();
+            if (context == null) {
+                return null;
+            }
+            Theme theme = context.theme();
+            return new WidgetStyle(Color.TRANSPARENT, Color.TRANSPARENT, Color.TRANSPARENT,
+                    Color.TRANSPARENT, theme.text(), theme.textMuted(), Color.TRANSPARENT,
+                    Color.TRANSPARENT, 0, 0, 0);
+        }
+
+        /**
+         * Measures the label with compact horizontal menu padding.
+         *
+         * @param constraints available and required dimensions
+         * @return the natural title size
+         */
+        @Override
+        protected Size onMeasure(LayoutConstraints constraints) {
+            Font font = font();
+            float contentWidth = 0;
+            float contentHeight = 0;
+            if (font != null && !text().isEmpty()) {
+                Size textSize = font.measure(text());
+                contentWidth = textSize.width();
+                contentHeight = textSize.height();
+            }
+            return new Size(contentWidth + HORIZONTAL_PADDING * 2,
+                    contentHeight + VERTICAL_PADDING * 2);
+        }
+
+        /**
+         * Paints the flat highlight and the label without the button surface.
+         *
+         * @param renderer drawing manager for the current frame
+         * @param frame timing information for the current frame
+         */
+        @Override
+        protected void onDraw(RenderManager renderer, FrameInfo frame) {
+            if (localBounds().isEmpty()) {
+                return;
+            }
+            drawHighlight(renderer);
+            drawForeground(renderer, frame);
+        }
+
+        private void drawHighlight(RenderManager renderer) {
+            UiContext context = context();
+            if (!isEnabled() || context == null) {
+                return;
+            }
+            Theme theme = context.theme();
+            WidgetState state = state();
+            if (open) {
+                renderer.roundedRect(localBounds(), HIGHLIGHT_RADIUS,
+                        theme.primary().withAlpha(OPEN_ALPHA));
+                drawUnderline(renderer, theme);
+            } else if (state == WidgetState.PRESSED) {
+                renderer.roundedRect(localBounds(), HIGHLIGHT_RADIUS,
+                        theme.primary().withAlpha(PRESSED_ALPHA));
+            } else if (state == WidgetState.HOVERED) {
+                renderer.roundedRect(localBounds(), HIGHLIGHT_RADIUS,
+                        theme.primary().withAlpha(HOVER_ALPHA));
+            }
+        }
+
+        private void drawUnderline(RenderManager renderer, Theme theme) {
+            float height = localBounds().height();
+            float width = Math.max(0, localBounds().width() - HORIZONTAL_PADDING);
+            if (width <= 0 || height <= 0) {
+                return;
+            }
+            float thickness = Math.min(UNDERLINE_HEIGHT, height);
+            renderer.rect(new Rect(HORIZONTAL_PADDING / 2, height - thickness, width, thickness),
+                    theme.primary());
         }
     }
 
