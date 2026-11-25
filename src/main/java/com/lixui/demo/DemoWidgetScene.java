@@ -50,6 +50,7 @@ import com.lixui.widget.control.SelectOption;
 import com.lixui.widget.control.Separator;
 import com.lixui.widget.control.Slider;
 import com.lixui.widget.control.Spacer;
+import com.lixui.widget.control.Spinner;
 import com.lixui.widget.control.SplitButton;
 import com.lixui.widget.container.Accordion;
 import com.lixui.widget.container.GroupBox;
@@ -242,7 +243,7 @@ final class DemoWidgetScene implements AutoCloseable {
     }
 
     private Widget createInteractivePage() {
-        Label status = new Label("Pagination, the password field and debounced search.");
+        Label status = new Label("Pagination, password and search fields, and a loading spinner.");
         status.setFontFamily(fontFamily);
         status.setAutoSize(false);
         status.setWrap(true);
@@ -268,6 +269,25 @@ final class DemoWidgetScene implements AutoCloseable {
         search.setOnSearch(value -> status.setText(value.isEmpty()
                 ? "Search cleared." : "Search: \"" + value + "\""));
 
+        Spinner standard = new Spinner();
+        standard.setDiameter(40);
+        standard.setThickness(4);
+        Spinner halfArc = new Spinner();
+        halfArc.setDiameter(28);
+        halfArc.setThickness(2.5f);
+        halfArc.setArcDegrees(180);
+        halfArc.setColor(BLUE);
+        Spinner fast = new Spinner();
+        fast.setDiameter(52);
+        fast.setThickness(5);
+        fast.setSpeed(0.7f);
+        fast.setTrackVisible(false);
+        fast.setColor(GREEN);
+        HBox spinnerRow = new HBox();
+        spinnerRow.setGap(16);
+        spinnerRow.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        spinnerRow.add(standard).add(halfArc).add(fast);
+
         VBox page = new VBox();
         page.setPadding(CONTENT_PADDING);
         page.setGap(10);
@@ -278,6 +298,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(reveal)
                 .add(sliderCaption("Search input: debounced search with a clear action"))
                 .add(search)
+                .add(sliderCaption("Spinner: rotating arc with an optional track"))
+                .add(spinnerRow)
                 .add(status);
         return page;
     }
