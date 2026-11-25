@@ -44,6 +44,7 @@ import com.lixui.widget.control.ProgressBar;
 import com.lixui.widget.control.RadioBox;
 import com.lixui.widget.control.RangeSlider;
 import com.lixui.widget.control.RichLabel;
+import com.lixui.widget.control.SearchInput;
 import com.lixui.widget.control.SegmentedButton;
 import com.lixui.widget.control.SelectOption;
 import com.lixui.widget.control.Separator;
@@ -241,7 +242,7 @@ final class DemoWidgetScene implements AutoCloseable {
     }
 
     private Widget createInteractivePage() {
-        Label status = new Label("Pagination and the password field share this tab.");
+        Label status = new Label("Pagination, the password field and debounced search.");
         status.setFontFamily(fontFamily);
         status.setAutoSize(false);
         status.setWrap(true);
@@ -261,6 +262,12 @@ final class DemoWidgetScene implements AutoCloseable {
         reveal.setChecked(true);
         reveal.setOnChange(password::setRevealButtonVisible);
 
+        SearchInput search = new SearchInput();
+        search.setPlaceholder("Search the party...");
+        search.setDebounceSeconds(0.4f);
+        search.setOnSearch(value -> status.setText(value.isEmpty()
+                ? "Search cleared." : "Search: \"" + value + "\""));
+
         VBox page = new VBox();
         page.setPadding(CONTENT_PADDING);
         page.setGap(10);
@@ -269,6 +276,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(sliderCaption("Password input: the eye toggles the mask"))
                 .add(password)
                 .add(reveal)
+                .add(sliderCaption("Search input: debounced search with a clear action"))
+                .add(search)
                 .add(status);
         return page;
     }

@@ -1637,6 +1637,7 @@ public class Input extends Panel {
 
     /**
      * Invokes the submit callback when the field is enabled.
+     * Subclasses can override {@link #onSubmitted()} to react after the assigned callback runs.
      */
     protected final void submit() {
         if (!isEnabled()) {
@@ -1645,12 +1646,30 @@ public class Input extends Panel {
         if (onSubmit != null) {
             onSubmit.run();
         }
+        onSubmitted();
+    }
+
+    /**
+     * Called after the submit callback runs on an enabled field.
+     * The default implementation does nothing; subclasses can observe submissions without replacing
+     * the user callback.
+     */
+    protected void onSubmitted() {
+    }
+
+    /**
+     * Called after the assigned change callback receives a new value.
+     * The default implementation does nothing; subclasses can observe changes without replacing the
+     * user callback.
+     */
+    protected void onTextChanged() {
     }
 
     private void notifyChange() {
         if (onChange != null) {
             onChange.accept(text());
         }
+        onTextChanged();
     }
 
     private void resetBlink() {
