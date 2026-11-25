@@ -25,6 +25,7 @@ import com.lixui.widget.control.Badge;
 import com.lixui.widget.control.Button;
 import com.lixui.widget.control.CheckBox;
 import com.lixui.widget.control.Dropdown;
+import com.lixui.widget.control.EmptyState;
 import com.lixui.widget.control.Hyperlink;
 import com.lixui.widget.FrameInfo;
 import com.lixui.widget.LayoutConstraints;
@@ -236,7 +237,8 @@ final class DemoWidgetScene implements AutoCloseable {
     }
 
     private Widget createElementsPage() {
-        Label status = new Label("Badges mark counters, keycaps show shortcuts.");
+        Label status = new Label("Badges mark counters, keycaps show shortcuts, "
+                + "and the empty state fills a view without content.");
         status.setFontFamily(fontFamily);
         status.setAutoSize(false);
         status.setWrap(true);
@@ -281,6 +283,15 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(decorativeKeycap("+")).add(shortcut)
                 .add(new Spacer()).add(caps).add(disabled);
 
+        EmptyState empty = new EmptyState("No projects yet",
+                "Create your first project to keep quests, notes and shared files together. "
+                        + "The description wraps at the available width and stays centered.");
+        empty.setIcon("folder.svg");
+        empty.setActionText("Create project");
+        empty.setOnAction(() -> status.setText("Empty state action: create project."));
+        empty.setContentPadding(20);
+        empty.setGap(10);
+
         VBox page = new VBox();
         page.setPadding(CONTENT_PADDING);
         page.setGap(10);
@@ -289,6 +300,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(sliderCaption("Keycaps: decorative shortcuts, a clickable held state and a "
                         + "disabled key"))
                 .add(keyRow)
+                .add(sliderCaption("Empty state: icon, title, wrapped description and action"))
+                .add(new EmptyStateStage(empty))
                 .add(status);
         return page;
     }
@@ -1525,6 +1538,35 @@ final class DemoWidgetScene implements AutoCloseable {
         return new WidgetStyle(style.background(), style.hoverBackground(), style.pressedBackground(),
                 style.disabledBackground(), style.text(), style.disabledText(), style.border(),
                 style.focusBorder(), radius, style.padding(), style.borderWidth());
+    }
+
+    private final class EmptyStateStage extends Panel {
+        private static final float PREFERRED_HEIGHT = 230;
+        private final EmptyState content;
+
+        private EmptyStateStage(EmptyState content) {
+            this.content = content;
+            add(content);
+        }
+
+        /**
+         * Reports a preferred height so the centered empty state has visible travel.
+         *
+         * @param constraints available and required dimensions
+         * @return the preferred stage size
+         */
+        @Override
+        protected Size onMeasure(LayoutConstraints constraints) {
+            return new Size(constraints.maxWidth(), PREFERRED_HEIGHT);
+        }
+
+        /**
+         * Stretches the empty state over the whole stage.
+         */
+        @Override
+        protected void onLayout() {
+            content.layout(new Rect(0, 0, bounds().width(), bounds().height()));
+        }
     }
 
     private final class AnchorStage extends GroupBox {
