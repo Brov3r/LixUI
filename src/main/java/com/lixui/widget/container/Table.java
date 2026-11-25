@@ -24,6 +24,7 @@ import com.lixui.widget.IconSet;
 import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.Panel;
 import com.lixui.widget.UiContext;
+import com.lixui.widget.Widget;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -1435,7 +1436,30 @@ public class Table extends Panel {
     }
 
     private int hoveredRow() {
-        return pointerInside ? rowIndexAt(pointerY) : -1;
+        return pointerInsideTable() ? rowIndexAt(pointerY) : -1;
+    }
+
+    /**
+     * Reports whether the pointer is over this table or one of its children.
+     * The cached flag alone is not enough because a child can take the hover without the table
+     * receiving the matching exit when the pointer leaves the subtree.
+     *
+     * @return true when the currently hovered widget belongs to this table
+     */
+    private boolean pointerInsideTable() {
+        if (!pointerInside) {
+            return false;
+        }
+        UiContext context = context();
+        if (context == null) {
+            return true;
+        }
+        for (Widget widget = context.hovered(); widget != null; widget = widget.parent()) {
+            if (widget == this) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private int rowIndexAt(float y) {

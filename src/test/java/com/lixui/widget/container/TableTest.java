@@ -1,6 +1,7 @@
 package com.lixui.widget.container;
 
 import com.lixui.geometry.Rect;
+import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
@@ -9,6 +10,7 @@ import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.render.command.ImageCommand;
 import com.lixui.render.command.RoundedRectCommand;
+import com.lixui.theme.WidgetState;
 import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.testsupport.TestBackend;
@@ -20,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -215,6 +218,33 @@ class TableTest {
     }
 
     @Test
+    void clearsRowHoverAfterLeavingThroughTheScrollbar() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
+        manager.resize(TestViewports.HIDPI);
+        Table table = new Table();
+        table.setBounds(new Rect(0, 0, 300, 200));
+        table.addColumn("Name", 150);
+        for (int index = 0; index < 10; index++) {
+            table.addRow("Row " + index);
+        }
+        manager.add(table);
+        Color hover = Color.mix(manager.context().theme().panelStyle()
+                .background(WidgetState.NORMAL), manager.context().theme().primary(), 0.24f);
+
+        manager.handle(new PointerMoved(50, rowCenter(0)));
+        manager.render();
+        assertTrue(hasColor(backend, hover));
+
+        manager.handle(new PointerMoved(292, rowCenter(0)));
+        manager.render();
+        manager.handle(new PointerMoved(350, rowCenter(0)));
+        manager.render();
+
+        assertFalse(hasColor(backend, hover));
+    }
+
+    @Test
     void singleModeKeepsOnlyOneSelectedRow() {
         WidgetManager manager = manager();
         Table table = tableWithRows(Table.SelectionMode.SINGLE);
@@ -350,5 +380,12 @@ class TableTest {
 
     private static List<String> texts(List<Table.Row> rows) {
         return rows.stream().map(row -> row.cell(0).text()).toList();
+    }
+
+    private static boolean hasColor(TestBackend backend, Color color) {
+        return backend.lastDrawList().commands().stream()
+                .filter(RoundedRectCommand.class::isInstance)
+                .map(RoundedRectCommand.class::cast)
+                .anyMatch(command -> command.color().equals(color));
     }
 }
