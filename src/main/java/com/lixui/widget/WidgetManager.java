@@ -762,6 +762,10 @@ public final class WidgetManager implements AutoCloseable {
             case PointerReleased released -> pointerReleased(released);
             case PointerScrolled scrolled -> pointerScrolled(scrolled);
             case KeyPressed pressed -> {
+                if (pressed.key() == Key.ESCAPE && context.activeDrag() != null) {
+                    cancelActiveDrag();
+                    return;
+                }
                 boolean consumed = focused != null && bubbleKeyPressed(pressed);
                 if (!consumed && pressed.key() == Key.TAB) {
                     focusNext(!pressed.modifiers().shift());
@@ -860,7 +864,13 @@ public final class WidgetManager implements AutoCloseable {
         updateHover();
         Widget target = captures.remove(released.button());
         PressState state = presses.remove(released.button());
+        DragSession session = context.activeDrag();
+        boolean dragButton = session != null && session.isActive()
+                && session.button() == released.button();
         if (target == null) {
+            if (dragButton) {
+                context.finishDrag();
+            }
             resetClickSequence();
             return;
         }
@@ -869,6 +879,10 @@ public final class WidgetManager implements AutoCloseable {
             bubblePointerRelease(target, released);
             if (state != null && isAttached(target) && isInteractive(target)) {
                 if (state.dragging) {
+                    if (dragButton) {
+                        context.dropDrag(pointerX, pointerY,
+                                findDropZone(pointerX, pointerY));
+                    }
                     bubbleDragEnd(target, pointerX, pointerY, released.button(), state.modifiers);
                 } else if (!state.longPressed && hovered == target
                         && distance(state.x, state.y, pointerX, pointerY) <= CLICK_SLOP
@@ -878,6 +892,9 @@ public final class WidgetManager implements AutoCloseable {
                 }
             }
         } finally {
+            if (dragButton) {
+                context.finishDrag();
+            }
             clearPressedIfUncaptured(target);
             if (!clicked) {
                 resetClickSequence();
@@ -903,14 +920,58 @@ public final class WidgetManager implements AutoCloseable {
             if (state == null || captures.get(button) != state.target) {
                 continue;
             }
+            DragSession active = context.activeDrag();
+            if (!state.dragging && active != null && active.button() != button) {
+                continue;
+            }
             if (!state.dragging && distance(state.x, state.y, x, y) >= DRAG_THRESHOLD) {
                 state.dragging = true;
                 resetClickSequence();
+                tooltips.hide();
                 bubbleDragStart(state.target, x, y, button, state.modifiers);
+                updateDragSession(x, y, button);
             }
             if (state.dragging && presses.get(button) == state && captures.get(button) == state.target) {
                 bubbleDrag(state.target, x, y, button, state.modifiers);
+                updateDragSession(x, y, button);
             }
+        }
+    }
+
+    private void updateDragSession(float x, float y, MouseButton button) {
+        DragSession session = context.activeDrag();
+        if (session != null && session.button() == button) {
+            context.updateDrag(x, y, findDropZone(x, y));
+        }
+    }
+
+    private DropZone findDropZone(float x, float y) {
+        Widget hit = hitTest(x, y);
+        for (Widget widget = hit; widget != null; widget = widget.parent()) {
+            if (widget instanceof DropZone zone) {
+                return zone;
+            }
+        }
+        return null;
+    }
+
+    private void cancelActiveDrag() {
+        DragSession session = context.activeDrag();
+        if (session == null) {
+            return;
+        }
+        MouseButton button = session.button();
+        try {
+            PressState state = presses.get(button);
+            if (state != null) {
+                if (state.dragging && captures.get(button) == state.target
+                        && isAttached(state.target) && isInteractive(state.target)) {
+                    bubbleDragEnd(state.target, pointerX, pointerY, button, state.modifiers);
+                }
+                releasePointerCapture(button);
+            }
+        } finally {
+            context.cancelDrag();
         }
     }
 
@@ -1169,6 +1230,11 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     void pruneInteraction() {
+        DragSession session = context.activeDrag();
+        if (session != null && (!isAttached(session.source())
+                || !isInteractive(session.source()))) {
+            context.cancelDrag();
+        }
         if (lastClickTarget != null && (!isAttached(lastClickTarget) || !isInteractive(lastClickTarget))) {
             resetClickSequence();
         }
@@ -1226,6 +1292,7 @@ public final class WidgetManager implements AutoCloseable {
     }
 
     private void clearCaptures() {
+        context.cancelDrag();
         presses.clear();
         resetClickSequence();
         if (captures.isEmpty()) {
@@ -1281,11 +1348,19 @@ public final class WidgetManager implements AutoCloseable {
         widget.setPressed(false);
     }
 
-    private boolean isAttached(Widget widget) {
+    boolean isAttached(Widget widget) {
         if (widget.context() != context) {
             return false;
         }
         return Widget.indexOfIdentity(widgets, topLevel(widget)) >= 0;
+    }
+
+    float pointerX() {
+        return pointerX;
+    }
+
+    float pointerY() {
+        return pointerY;
     }
 
     private void raiseIfEnabled(Widget widget) {

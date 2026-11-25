@@ -4,6 +4,8 @@ import com.lixui.animation.Animation;
 import com.lixui.animation.Animator;
 import com.lixui.animation.Easing;
 import com.lixui.geometry.Rect;
+import com.lixui.geometry.Size;
+import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
 import com.lixui.platform.Cursor;
 import com.lixui.platform.UiPlatform;
@@ -15,7 +17,11 @@ import com.lixui.render.Viewport;
 import com.lixui.text.Font;
 import com.lixui.text.FontData;
 import com.lixui.text.FontStyle;
+import com.lixui.text.HorizontalAlignment;
+import com.lixui.text.VerticalAlignment;
 import com.lixui.theme.Theme;
+import com.lixui.theme.WidgetState;
+import com.lixui.theme.WidgetStyle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,6 +57,8 @@ public final class UiContext implements AutoCloseable {
     private final Set<Font> fonts = identitySet();
     private final Map<IconKey, SharedIcon> icons = new HashMap<>();
     private final Queue<Runnable> tasks = new ConcurrentLinkedQueue<>();
+    private DragSession dragSession;
+    private DragGhost dragGhost;
     private Rect viewport = Rect.EMPTY;
     private float scaleX = 1;
     private float scaleY = 1;
@@ -292,6 +300,147 @@ public final class UiContext implements AutoCloseable {
     public boolean removeTopLevel(Widget widget) {
         ensureOpen();
         return manager().remove(Objects.requireNonNull(widget, "widget"));
+    }
+
+    /**
+     * Returns the active drag session.
+     *
+     * @return the current session, or null when no drag is running
+     * @throws IllegalStateException if the context is closed
+     */
+    public DragSession dragSession() {
+        ensureOpen();
+        return dragSession;
+    }
+
+    /**
+     * Reports whether a drag gesture is running in this context.
+     *
+     * @return true while a drag session is active
+     * @throws IllegalStateException if the context is closed
+     */
+    public boolean isDragging() {
+        ensureOpen();
+        return dragSession != null;
+    }
+
+    /**
+     * Starts a drag session from an attached widget and shows a non-blocking preview above the UI.
+     * The preview follows the pointer and does not receive hover or pointer input. Only one drag
+     * session can run at a time, and only releases of the initiating button can finish it. Widgets
+     * usually call this method from
+     * {@link Widget#onDragStart(float, float, MouseButton, Modifiers)}.
+     *
+     * @param source attached widget that owns the gesture
+     * @param button pointer button that initiated the gesture
+     * @param kind non-empty payload kind used by drop zones
+     * @param payload value carried by the drag, possibly null
+     * @param preview text shown inside the drag preview
+     * @return the started session
+     * @throws NullPointerException if {@code source}, {@code button}, {@code kind} or
+     *                              {@code preview} is null
+     * @throws IllegalArgumentException if the kind is blank or the source is not attached
+     * @throws IllegalStateException if the context is closed, has no manager or another drag is
+     *                               already active
+     */
+    public DragSession startDrag(Widget source, MouseButton button, String kind, Object payload,
+                                 String preview) {
+        ensureOpen();
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(button, "button");
+        Objects.requireNonNull(kind, "kind");
+        Objects.requireNonNull(preview, "preview");
+        if (kind.isBlank()) {
+            throw new IllegalArgumentException("Drag payload kind must not be blank.");
+        }
+        if (dragSession != null) {
+            throw new IllegalStateException("A drag session is already active.");
+        }
+        if (!manager().isAttached(source)) {
+            throw new IllegalArgumentException("Drag source is not an attached widget.");
+        }
+        DragGhost ghost = new DragGhost(preview);
+        try {
+            manager().add(ghost);
+            dragSession = new DragSession(source, button, kind, payload);
+            dragGhost = ghost;
+            updateDrag(manager().pointerX(), manager().pointerY(), null);
+            return dragSession;
+        } catch (RuntimeException | Error exception) {
+            dragSession = null;
+            dragGhost = null;
+            if (ghost.context() != null) {
+                manager().remove(ghost);
+            }
+            throw exception;
+        }
+    }
+
+    /**
+     * Cancels the active drag session and removes its preview without invoking a drop callback.
+     * Ongoing pointer drag hooks may still receive their end event, but no drop is performed.
+     *
+     * @throws IllegalStateException if the context is closed
+     */
+    public void cancelDrag() {
+        ensureOpen();
+        clearDrag();
+    }
+
+    void updateDrag(float x, float y, DropZone target) {
+        if (dragSession == null) {
+            return;
+        }
+        dragSession.move(x, y, target);
+        positionGhost(x, y);
+    }
+
+    boolean dropDrag(float x, float y, DropZone target) {
+        DragSession session = dragSession;
+        if (session == null || !session.beginDrop()) {
+            return false;
+        }
+        session.move(x, y, target);
+        boolean handled = target != null && target.accepts(session.kind())
+                && target.deliver(session);
+        session.markHandled(handled);
+        return handled;
+    }
+
+    void finishDrag() {
+        clearDrag();
+    }
+
+    DragSession activeDrag() {
+        return dragSession;
+    }
+
+    private void clearDrag() {
+        DragSession session = dragSession;
+        DragGhost ghost = dragGhost;
+        dragSession = null;
+        dragGhost = null;
+        if (session != null) {
+            session.finish();
+        }
+        if (ghost != null && manager != null) {
+            manager.remove(ghost);
+        }
+    }
+
+    private void positionGhost(float x, float y) {
+        DragGhost ghost = dragGhost;
+        if (ghost == null) {
+            return;
+        }
+        float availableWidth = Math.max(1, viewport.width());
+        float availableHeight = Math.max(1, viewport.height());
+        Size size = ghost.preferredSize();
+        float width = size.width();
+        float height = size.height();
+        float left = Math.max(0, Math.min(x + DragGhost.OFFSET, availableWidth - width));
+        float top = Math.max(0, Math.min(y + DragGhost.OFFSET, availableHeight - height));
+        ghost.setBounds(new Rect(left, top, width, height));
     }
 
     /**
@@ -571,6 +720,7 @@ public final class UiContext implements AutoCloseable {
         if (closed) {
             return;
         }
+        clearDrag();
         closed = true;
         animator.clear();
         tasks.clear();
@@ -639,6 +789,93 @@ public final class UiContext implements AutoCloseable {
 
     static <T> Set<T> identitySet() {
         return Collections.newSetFromMap(new IdentityHashMap<>());
+    }
+
+    private static final class DragGhost extends Panel {
+        private static final float OFFSET = 14;
+        private static final float PADDING = 10;
+        private static final float RADIUS = 7;
+        private static final float MIN_HEIGHT = 26;
+
+        private final String text;
+
+        private DragGhost(String text) {
+            this.text = text;
+            setAlwaysOnTop(true);
+        }
+
+        /**
+         * Returns the panel style with compact preview padding and a small corner radius.
+         *
+         * @return the preview style, or null when the preview is not attached
+         */
+        @Override
+        protected WidgetStyle defaultStyle() {
+            WidgetStyle base = super.defaultStyle();
+            if (base == null) {
+                return null;
+            }
+            return new WidgetStyle(base.background(), base.hoverBackground(),
+                    base.pressedBackground(), base.disabledBackground(), base.text(),
+                    base.disabledText(), base.border(), base.focusBorder(), RADIUS, PADDING, 1);
+        }
+
+        /**
+         * Reports the preview size derived from its text and padding.
+         *
+         * @return the content-based preview size, or a small square before a font is available
+         */
+        private Size preferredSize() {
+            Font font = font();
+            if (font == null || text.isEmpty()) {
+                return new Size(MIN_HEIGHT, MIN_HEIGHT);
+            }
+            Size measured = font.measure(text);
+            return new Size(measured.width() + PADDING * 2,
+                    Math.max(MIN_HEIGHT, measured.height() + PADDING * 2));
+        }
+
+        /**
+         * Measures the preview from its text instead of the available viewport size.
+         *
+         * @param constraints available and required dimensions
+         * @return the content-based preview size
+         */
+        @Override
+        protected Size onMeasure(LayoutConstraints constraints) {
+            return preferredSize();
+        }
+
+        /**
+         * Paints the preview surface and its label.
+         *
+         * @param renderer drawing manager for the current frame
+         * @param frame timing information for the current frame
+         */
+        @Override
+        protected void onDraw(RenderManager renderer, FrameInfo frame) {
+            super.onDraw(renderer, frame);
+            Font font = font();
+            WidgetStyle style = style();
+            if (font == null || style == null || text.isEmpty() || localBounds().isEmpty()) {
+                return;
+            }
+            renderer.text(font, text, PADDING, localBounds().height() / 2,
+                    style.text(WidgetState.NORMAL), HorizontalAlignment.LEFT,
+                    VerticalAlignment.CENTER);
+        }
+
+        /**
+         * Keeps the preview from intercepting hover or pointer input.
+         *
+         * @param x horizontal coordinate relative to the preview's top-left corner
+         * @param y vertical coordinate relative to the preview's top-left corner
+         * @return always null
+         */
+        @Override
+        public Widget hitTest(float x, float y) {
+            return null;
+        }
     }
 
     private record IconKey(String resource, int size, boolean smooth) {

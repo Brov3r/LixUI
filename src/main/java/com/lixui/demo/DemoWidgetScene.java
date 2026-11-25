@@ -60,6 +60,7 @@ import com.lixui.widget.control.SplitButton;
 import com.lixui.widget.control.UnitInput;
 import com.lixui.widget.container.Accordion;
 import com.lixui.widget.container.GroupBox;
+import com.lixui.widget.container.ScrollPanel;
 import com.lixui.widget.container.SplitPanel;
 import com.lixui.widget.container.Table;
 import com.lixui.widget.container.TabPanel;
@@ -455,8 +456,12 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(search)
                 .add(sliderCaption("Spinner: rotating arc with an optional track"))
                 .add(spinnerRow)
+                .add(sliderCaption("Drag and drop: matching kinds and swapping widgets"))
+                .add(DemoDragDrop.create(status))
                 .add(status);
-        return page;
+        ScrollPanel scroll = new ScrollPanel();
+        scroll.setContent(page);
+        return scroll;
     }
 
     private Widget createElementsPage() {
