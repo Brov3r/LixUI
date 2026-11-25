@@ -10,6 +10,7 @@ import com.lixui.input.MouseButton;
 import com.lixui.platform.Cursor;
 import com.lixui.render.RenderManager;
 import com.lixui.text.Font;
+import com.lixui.text.HorizontalAlignment;
 import com.lixui.text.TextLayout;
 import com.lixui.text.TextStyle;
 import com.lixui.theme.WidgetState;
@@ -68,6 +69,7 @@ public class Input extends Panel {
     private final Set<CharacterKind> allowedCharacters = EnumSet.allOf(CharacterKind.class);
     private String text;
     private String placeholder = "";
+    private HorizontalAlignment textAlignment = HorizontalAlignment.LEFT;
     private int maxLength;
     private boolean readOnly;
     private boolean secret;
@@ -296,6 +298,26 @@ public class Input extends Panel {
      */
     public final void setPlaceholder(String placeholder) {
         this.placeholder = normalizeSingleLine(Objects.requireNonNull(placeholder, "placeholder"));
+    }
+
+    /**
+     * Returns the horizontal alignment of the value and placeholder inside the content area.
+     *
+     * @return the text alignment
+     */
+    public final HorizontalAlignment textAlignment() {
+        return textAlignment;
+    }
+
+    /**
+     * Sets the horizontal alignment of the value and placeholder inside the content area.
+     * Justified text falls back to left alignment because a single-line field cannot spread words.
+     *
+     * @param textAlignment text alignment
+     * @throws NullPointerException if {@code textAlignment} is null
+     */
+    public final void setTextAlignment(HorizontalAlignment textAlignment) {
+        this.textAlignment = Objects.requireNonNull(textAlignment, "textAlignment");
     }
 
     /**
@@ -607,12 +629,14 @@ public class Input extends Panel {
         }
         String display = displayText();
         TextLayout layout = font.layoutBlockRelative(display, TextStyle.DEFAULT);
+        TextLayout visibleLayout = text.isEmpty() && !placeholder.isEmpty()
+                ? font.layoutBlockRelative(placeholder, TextStyle.DEFAULT) : layout;
         float contentHeight = layout.size().height();
         float textTop = content.y() + (content.height() - contentHeight) / 2;
         float caretWidth = caretWidth(font);
         int displayCaret = displayIndexForRaw(caret);
         ensureCaretVisible(layout, content.width(), caretWidth, displayCaret);
-        float textLeft = content.x() - scrollX;
+        float textLeft = content.x() - scrollX + horizontalOffset(visibleLayout, content);
         Point origin = absolutePosition();
         Rect contentClip = new Rect(origin.x() + content.x(), origin.y() + content.y(),
                 content.width(), content.height());
@@ -973,6 +997,18 @@ public class Input extends Panel {
         return new Rect(padding, padding, width, height);
     }
 
+    private float horizontalOffset(TextLayout layout, Rect content) {
+        float free = content.width() - layout.size().width();
+        if (free <= 0) {
+            return 0;
+        }
+        return switch (textAlignment) {
+            case CENTER -> free / 2;
+            case RIGHT -> free;
+            default -> 0;
+        };
+    }
+
     private void ensureCaretVisible(TextLayout layout, float contentWidth, float caretWidth,
                                     int displayCaret) {
         if (contentWidth <= 0) {
@@ -1012,7 +1048,7 @@ public class Input extends Panel {
         Rect content = contentRect(widgetStyle);
         String display = displayText();
         TextLayout layout = font.layoutBlockRelative(display, TextStyle.DEFAULT);
-        float textLeft = content.x() - scrollX;
+        float textLeft = content.x() - scrollX + horizontalOffset(layout, content);
         float textTop = content.y() + (content.height() - layout.size().height()) / 2;
         return clampIndex(rawIndexForDisplay(layout.caretIndexAt(x - textLeft, y - textTop)));
     }
