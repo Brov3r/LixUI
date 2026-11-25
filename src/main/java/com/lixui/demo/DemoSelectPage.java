@@ -1,16 +1,23 @@
 package com.lixui.demo;
 
+import com.lixui.geometry.Rect;
+import com.lixui.geometry.Size;
 import com.lixui.render.Texture;
 import com.lixui.text.FontFamily;
 import com.lixui.text.FontStyle;
+import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.Widget;
+import com.lixui.widget.container.ScrollPanel;
+import com.lixui.widget.control.Button;
 import com.lixui.widget.control.CheckBox;
 import com.lixui.widget.control.Combobox;
 import com.lixui.widget.control.Label;
+import com.lixui.widget.control.MultiSelectCombo;
 import com.lixui.widget.control.SelectOption;
 import com.lixui.widget.layout.HBox;
 import com.lixui.widget.layout.VBox;
 
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -84,6 +91,59 @@ final class DemoSelectPage {
         customValues.setChecked(true);
         customValues.setOnChange(titles::setAllowCustom);
 
+        MultiSelectCombo abilities = new MultiSelectCombo();
+        abilities.setPlaceholder("Choose abilities");
+        abilities.setMinimumSize(FIELD_WIDTH, FIELD_HEIGHT);
+        abilities.setMaximumSize(FIELD_WIDTH + 100, FIELD_HEIGHT + 6);
+        abilities.setMaxPopupHeight(180);
+        addOption(abilities, "Swordsmanship", "sword.svg");
+        addOption(abilities, "Archery", "bow.svg");
+        addOption(abilities, "Alchemy", "potion.svg");
+        addOption(abilities, "Shielding", "shield.svg");
+        addOption(abilities, "Lockpicking", "key.svg");
+        addOption(abilities, "Survival", "torch.svg");
+        addOption(abilities, "Cooking", "bread.svg");
+        addOption(abilities, "Repair", "tool-kit.svg");
+        abilities.setSelected(0, true);
+        abilities.setSelected(2, true);
+        abilities.setOnChange((option, checked) -> status.setText("Abilities: "
+                + abilities.selectedCount() + " selected, " + option.label()
+                + (checked ? " added." : " removed.")));
+
+        MultiSelectCombo regions = new MultiSelectCombo();
+        regions.setPlaceholder("Choose regions");
+        regions.setMinimumSize(FIELD_WIDTH, FIELD_HEIGHT);
+        regions.setMaximumSize(FIELD_WIDTH + 100, FIELD_HEIGHT + 6);
+        regions.setMaxPopupHeight(200);
+        for (String name : List.of("Aldermoor", "Bracken Vale", "Cinder Coast", "Duskmere",
+                "Elderwood", "Frost Hollow", "Glimmer Fen", "Highpass", "Ironreach",
+                "Juniper Steppe", "Kestrel Isles", "Lowmarch", "Mistfall", "Northwatch")) {
+            regions.addOption(name);
+        }
+        regions.setSelected(1, true);
+        regions.setSelected(3, true);
+        regions.setSelected(6, true);
+        regions.options().get(4).setDisabled(true);
+        regions.options().get(9).setDisabled(true);
+        regions.setOnChange((option, checked) -> status.setText("Regions: "
+                + regions.selectedCount() + " selected, " + option.label()
+                + (checked ? " added." : " removed.")));
+
+        Button selectAll = new Button("Select all");
+        selectAll.setOnAction(() -> {
+            regions.setAll(true);
+            status.setText("All available regions selected: " + regions.selectedCount() + ".");
+        });
+        Button clearRegions = new Button("Clear");
+        clearRegions.setOnAction(() -> {
+            regions.clearSelection();
+            status.setText("Regions cleared.");
+        });
+        HBox regionActions = new HBox();
+        regionActions.setGap(8);
+        regionActions.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        regionActions.add(selectAll).add(clearRegions);
+
         HBox options = new HBox();
         options.setGap(12);
         options.setCrossAlignment(HBox.CrossAlignment.CENTER);
@@ -101,8 +161,17 @@ final class DemoSelectPage {
                 .add(caption("Long list: the popup scrolls and the disabled talent cannot be "
                         + "picked"))
                 .add(talents)
+                .add(caption("Multi-select combobox: the popup stays open while abilities are "
+                        + "toggled"))
+                .add(abilities)
+                .add(caption("Icon-free multi-select: a long list with disabled regions and "
+                        + "bulk actions"))
+                .add(regions)
+                .add(regionActions)
                 .add(status);
-        return page;
+        ScrollablePage scroller = new ScrollablePage();
+        scroller.setContent(page);
+        return scroller;
     }
 
     private Combobox field(String placeholder) {
@@ -119,6 +188,12 @@ final class DemoSelectPage {
         return option;
     }
 
+    private SelectOption addOption(MultiSelectCombo combobox, String label, String icon) {
+        SelectOption option = combobox.addOption(label);
+        iconBinder.bind(icon, combobox.iconSize(), option::setIcon);
+        return option;
+    }
+
     private Label caption(String text) {
         Label label = new Label(text);
         label.setFontFamily(fontFamily);
@@ -126,6 +201,29 @@ final class DemoSelectPage {
         label.setAutoSize(false);
         label.setWrap(true);
         return label;
+    }
+
+    /**
+     * Scrolls a content column whose height follows its measured children.
+     */
+    private static final class ScrollablePage extends ScrollPanel {
+        private static final float MAX_CONTENT_HEIGHT = 10_000;
+        private static final float SCROLLBAR_RESERVE = 12;
+
+        /**
+         * Measures the content column at the panel width and keeps its full height scrollable.
+         */
+        @Override
+        protected void onLayout() {
+            Widget content = content();
+            if (content != null) {
+                float width = Math.max(0, bounds().width() - SCROLLBAR_RESERVE);
+                Size natural = content.measure(LayoutConstraints.loose(width,
+                        MAX_CONTENT_HEIGHT));
+                content.setBounds(new Rect(0, 0, width, natural.height()));
+            }
+            super.onLayout();
+        }
     }
 
     /**
