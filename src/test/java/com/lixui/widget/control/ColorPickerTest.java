@@ -17,9 +17,11 @@ import com.lixui.render.command.MaskBeginCommand;
 import com.lixui.render.command.MaskEndCommand;
 import com.lixui.render.command.MeshCommand;
 import com.lixui.render.command.RoundedRectCommand;
+import com.lixui.render.command.TextCommand;
 import com.lixui.text.FontData;
 import com.lixui.text.FontStyle;
 import com.lixui.text.SystemFonts;
+import com.lixui.theme.Theme;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.overlay.Popup;
@@ -108,7 +110,7 @@ class ColorPickerTest {
         openPopup(manager, picker);
 
         List<Input> inputs = inputs(popup(manager).content());
-        assertEquals(4, inputs.size());
+        assertEquals(5, inputs.size());
         Input hex = inputs.get(0);
         Input red = inputs.get(1);
 
@@ -217,7 +219,50 @@ class ColorPickerTest {
     }
 
     @Test
-    void keepsRgbLabelsVisibleAboveTheEnteredValues() {
+    void drawsTheStripsAsFullRowsWithoutRoundedBackgroundEdges() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = manager(backend);
+        ColorPicker picker = picker(Color.hex("#4F8EF7"));
+        manager.add(picker);
+        manager.render();
+        openPopup(manager, picker);
+
+        Widget content = popup(manager).content();
+        float contentWidth = content.bounds().width();
+        for (Widget strip : List.of(content.children().get(1), content.children().get(2))) {
+            assertEquals(0, strip.bounds().x(), TOLERANCE);
+            assertEquals(contentWidth, strip.bounds().width(), TOLERANCE);
+            assertEquals(16, strip.bounds().height(), TOLERANCE);
+
+            Rect bounds = absoluteBounds(strip);
+            MeshCommand mesh = backend.lastDrawList().commands().stream()
+                    .filter(MeshCommand.class::isInstance)
+                    .map(MeshCommand.class::cast)
+                    .filter(command -> command.bounds().equals(bounds))
+                    .findFirst()
+                    .orElseThrow();
+            assertCoversCorners(mesh, bounds);
+            assertFalse(backend.lastDrawList().commands().stream()
+                    .anyMatch(command -> command instanceof RoundedRectCommand rounded
+                            && rounded.bounds().equals(bounds)));
+        }
+    }
+
+    private static void assertCoversCorners(MeshCommand mesh, Rect bounds) {
+        for (Point corner : List.of(
+                new Point(bounds.x(), bounds.y()),
+                new Point(bounds.right(), bounds.y()),
+                new Point(bounds.x(), bounds.bottom()),
+                new Point(bounds.right(), bounds.bottom()))) {
+            assertTrue(mesh.vertices().stream().anyMatch(vertex ->
+                            Math.abs(vertex.x() - corner.x()) < TOLERANCE
+                                    && Math.abs(vertex.y() - corner.y()) < TOLERANCE),
+                    "The strip mesh must reach every corner of its row.");
+        }
+    }
+
+    @Test
+    void keepsChannelLabelsVisibleAboveTheEnteredValues() {
         TestBackend backend = new TestBackend();
         WidgetManager manager = manager(backend);
         Optional<FontData> data = SystemFonts.findDefault();
@@ -235,30 +280,88 @@ class ColorPickerTest {
         assertEquals("18", inputs.get(1).text());
         assertEquals("52", inputs.get(2).text());
         assertEquals("86", inputs.get(3).text());
+        assertEquals("255", inputs.get(4).text());
 
         List<Label> labels = labels(content);
         List<String> captions = labels.stream().map(Label::text).toList();
-        assertTrue(captions.containsAll(List.of("Hex", "R", "G", "B")));
+        assertTrue(captions.containsAll(List.of("Hex", "R", "G", "B", "A")));
 
         float contentWidth = content.bounds().width();
         assertTrue(rgbRow.bounds().x() + rgbRow.bounds().width() <= contentWidth + TOLERANCE);
-        assertEquals(3, rgbRow.children().size());
+        assertEquals(4, rgbRow.children().size());
+        float columnWidth = rgbRow.children().getFirst().bounds().width();
+        float previousRight = 0;
         for (int index = 0; index < rgbRow.children().size(); index++) {
             Widget slot = rgbRow.children().get(index);
             Widget column = slot.children().getFirst();
             Label caption = assertInstanceOf(Label.class, column.children().get(0));
             Input input = assertInstanceOf(Input.class, column.children().get(1));
-            assertEquals(List.of("R", "G", "B").get(index), caption.text());
+            assertEquals(List.of("R", "G", "B", "A").get(index), caption.text());
             assertTrue(caption.isVisible());
             assertTrue(caption.bounds().width() > 0);
             assertTrue(caption.bounds().height() > 0);
+            assertEquals(columnWidth, slot.bounds().width(), TOLERANCE);
+            assertEquals(previousRight, slot.bounds().x(), TOLERANCE);
+            previousRight = slot.bounds().right() + 6;
             assertEquals(input.absolutePosition().x(), caption.absolutePosition().x(),
                     TOLERANCE);
+            assertEquals(input.bounds().width(), caption.bounds().width(), TOLERANCE);
             assertTrue(caption.absolutePosition().y() + caption.bounds().height()
                     <= input.absolutePosition().y() + TOLERANCE);
             assertTrue(slot.bounds().x() + slot.bounds().width()
                     <= contentWidth + TOLERANCE);
         }
+        assertEquals(contentWidth, previousRight - 6, TOLERANCE);
+    }
+
+    @Test
+    void drawsChannelLabelsWithTheThemeTextColor() {
+        Optional<FontData> data = SystemFonts.findDefault();
+        Assumptions.assumeTrue(data.isPresent(), "No readable system font is installed.");
+        for (Theme theme : List.of(Theme.dark(), Theme.light())) {
+            TestBackend backend = new TestBackend();
+            try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
+                manager.resize(VIEWPORT);
+                manager.setTheme(theme);
+                manager.setDefaultFont(manager.context().createFont(data.get(), 14,
+                        FontStyle.REGULAR));
+                ColorPicker picker = picker(Color.hex("#123456"));
+                manager.add(picker);
+                manager.render();
+                openPopup(manager, picker);
+
+                for (Label label : labels(popup(manager).content())) {
+                    TextCommand text = textCommandIn(backend, localBounds(label));
+                    assertEquals(theme.text(), text.colors().getFirst(), label.text());
+                }
+                manager.handle(new KeyPressed(Key.ESCAPE, Modifiers.NONE, false));
+            }
+        }
+    }
+
+    @Test
+    void editsAlphaThroughTheChannelFieldAndKeepsHexInSync() {
+        WidgetManager manager = manager();
+        ColorPicker picker = picker(new Color(1, 0, 0, 0.5f));
+        manager.add(picker);
+        manager.render();
+        openPopup(manager, picker);
+
+        List<Input> inputs = inputs(popup(manager).content());
+        Input hex = inputs.get(0);
+        Input alpha = inputs.get(4);
+        assertEquals("128", alpha.text());
+        assertEquals("#FF000080", hex.text());
+
+        alpha.setText("64");
+
+        assertColor(picker.color(), 1, 0, 0, 64 / 255f);
+        assertEquals("#FF000040", hex.text());
+
+        picker.setColor(new Color(1, 0, 0, 0.25f));
+
+        assertEquals("64", alpha.text());
+        assertEquals("#FF000040", hex.text());
     }
 
     @Test
@@ -284,13 +387,12 @@ class ColorPickerTest {
         List<MaskedCheckerboard> masks = allMasks.stream()
                 .filter(mask -> mask.cells().size() > 4)
                 .toList();
-        assertEquals(3, masks.size());
+        assertEquals(2, masks.size());
 
         MaskedCheckerboard swatch = maskWithSize(masks, 18, 18);
-        MaskedCheckerboard alpha = maskWithSize(masks, contentWidth, 16);
         MaskedCheckerboard preview = maskWithSize(masks, contentWidth, 26);
 
-        for (MaskedCheckerboard mask : List.of(swatch, alpha, preview)) {
+        for (MaskedCheckerboard mask : List.of(swatch, preview)) {
             assertFalse(mask.cells().isEmpty());
             for (DrawCommand cell : mask.cells()) {
                 RoundedRectCommand tile = assertInstanceOf(RoundedRectCommand.class, cell);
@@ -309,13 +411,7 @@ class ColorPickerTest {
         List<MaskedCheckerboard> markers = allMasks.stream()
                 .filter(mask -> mask.cells().size() == 2)
                 .toList();
-        assertEquals(2, markers.size());
-        for (MaskedCheckerboard marker : markers) {
-            assertRoundedContour(marker);
-            for (DrawCommand cell : marker.cells()) {
-                assertTrue(cell.bounds().height() <= marker.bounds().height() - 4 + TOLERANCE);
-            }
-        }
+        assertTrue(markers.isEmpty());
     }
 
     private static void assertRoundedContour(MaskedCheckerboard mask) {
@@ -369,6 +465,20 @@ class ColorPickerTest {
         Point origin = widget.absolutePosition();
         return new Rect(origin.x(), origin.y(), widget.bounds().width(),
                 widget.bounds().height());
+    }
+
+    private static TextCommand textCommandIn(TestBackend backend, Rect bounds) {
+        return backend.lastDrawList().commands().stream()
+                .filter(TextCommand.class::isInstance)
+                .map(TextCommand.class::cast)
+                .filter(command -> bounds.contains(command.bounds().center().x(),
+                        command.bounds().center().y()))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static Rect localBounds(Widget widget) {
+        return new Rect(0, 0, widget.bounds().width(), widget.bounds().height());
     }
 
     private static ColorPicker picker(Color color) {

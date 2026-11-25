@@ -647,7 +647,7 @@ final class DemoWidgetScene implements AutoCloseable {
     private Widget createPickersPage() {
         Label status = new Label("Start: 09:30    Reminder: 18:45\nUS date: " + LocalDate.now()
                 + "    RU date: " + LocalDate.now()
-                + "\nRGB: #4F8EF7FF    Alpha: #FF6B3573");
+                + "\nRGBA: #4F8EF7FF    Alpha: #FF6B3573");
         status.setFontFamily(fontFamily);
         status.setAutoSize(false);
         status.setWrap(true);
@@ -673,16 +673,16 @@ final class DemoWidgetScene implements AutoCloseable {
         ColorPicker rgbColor = new ColorPicker(Color.hex("#4F8EF7"));
         rgbColor.setMinimumSize(200, 36);
         rgbColor.setMaximumSize(260, 46);
-        rgbColor.setTooltipText("Opaque color: drag the square, strips or type hex/RGB values.");
+        rgbColor.setTooltipText("Opaque color: drag the square, strips or type hex/RGBA values.");
         ColorPicker alphaColor = new ColorPicker(new Color(1f, 0.42f, 0.21f, 0.45f));
         alphaColor.setMinimumSize(200, 36);
         alphaColor.setMaximumSize(260, 46);
-        alphaColor.setTooltipText("Semi-transparent color: the swatch and popup preview show "
-                + "the alpha over a checkerboard.");
+        alphaColor.setTooltipText("Semi-transparent color: edit the A channel, and the swatch "
+                + "and preview show the alpha over a checkerboard.");
         Runnable updateStatus = () -> status.setText("Start: " + startTime.time()
                 + "    Reminder: " + reminderTime.time()
                 + "\nUS date: " + enDate.date() + "    RU date: " + ruDate.date()
-                + "\nRGB: " + rgbColor.color().toHex()
+                + "\nRGBA: " + rgbColor.color().toHex()
                 + "    Alpha: " + alphaColor.color().toHex());
         startTime.setOnChange(value -> updateStatus.run());
         reminderTime.setOnChange(value -> updateStatus.run());
@@ -709,15 +709,15 @@ final class DemoWidgetScene implements AutoCloseable {
         VBox page = new VBox();
         page.setPadding(CONTENT_PADDING);
         page.setGap(10);
-        page.add(sliderCaption("Time picker: clock button opens hour and minute columns; "
-                        + "the popup field accepts a typed time"))
+        page.add(sliderCaption("Time picker: the value stays centered between the field "
+                        + "padding and the clock icon; the popup field accepts a typed time"))
                 .add(timeRow)
                 .add(sliderCaption("Date pickers: en-US weeks start on Sunday, ru-RU weeks "
-                        + "start on Monday; single arrows change the month, double arrows change "
-                        + "the year, and adjacent-month days are muted"))
+                        + "start on Monday; the popup keeps a fixed size, single arrows change "
+                        + "the month and double arrows change the year"))
                 .add(dateRow)
-                .add(sliderCaption("Color pickers: opaque RGB and semi-transparent variants; "
-                        + "checkerboard previews make alpha visible"))
+                .add(sliderCaption("Color pickers: opaque RGBA and semi-transparent variants; "
+                        + "R/G/B/A columns share one width and the strips span the full row"))
                 .add(colorRow)
                 .add(status);
         return new DemoScrollPage(page);

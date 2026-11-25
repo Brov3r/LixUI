@@ -10,6 +10,7 @@ import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
 import com.lixui.platform.Cursor;
 import com.lixui.render.RenderManager;
+import com.lixui.text.HorizontalAlignment;
 import com.lixui.text.VerticalAlignment;
 import com.lixui.theme.Theme;
 import com.lixui.theme.WidgetState;
@@ -26,13 +27,13 @@ import java.util.function.Consumer;
 
 /**
  * A color field that opens a popup with a saturation/value square, hue and alpha strips and
- * hexadecimal and RGB entry.
+ * hexadecimal and RGBA entry.
  * The swatch and the hexadecimal text in the field follow the current color, and the popup preview
  * and alpha strip paint the color over a checkerboard so transparency stays visible. Dragging inside
  * the square or on either strip updates the color immediately, and the format callbacks report every
  * change through {@link #setOnChange(Consumer)}. The hexadecimal field applies on Enter and keeps the
- * current alpha when the text has no alpha digits, while the RGB fields always keep it. Escape closes
- * the popup without reverting already applied changes.
+ * current alpha when the text has no alpha digits, while the R, G and B fields always keep it.
+ * Escape closes the popup without reverting already applied changes.
  */
 public class ColorPicker extends PickerField {
     private static final float CONTENT_WIDTH = 220;
@@ -41,14 +42,13 @@ public class ColorPicker extends PickerField {
     private static final float CONTENT_GAP = 8;
     private static final float SWATCH_SIZE = 18;
     private static final float SWATCH_GAP = 8;
-    private static final float RGB_WIDTH = 68;
     private static final float RGB_GAP = 6;
+    private static final float CHANNEL_WIDTH = (CONTENT_WIDTH - RGB_GAP * 3) / 4;
     private static final float CHANNEL_LABEL_GAP = 2;
     private static final float HANDLE_RADIUS = 6;
     private static final float CHECKER_SIZE = 8;
     private static final float SWATCH_RADIUS = 4;
     private static final float PREVIEW_RADIUS = 4;
-    private static final float STRIP_RADIUS = 4;
     private static final float MARKER_WIDTH = 4;
     private static final float MARKER_INSET = 2;
 
@@ -70,6 +70,7 @@ public class ColorPicker extends PickerField {
     private final Input redInput = new Input();
     private final Input greenInput = new Input();
     private final Input blueInput = new Input();
+    private final Input alphaInput = new Input();
 
     private float hue;
     private float saturation;
@@ -100,6 +101,7 @@ public class ColorPicker extends PickerField {
         configureChannel(redInput, "R", 0);
         configureChannel(greenInput, "G", 1);
         configureChannel(blueInput, "B", 2);
+        configureChannel(alphaInput, "A", 3);
         Label hexLabel = new Label("Hex");
         hexLabel.setVerticalAlignment(VerticalAlignment.CENTER);
         hexInput.setGrow(1);
@@ -110,7 +112,7 @@ public class ColorPicker extends PickerField {
         HBox rgbRow = new HBox();
         rgbRow.setGap(RGB_GAP);
         rgbRow.add(channelColumn("R", redInput)).add(channelColumn("G", greenInput))
-                .add(channelColumn("B", blueInput));
+                .add(channelColumn("B", blueInput)).add(channelColumn("A", alphaInput));
         popupContent.setGap(CONTENT_GAP);
         popupContent.add(square).add(hueStrip).add(alphaStrip).add(preview)
                 .add(hexRow).add(rgbRow);
@@ -219,6 +221,8 @@ public class ColorPicker extends PickerField {
 
     private static Widget channelColumn(String labelText, Input input) {
         Label label = new Label(labelText);
+        label.setAutoSize(false);
+        label.setAlignment(HorizontalAlignment.CENTER);
         VBox column = new VBox();
         column.setGap(CHANNEL_LABEL_GAP);
         column.add(label).add(input);
@@ -229,6 +233,7 @@ public class ColorPicker extends PickerField {
         input.setPlaceholder(placeholder);
         input.setAllowedCharacters(Input.CharacterKind.DIGITS);
         input.setMaxLength(3);
+        input.setTextAlignment(HorizontalAlignment.CENTER);
         input.setOnChange(text -> applyChannel(channel, text));
     }
 
@@ -245,7 +250,8 @@ public class ColorPicker extends PickerField {
         Color next = switch (channel) {
             case 0 -> new Color(component, current.g(), current.b(), current.a());
             case 1 -> new Color(current.r(), component, current.b(), current.a());
-            default -> new Color(current.r(), current.g(), component, current.a());
+            case 2 -> new Color(current.r(), current.g(), component, current.a());
+            default -> new Color(current.r(), current.g(), current.b(), component);
         };
         int before = current.toRgba();
         applyColorState(next);
@@ -318,6 +324,7 @@ public class ColorPicker extends PickerField {
             redInput.setText(channelText(color().r()));
             greenInput.setText(channelText(color().g()));
             blueInput.setText(channelText(color().b()));
+            alphaInput.setText(channelText(color().a()));
         } finally {
             syncing = false;
         }
@@ -641,7 +648,7 @@ public class ColorPicker extends PickerField {
             Paint gradient;
             float position;
             if (alphaStrip) {
-                drawCheckerboard(renderer, localBounds(), STRIP_RADIUS);
+                drawCheckerboard(renderer, localBounds());
                 Color current = color();
                 gradient = Paint.linear(new Point(0, 0), new Point(width, 0),
                         new GradientStop(0, new Color(current.r(), current.g(), current.b(), 0)),
@@ -651,21 +658,16 @@ public class ColorPicker extends PickerField {
                 gradient = Paint.linear(new Point(0, 0), new Point(width, 0), HUE_STOPS);
                 position = hue / 360;
             }
-            renderer.fillRoundedRect(localBounds(), STRIP_RADIUS, gradient);
+            renderer.fillRect(localBounds(), gradient);
             float halfMarker = MARKER_WIDTH / 2;
             float x = Math.clamp(position * width, halfMarker,
                     Math.max(halfMarker, width - halfMarker));
             float markerTop = Math.min(MARKER_INSET, height / 2);
             float markerHeight = Math.max(0, height - markerTop * 2);
-            renderer.pushMaskRoundedRect(localBounds(), STRIP_RADIUS);
-            try {
-                renderer.rect(new Rect(x - halfMarker, markerTop, MARKER_WIDTH, markerHeight),
-                        Color.BLACK);
-                renderer.rect(new Rect(x - halfMarker / 2, markerTop, halfMarker, markerHeight),
-                        Color.WHITE);
-            } finally {
-                renderer.popMask();
-            }
+            renderer.rect(new Rect(x - halfMarker, markerTop, MARKER_WIDTH, markerHeight),
+                    Color.BLACK);
+            renderer.rect(new Rect(x - halfMarker / 2, markerTop, halfMarker, markerHeight),
+                    Color.WHITE);
         }
 
         /**
@@ -759,7 +761,7 @@ public class ColorPicker extends PickerField {
     }
 
     /**
-     * Constrains an RGB field to an equal share of the row.
+     * Constrains a color channel to an equal share of the row.
      */
     private static final class WidthSlot extends Widget {
         private final Widget content;
@@ -777,9 +779,9 @@ public class ColorPicker extends PickerField {
          */
         @Override
         protected Size onMeasure(LayoutConstraints constraints) {
-            Size natural = content.measure(LayoutConstraints.loose(RGB_WIDTH,
+            Size natural = content.measure(LayoutConstraints.loose(CHANNEL_WIDTH,
                     constraints.maxHeight()));
-            return new Size(Math.min(RGB_WIDTH, constraints.maxWidth()),
+            return new Size(Math.min(CHANNEL_WIDTH, constraints.maxWidth()),
                     Math.min(natural.height(), constraints.maxHeight()));
         }
 
