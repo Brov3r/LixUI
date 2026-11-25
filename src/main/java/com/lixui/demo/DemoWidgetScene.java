@@ -32,6 +32,7 @@ import com.lixui.widget.control.Image;
 import com.lixui.widget.control.Input;
 import com.lixui.widget.control.InputArea;
 import com.lixui.widget.control.InputCode;
+import com.lixui.widget.control.Keycap;
 import com.lixui.widget.control.KnobSlider;
 import com.lixui.widget.control.Label;
 import com.lixui.widget.control.MultiSelect;
@@ -235,7 +236,7 @@ final class DemoWidgetScene implements AutoCloseable {
     }
 
     private Widget createElementsPage() {
-        Label status = new Label("Badges mark counters for navigation items and notifications.");
+        Label status = new Label("Badges mark counters, keycaps show shortcuts.");
         status.setFontFamily(fontFamily);
         status.setAutoSize(false);
         status.setWrap(true);
@@ -259,13 +260,43 @@ final class DemoWidgetScene implements AutoCloseable {
         badgeRow.add(counter).add(highlighted).add(dot).add(overflow)
                 .add(createNotificationSample());
 
+        Keycap ctrl = decorativeKeycap("Ctrl");
+        Keycap plus = decorativeKeycap("+");
+        Keycap shift = decorativeKeycap("Shift");
+        Keycap shortcut = decorativeKeycap("K");
+        Keycap caps = new Keycap("Caps Lock");
+        caps.setTooltipText("Click to toggle the persistent held state.");
+        caps.setOnAction(() -> {
+            caps.setDown(!caps.isDown());
+            status.setText("Caps Lock " + (caps.isDown() ? "on." : "off."));
+        });
+        Keycap disabled = new Keycap("F1");
+        disabled.setInteractive(false);
+        disabled.setEnabled(false);
+
+        HBox keyRow = new HBox();
+        keyRow.setGap(6);
+        keyRow.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        keyRow.add(ctrl).add(plus).add(shift)
+                .add(decorativeKeycap("+")).add(shortcut)
+                .add(new Spacer()).add(caps).add(disabled);
+
         VBox page = new VBox();
         page.setPadding(CONTENT_PADDING);
         page.setGap(10);
         page.add(sliderCaption("Badges: counter, outlined label, dot and a corner badge"))
                 .add(badgeRow)
+                .add(sliderCaption("Keycaps: decorative shortcuts, a clickable held state and a "
+                        + "disabled key"))
+                .add(keyRow)
                 .add(status);
         return page;
+    }
+
+    private Keycap decorativeKeycap(String text) {
+        Keycap keycap = new Keycap(text);
+        keycap.setInteractive(false);
+        return keycap;
     }
 
     private Panel createNotificationSample() {
