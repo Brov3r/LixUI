@@ -1,6 +1,7 @@
 package com.lixui.widget.overlay;
 
 import com.lixui.geometry.Rect;
+import com.lixui.geometry.Size;
 import com.lixui.input.InputState;
 import com.lixui.input.Key;
 import com.lixui.input.Modifiers;
@@ -8,6 +9,7 @@ import com.lixui.input.MouseButton;
 import com.lixui.input.event.KeyPressed;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.render.Viewport;
+import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.testsupport.TestBackend;
@@ -50,6 +52,25 @@ class PopupTest {
         manager.layout();
 
         assertEquals(new Rect(100, 450, 168, 88), popup.popupBounds());
+    }
+
+    @Test
+    void fitsTheSurfaceToAttachedContent() {
+        WidgetManager manager = manager();
+        Popup popup = new Popup();
+        Widget content = new Widget() {
+            @Override
+            protected Size onMeasure(LayoutConstraints constraints) {
+                return new Size(100, 40);
+            }
+        };
+        popup.setContent(content);
+
+        popup.open(manager.context(), new Rect(100, 100, 120, 30));
+        manager.layout();
+
+        assertEquals(new Rect(100, 132, 108, 48), popup.popupBounds());
+        assertEquals(new Rect(104, 136, 100, 40), content.bounds());
     }
 
     @Test

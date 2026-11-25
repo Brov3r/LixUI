@@ -57,6 +57,7 @@ import com.lixui.widget.control.Slider;
 import com.lixui.widget.control.Spacer;
 import com.lixui.widget.control.Spinner;
 import com.lixui.widget.control.SplitButton;
+import com.lixui.widget.control.TimePicker;
 import com.lixui.widget.control.UnitInput;
 import com.lixui.widget.container.Accordion;
 import com.lixui.widget.container.GroupBox;
@@ -78,6 +79,7 @@ import com.lixui.widget.layout.Stack;
 import com.lixui.widget.layout.VBox;
 import com.lixui.widget.overlay.ContextMenu;
 
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -195,6 +197,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 outerTabs.addTab("Elements", createElementsPage())::setIcon);
         bindIcon("user-list.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Form", createFormPage())::setIcon);
+        bindIcon("clock.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Pickers", createPickersPage())::setIcon);
         bindIcon("grid.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Layouts", createLayoutsPage())::setIcon);
         bindIcon("frame.svg", outerTabs.iconSize(),
@@ -578,6 +582,42 @@ final class DemoWidgetScene implements AutoCloseable {
         page.setPadding(CONTENT_PADDING);
         page.setGap(10);
         page.add(nameField).add(emailField).add(roleField).add(updatesField).add(showError);
+        return page;
+    }
+
+    private Widget createPickersPage() {
+        Label status = new Label("Start: 09:30    Reminder: 18:45");
+        status.setFontFamily(fontFamily);
+        status.setAutoSize(false);
+        status.setWrap(true);
+
+        TimePicker startTime = new TimePicker(LocalTime.of(9, 30));
+        startTime.setMinuteStep(15);
+        startTime.setMinimumSize(160, 36);
+        startTime.setMaximumSize(240, 46);
+        startTime.setTooltipText("Fifteen-minute steps; type any HH:mm time in the popup.");
+        TimePicker reminderTime = new TimePicker(LocalTime.of(18, 45));
+        reminderTime.setMinuteStep(1);
+        reminderTime.setMinimumSize(160, 36);
+        reminderTime.setMaximumSize(240, 46);
+        reminderTime.setTooltipText("One-minute steps and manual entry.");
+        Runnable updateStatus = () -> status.setText("Start: " + startTime.time()
+                + "    Reminder: " + reminderTime.time());
+        startTime.setOnChange(value -> updateStatus.run());
+        reminderTime.setOnChange(value -> updateStatus.run());
+
+        HBox row = new HBox();
+        row.setGap(12);
+        row.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        row.add(startTime).add(reminderTime);
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(10);
+        page.add(sliderCaption("Time picker: clock button opens hour and minute columns; "
+                        + "the popup field accepts a typed time"))
+                .add(row)
+                .add(status);
         return page;
     }
 

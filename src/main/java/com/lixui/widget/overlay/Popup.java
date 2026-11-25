@@ -38,6 +38,7 @@ public class Popup extends Panel {
     private float gap = DEFAULT_GAP;
     private float viewportMargin = DEFAULT_VIEWPORT_MARGIN;
     private boolean open;
+    private boolean fitContent;
     private boolean closeOnOutsideClick = true;
     private Runnable closeListener;
 
@@ -221,6 +222,29 @@ public class Popup extends Panel {
         this.anchor = anchor;
         this.preferredWidth = width;
         this.preferredHeight = height;
+        fitContent = false;
+        openInternal(context);
+    }
+
+    /**
+     * Opens the popup next to an anchor and sizes its surface to the content.
+     * The attached content is measured during layout, so wrapping and font-dependent sizes are
+     * resolved after the popup joins the widget tree. The surface still stays inside the viewport.
+     *
+     * @param context context that owns the widget manager
+     * @param anchor anchor rectangle in viewport coordinates
+     * @throws NullPointerException if {@code context} or {@code anchor} is null
+     * @throws IllegalStateException if the context has no manager
+     */
+    public final void open(UiContext context, Rect anchor) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(anchor, "anchor");
+        this.anchor = anchor;
+        fitContent = true;
+        openInternal(context);
+    }
+
+    private void openInternal(UiContext context) {
         if (open) {
             return;
         }
@@ -257,6 +281,12 @@ public class Popup extends Panel {
      */
     @Override
     protected Size onMeasure(LayoutConstraints constraints) {
+        if (fitContent) {
+            Size natural = content == null ? new Size(0, 0) : content.measure(
+                    LayoutConstraints.loose(Math.max(0, constraints.maxWidth() - padding * 2),
+                            Math.max(0, constraints.maxHeight() - padding * 2)));
+            return new Size(natural.width() + padding * 2, natural.height() + padding * 2);
+        }
         return new Size(preferredWidth + padding * 2, preferredHeight + padding * 2);
     }
 
@@ -271,10 +301,21 @@ public class Popup extends Panel {
             popupBounds = Rect.EMPTY;
             return;
         }
-        float width = Math.min(preferredWidth + padding * 2,
-                Math.max(0, viewportWidth - viewportMargin * 2));
-        float height = Math.min(preferredHeight + padding * 2,
-                Math.max(0, viewportHeight - viewportMargin * 2));
+        float margin = viewportMargin;
+        float availableWidth = Math.max(0, viewportWidth - margin * 2);
+        float availableHeight = Math.max(0, viewportHeight - margin * 2);
+        float width;
+        float height;
+        if (fitContent) {
+            Size natural = content == null ? new Size(0, 0) : content.measure(
+                    LayoutConstraints.loose(Math.max(0, availableWidth - padding * 2),
+                            Math.max(0, availableHeight - padding * 2)));
+            width = Math.min(natural.width() + padding * 2, availableWidth);
+            height = Math.min(natural.height() + padding * 2, availableHeight);
+        } else {
+            width = Math.min(preferredWidth + padding * 2, availableWidth);
+            height = Math.min(preferredHeight + padding * 2, availableHeight);
+        }
         float x = Math.clamp(anchor.x(), viewportMargin,
                 Math.max(viewportMargin, viewportWidth - width - viewportMargin));
         float below = anchor.bottom() + gap;
