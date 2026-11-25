@@ -2,6 +2,7 @@ package com.lixui.widget.control;
 
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
+import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
 import com.lixui.input.Key;
 import com.lixui.input.Modifiers;
@@ -10,12 +11,17 @@ import com.lixui.input.event.KeyPressed;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.render.Viewport;
+import com.lixui.render.command.TextCommand;
+import com.lixui.text.Font;
+import com.lixui.text.FontData;
+import com.lixui.text.SystemFonts;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.overlay.Popup;
 import com.lixui.widget.overlay.PromptDialog;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.testsupport.TestViewports;
+import com.lixui.widget.tooltip.TextTooltip;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -23,6 +29,7 @@ import java.time.temporal.WeekFields;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -99,7 +106,7 @@ class DatePickerTest {
         openPopup(manager, picker);
 
         Popup popup = popup(manager);
-        Button next = (Button) popup.content().children().get(0).children().get(2);
+        Button next = (Button) header(popup).get(3);
         clickWidget(manager, next);
         manager.render();
 
@@ -121,6 +128,84 @@ class DatePickerTest {
         assertEquals(LocalDate.of(2026, 6, 15), picker.date());
         assertEquals(List.of(LocalDate.of(2026, 6, 15)), changes);
         assertTrue(picker.isFocused());
+    }
+
+    @Test
+    void changesMonthAndYearFromHeaderArrows() {
+        WidgetManager manager = manager();
+        DatePicker picker = picker(LocalDate.of(2026, 5, 12), LOCALE);
+        manager.add(picker);
+        manager.render();
+        openPopup(manager, picker);
+
+        Popup popup = popup(manager);
+        List<Widget> header = header(popup);
+        assertEquals("Previous year", tooltip(header.get(0)));
+        assertEquals("Previous month", tooltip(header.get(1)));
+        assertEquals("Next month", tooltip(header.get(3)));
+        assertEquals("Next year", tooltip(header.get(4)));
+
+        clickWidget(manager, header.get(0));
+        manager.render();
+        clickDay(manager, grid(popup), 10);
+
+        assertEquals(LocalDate.of(2025, 5, 10), picker.date());
+
+        openPopup(manager, picker);
+        clickWidget(manager, header(popup).get(4));
+        manager.render();
+        clickDay(manager, grid(popup), 15);
+
+        assertEquals(LocalDate.of(2026, 5, 15), picker.date());
+    }
+
+    @Test
+    void drawsAdjacentMonthDaysInMutedColor() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
+        manager.resize(VIEWPORT);
+        manager.setDefaultFont(font(manager));
+        DatePicker picker = picker(LocalDate.of(2026, 5, 12), LOCALE);
+        manager.add(picker);
+        manager.render();
+        openPopup(manager, picker);
+
+        DatePicker.CalendarGrid grid = grid(popup(manager));
+        assertFalse(grid.dateBounds(LocalDate.of(2026, 4, 30)).isEmpty());
+        assertFalse(grid.dateBounds(LocalDate.of(2026, 6, 1)).isEmpty());
+
+        Color muted = manager.context().theme().textMuted().withAlpha(0.65f);
+        boolean mutedDrawn = backend.lastDrawList().commands().stream()
+                .filter(TextCommand.class::isInstance)
+                .map(TextCommand.class::cast)
+                .flatMap(command -> command.colors().stream())
+                .anyMatch(muted::equals);
+        assertTrue(mutedDrawn);
+    }
+
+    @Test
+    void selectsAdjacentMonthDays() {
+        WidgetManager previousManager = manager();
+        DatePicker previousPicker = picker(LocalDate.of(2026, 5, 12), LOCALE);
+        previousManager.add(previousPicker);
+        previousManager.render();
+        openPopup(previousManager, previousPicker);
+
+        clickDate(previousManager, grid(popup(previousManager)), LocalDate.of(2026, 4, 30));
+
+        assertEquals(LocalDate.of(2026, 4, 30), previousPicker.date());
+        assertFalse(previousPicker.isPopupOpen());
+
+        WidgetManager nextManager = manager();
+        DatePicker nextPicker = picker(LocalDate.of(2026, 5, 12), LOCALE);
+        nextManager.add(nextPicker);
+        nextManager.render();
+        openPopup(nextManager, nextPicker);
+
+        clickDate(nextManager, grid(popup(nextManager)), LocalDate.of(2026, 6, 1));
+
+        assertEquals(LocalDate.of(2026, 6, 1), nextPicker.date());
+        assertFalse(nextPicker.isPopupOpen());
     }
 
     @Test
@@ -228,6 +313,27 @@ class DatePickerTest {
     private static int columnOf(DatePicker.CalendarGrid grid, int day) {
         float cellWidth = grid.bounds().width() / 7f;
         return Math.round(grid.dayBounds(day).x() / cellWidth);
+    }
+
+    private static List<Widget> header(Popup popup) {
+        return popup.content().children().get(0).children();
+    }
+
+    private static String tooltip(Widget widget) {
+        return ((TextTooltip) widget.tooltip()).text();
+    }
+
+    private static void clickDate(WidgetManager manager, DatePicker.CalendarGrid grid,
+                                  LocalDate date) {
+        Rect bounds = grid.dateBounds(date);
+        Point origin = grid.absolutePosition();
+        click(manager, origin.x() + bounds.x() + bounds.width() / 2,
+                origin.y() + bounds.y() + bounds.height() / 2);
+    }
+
+    private static Font font(WidgetManager manager) {
+        Optional<FontData> data = SystemFonts.findDefault();
+        return manager.context().createFont(data.orElseThrow(), 16);
     }
 
     private static void clickDay(WidgetManager manager, DatePicker.CalendarGrid grid, int day) {

@@ -680,8 +680,9 @@ final class DemoWidgetScene implements AutoCloseable {
         page.add(sliderCaption("Time picker: clock button opens hour and minute columns; "
                         + "the popup field accepts a typed time"))
                 .add(timeRow)
-                .add(sliderCaption("Date pickers: en-US weeks start on Sunday, ru weeks start "
-                        + "on Monday; month and weekday names are localized"))
+                .add(sliderCaption("Date pickers: en-US weeks start on Sunday, ru-RU weeks "
+                        + "start on Monday; single arrows change the month, double arrows change "
+                        + "the year, and adjacent-month days are muted"))
                 .add(dateRow)
                 .add(sliderCaption("Color pickers: opaque RGB and semi-transparent variants; "
                         + "checkerboard previews make alpha visible"))

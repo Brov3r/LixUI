@@ -2,6 +2,7 @@ package com.lixui.widget.control;
 
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
+import com.lixui.graphics.Color;
 import com.lixui.graphics.Paint;
 import com.lixui.input.MouseButton;
 import com.lixui.input.Modifiers;
@@ -25,6 +26,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
+import java.time.temporal.ChronoUnit;
 import java.time.temporal.WeekFields;
 import java.util.Locale;
 import java.util.Objects;
@@ -32,21 +34,25 @@ import java.util.function.Consumer;
 
 /**
  * A date field that opens a popup calendar.
- * The calendar shows a month title, previous and next month arrows and a six-week grid with
- * localized month and weekday names. The selected day is highlighted, clicking a day applies it,
- * closes the popup and reports the date through {@link #setOnChange(Consumer)}. Month navigation and
- * Escape do not change the selected date.
+ * The calendar shows a month title, single month arrows and double year arrows and a six-week grid
+ * with localized month and weekday names. Days of the previous and next month stay visible in a
+ * muted color and select their own date when clicked. The selected day is highlighted, clicking a
+ * day applies it, closes the popup and reports the date through {@link #setOnChange(Consumer)}.
+ * Month and year navigation and Escape do not change the selected date.
  */
 public class DatePicker extends PickerField {
     private static final float NAV_ICON_SIZE = 16;
     private static final float HEADER_GAP = 6;
 
-    private final Button previousButton = new Button();
-    private final Button nextButton = new Button();
+    private final Button previousYearButton = new Button();
+    private final Button previousMonthButton = new Button();
+    private final Button nextMonthButton = new Button();
+    private final Button nextYearButton = new Button();
     private final Label titleLabel = new Label();
     private final CalendarGrid grid;
     private final VBox popupContent = new VBox();
-    private final IconSet navIcons = new IconSet("arrow-left.svg", "arrow-right.svg");
+    private final IconSet navIcons = new IconSet("arrow-double-left-05.svg",
+            "arrow-left-04.svg", "arrow-right-04.svg", "arrow-double-right-05.svg");
 
     private LocalDate date;
     private Locale locale;
@@ -85,12 +91,10 @@ public class DatePicker extends PickerField {
         dateFormatter = createDateFormatter(locale);
         displayedMonth = YearMonth.from(date);
         grid = new CalendarGrid(this::activateDate);
-        previousButton.setIconSize(NAV_ICON_SIZE);
-        previousButton.setTooltipText("Previous month");
-        previousButton.setOnAction(() -> shiftMonth(-1));
-        nextButton.setIconSize(NAV_ICON_SIZE);
-        nextButton.setTooltipText("Next month");
-        nextButton.setOnAction(() -> shiftMonth(1));
+        configureNavButton(previousYearButton, "Previous year", () -> shiftYear(-1));
+        configureNavButton(previousMonthButton, "Previous month", () -> shiftMonth(-1));
+        configureNavButton(nextMonthButton, "Next month", () -> shiftMonth(1));
+        configureNavButton(nextYearButton, "Next year", () -> shiftYear(1));
         titleLabel.setAutoSize(false);
         titleLabel.setWrap(false);
         titleLabel.setAlignment(HorizontalAlignment.CENTER);
@@ -99,12 +103,19 @@ public class DatePicker extends PickerField {
         HBox header = new HBox();
         header.setGap(HEADER_GAP);
         header.setCrossAlignment(HBox.CrossAlignment.CENTER);
-        header.add(previousButton).add(titleLabel).add(nextButton);
+        header.add(previousYearButton).add(previousMonthButton).add(titleLabel)
+                .add(nextMonthButton).add(nextYearButton);
         popupContent.setGap(HEADER_GAP);
         popupContent.add(header).add(grid);
         popup().setPadding(8);
         popup().setContent(popupContent);
         updateHeader();
+    }
+
+    private static void configureNavButton(Button button, String tooltip, Runnable action) {
+        button.setIconSize(NAV_ICON_SIZE);
+        button.setTooltipText(tooltip);
+        button.setOnAction(action);
     }
 
     /**
@@ -248,7 +259,17 @@ public class DatePicker extends PickerField {
         updateHeader();
     }
 
+    private void shiftYear(int delta) {
+        if (!popup().isOpen()) {
+            return;
+        }
+        displayedMonth = displayedMonth.plusYears(delta);
+        grid.setState(displayedMonth, date, locale);
+        updateHeader();
+    }
+
     private void activateDate(LocalDate value) {
+        displayedMonth = YearMonth.from(value);
         closePopup();
         setDate(value);
     }
@@ -267,8 +288,10 @@ public class DatePicker extends PickerField {
         if (!navIcons.matches(context, size)) {
             navIcons.reload(context, size);
         }
-        previousButton.setIcon(navIcons.get(0));
-        nextButton.setIcon(navIcons.get(1));
+        previousYearButton.setIcon(navIcons.get(0));
+        previousMonthButton.setIcon(navIcons.get(1));
+        nextMonthButton.setIcon(navIcons.get(2));
+        nextYearButton.setIcon(navIcons.get(3));
     }
 
     private static DateTimeFormatter createDateFormatter(Locale locale) {
@@ -294,9 +317,9 @@ public class DatePicker extends PickerField {
         private Locale locale = Locale.getDefault();
         private DateTimeFormatter weekdayFormatter = DateTimeFormatter.ofPattern("ccc");
         private DayOfWeek firstDayOfWeek = DayOfWeek.MONDAY;
-        private int leadingBlanks;
+        private LocalDate firstVisible = LocalDate.now();
         private int dayCount;
-        private int hoveredDay = -1;
+        private LocalDate hovered;
 
         private CalendarGrid(Consumer<LocalDate> activator) {
             this.activator = activator;
@@ -309,14 +332,15 @@ public class DatePicker extends PickerField {
             this.locale = Objects.requireNonNull(locale, "locale");
             weekdayFormatter = DateTimeFormatter.ofPattern("ccc").withLocale(locale);
             updateMonth();
-            hoveredDay = -1;
+            hovered = null;
         }
 
         private void updateMonth() {
             firstDayOfWeek = WeekFields.of(locale).getFirstDayOfWeek();
-            leadingBlanks = Math.floorMod(
+            int leadingBlanks = Math.floorMod(
                     month.atDay(1).getDayOfWeek().getValue() - firstDayOfWeek.getValue(), 7);
             dayCount = month.lengthOfMonth();
+            firstVisible = month.atDay(1).minusDays(leadingBlanks);
         }
 
         /**
@@ -361,23 +385,23 @@ public class DatePicker extends PickerField {
             LocalDate today = LocalDate.now();
             for (int row = 0; row < ROWS; row++) {
                 for (int column = 0; column < COLUMNS; column++) {
-                    int day = row * COLUMNS + column - leadingBlanks + 1;
-                    if (day < 1 || day > dayCount) {
-                        continue;
-                    }
-                    LocalDate value = month.atDay(day);
+                    LocalDate value = firstVisible.plusDays(row * COLUMNS + column);
                     Rect cell = cellRect(row, column, cellWidth, cellHeight);
                     if (value.equals(selected)) {
                         renderer.roundedRect(cell, DAY_RADIUS, theme.primary());
-                    } else if (day == hoveredDay) {
+                    } else if (value.equals(hovered)) {
                         renderer.roundedRect(cell, DAY_RADIUS, theme.surfaceHover());
                     } else if (value.equals(today)) {
                         renderer.strokeRoundedRect(cell, DAY_RADIUS, 1,
                                 Paint.solid(theme.primary().withAlpha(0.55f)));
                     }
-                    renderer.text(font, Integer.toString(day),
+                    boolean currentMonth = value.getYear() == month.getYear()
+                            && value.getMonth() == month.getMonth();
+                    Color textColor = value.equals(selected) ? theme.onPrimary()
+                            : currentMonth ? theme.text() : theme.textMuted().withAlpha(0.65f);
+                    renderer.text(font, Integer.toString(value.getDayOfMonth()),
                             cell.x() + cell.width() / 2, cell.y() + cell.height() / 2,
-                            value.equals(selected) ? theme.onPrimary() : theme.text(), centered);
+                            textColor, centered);
                 }
             }
         }
@@ -391,7 +415,7 @@ public class DatePicker extends PickerField {
          */
         @Override
         protected boolean onPointerMove(float x, float y) {
-            hoveredDay = dayAt(x, y);
+            hovered = dateAt(x, y);
             return false;
         }
 
@@ -400,7 +424,7 @@ public class DatePicker extends PickerField {
          */
         @Override
         protected void onPointerExit() {
-            hoveredDay = -1;
+            hovered = null;
         }
 
         /**
@@ -410,11 +434,11 @@ public class DatePicker extends PickerField {
          */
         @Override
         public Cursor cursor() {
-            return hoveredDay > 0 ? Cursor.POINTER : Cursor.DEFAULT;
+            return hovered != null ? Cursor.POINTER : Cursor.DEFAULT;
         }
 
         /**
-         * Activates the clicked day.
+         * Activates the clicked day, including days of the adjacent months.
          *
          * @param x horizontal pointer position relative to the widget
          * @param y vertical pointer position relative to the widget
@@ -427,11 +451,11 @@ public class DatePicker extends PickerField {
             if (button != MouseButton.LEFT) {
                 return false;
             }
-            int day = dayAt(x, y);
-            if (day < 1) {
+            LocalDate value = dateAt(x, y);
+            if (value == null) {
                 return false;
             }
-            activator.accept(month.atDay(day));
+            activator.accept(value);
             return true;
         }
 
@@ -443,31 +467,34 @@ public class DatePicker extends PickerField {
         }
 
         Rect dayBounds(int day) {
-            if (day < 1 || day > dayCount) {
+            return day >= 1 && day <= dayCount ? dateBounds(month.atDay(day)) : Rect.EMPTY;
+        }
+
+        Rect dateBounds(LocalDate value) {
+            long index = firstVisible.until(value, ChronoUnit.DAYS);
+            if (index < 0 || index >= (long) ROWS * COLUMNS) {
                 return Rect.EMPTY;
             }
-            int index = leadingBlanks + day - 1;
-            int row = index / COLUMNS;
-            int column = index % COLUMNS;
+            int row = (int) index / COLUMNS;
+            int column = (int) index % COLUMNS;
             float cellWidth = localBounds().width() / COLUMNS;
             float cellHeight = (localBounds().height() - WEEKDAY_HEIGHT) / ROWS;
             return new Rect(column * cellWidth, WEEKDAY_HEIGHT + row * cellHeight,
                     cellWidth, cellHeight);
         }
 
-        private int dayAt(float x, float y) {
+        private LocalDate dateAt(float x, float y) {
             float cellWidth = localBounds().width() / COLUMNS;
             float cellHeight = (localBounds().height() - WEEKDAY_HEIGHT) / ROWS;
             if (cellWidth <= 0 || cellHeight <= 0 || x < 0 || y < WEEKDAY_HEIGHT) {
-                return -1;
+                return null;
             }
             int column = (int) (x / cellWidth);
             int row = (int) ((y - WEEKDAY_HEIGHT) / cellHeight);
             if (column < 0 || column >= COLUMNS || row < 0 || row >= ROWS) {
-                return -1;
+                return null;
             }
-            int day = row * COLUMNS + column - leadingBlanks + 1;
-            return day >= 1 && day <= dayCount ? day : -1;
+            return firstVisible.plusDays(row * COLUMNS + column);
         }
     }
 }
