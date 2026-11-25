@@ -1488,13 +1488,17 @@ final class DemoWidgetScene implements AutoCloseable {
         stacked.setFirst(createPartyTable());
         stacked.setSecond(createInventoryTable());
 
-        SplitPanel page = new SplitPanel();
-        page.setDividerThickness(8);
-        page.setDividerPosition(0.5f);
-        page.setMinimumPaneSize(140);
-        page.setFirst(stacked);
-        page.setSecond(createMarketTable());
-        return page;
+        SplitPanel tables = new SplitPanel();
+        tables.setDividerThickness(8);
+        tables.setDividerPosition(0.5f);
+        tables.setMinimumPaneSize(140);
+        tables.setFirst(stacked);
+        tables.setSecond(createMarketTable());
+
+        TabPanel dataTabs = new TabPanel();
+        dataTabs.addTab("Tables", tables);
+        dataTabs.addTab("Virtual list", VirtualListDemo.create(fontFamily));
+        return dataTabs;
     }
 
     private Table createPartyTable() {
