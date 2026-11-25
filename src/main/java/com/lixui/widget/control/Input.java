@@ -721,6 +721,20 @@ public class Input extends Panel {
     }
 
     /**
+     * Discards an unfinished selection drag when its pointer capture is cancelled.
+     *
+     * @param button button whose capture was cancelled
+     */
+    @Override
+    protected void onPointerCaptureCancelled(MouseButton button) {
+        if (button == MouseButton.LEFT) {
+            dragging = false;
+            clickCount = 0;
+            resetBlink();
+        }
+    }
+
+    /**
      * Selects the word under the pointer on a double click.
      *
      * @param x horizontal pointer position relative to the widget

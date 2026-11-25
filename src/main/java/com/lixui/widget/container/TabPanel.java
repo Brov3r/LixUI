@@ -1464,6 +1464,18 @@ public class TabPanel extends Panel {
         }
 
         /**
+         * Stops reordering and edge scrolling when the drag capture is cancelled.
+         *
+         * @param button button whose capture was cancelled
+         */
+        @Override
+        protected void onPointerCaptureCancelled(MouseButton button) {
+            if (button == MouseButton.LEFT) {
+                clearDrag();
+            }
+        }
+
+        /**
          * Scrolls the strip with the mouse wheel.
          *
          * @param x horizontal pointer position

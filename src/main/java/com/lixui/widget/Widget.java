@@ -1215,6 +1215,18 @@ public abstract class Widget {
     }
 
     /**
+     * Called when a captured pointer button is cancelled without a release.
+     * The capture is already removed when this callback runs, so the widget must discard its local
+     * gesture state and must not treat the cancellation as a completed release, drop or click.
+     * A capture is cancelled when the window loses focus, its owner is removed or disabled, or
+     * another widget takes over the button.
+     *
+     * @param button button whose capture was cancelled
+     */
+    protected void onPointerCaptureCancelled(MouseButton button) {
+    }
+
+    /**
      * Called when the pointer scrolls while this widget is hovered.
      * The event bubbles to ancestors until a callback returns true.
      *

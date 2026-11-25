@@ -8,6 +8,7 @@ import com.lixui.input.Key;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
 import com.lixui.input.event.CharTyped;
+import com.lixui.input.event.FocusChanged;
 import com.lixui.input.event.KeyPressed;
 import com.lixui.input.event.PointerMoved;
 import com.lixui.input.event.PointerPressed;
@@ -181,6 +182,36 @@ class InputTest {
             click(manager, betaX, 15);
             assertEquals(0, input.selectionStart());
             assertEquals(input.text().length(), input.selectionEnd());
+        }
+    }
+
+    @Test
+    void focusLossStopsAnUnfinishedSelectionDrag() {
+        Optional<FontData> data = SystemFonts.findDefault();
+        Assumptions.assumeTrue(data.isPresent(), "No readable system font is installed.");
+        try (WidgetManager manager = manager(new TestBackend(), new ClipboardPlatform())) {
+            Font font = manager.context().createFont(data.get(), 16);
+            manager.setDefaultFont(font);
+            Input input = new Input("alpha beta");
+            input.setBounds(FIELD_BOUNDS);
+            manager.add(input);
+            manager.render();
+
+            float padding = manager.context().theme().controlStyle().padding();
+            float alphaWidth = font.measure("alpha ").width();
+            manager.handle(new PointerPressed(padding + 1, 15, MouseButton.LEFT,
+                    Modifiers.NONE));
+            manager.handle(new PointerMoved(padding + alphaWidth - 1, 15));
+            assertTrue(input.hasSelection());
+            manager.handle(new FocusChanged(false));
+            manager.handle(new FocusChanged(true));
+            int start = input.selectionStart();
+            int end = input.selectionEnd();
+
+            manager.handle(new PointerMoved(padding + font.measure("alpha beta").width() - 1, 15));
+
+            assertEquals(start, input.selectionStart());
+            assertEquals(end, input.selectionEnd());
         }
     }
 

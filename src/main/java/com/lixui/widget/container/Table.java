@@ -1293,6 +1293,19 @@ public class Table extends Panel {
     }
 
     /**
+     * Cancels an unfinished column resize or marquee drag when its capture is cancelled.
+     *
+     * @param button button whose capture was cancelled
+     */
+    @Override
+    protected void onPointerCaptureCancelled(MouseButton button) {
+        if (button == MouseButton.LEFT) {
+            resizeColumn = -1;
+            selectionDragging = false;
+        }
+    }
+
+    /**
      * Finishes a resize press and clears the drag target.
      *
      * @param x horizontal pointer position relative to the widget

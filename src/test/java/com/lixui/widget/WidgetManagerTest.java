@@ -614,6 +614,77 @@ class WidgetManagerTest {
     }
 
     @Test
+    void focusLossCancelsACapturedGestureWithoutReplayingItsRelease() {
+        List<String> events = new ArrayList<>();
+        Widget widget = new Widget() {
+            /**
+             * Records a release that must not be synthesized for a cancelled capture.
+             *
+             * @param x local pointer x
+             * @param y local pointer y
+             * @param button released button
+             * @param modifiers keyboard modifiers
+             * @return true to consume the release
+             */
+            @Override
+            protected boolean onPointerRelease(float x, float y, MouseButton button, Modifiers modifiers) {
+                events.add("release:" + button);
+                return true;
+            }
+
+            /**
+             * Records a drag end that must not be synthesized for a cancelled capture.
+             *
+             * @param x local pointer x
+             * @param y local pointer y
+             * @param button released button
+             * @param modifiers keyboard modifiers
+             * @return true to consume the drag end
+             */
+            @Override
+            protected boolean onDragEnd(float x, float y, MouseButton button, Modifiers modifiers) {
+                events.add("drag-end:" + button);
+                return true;
+            }
+
+            /**
+             * Records a click that must not be synthesized for a cancelled capture.
+             *
+             * @param x local pointer x
+             * @param y local pointer y
+             * @param button clicked button
+             * @param modifiers keyboard modifiers
+             * @return true to consume the click
+             */
+            @Override
+            protected boolean onClick(float x, float y, MouseButton button, Modifiers modifiers) {
+                events.add("click:" + button);
+                return true;
+            }
+
+            /**
+             * Records the cancellation callback.
+             *
+             * @param button button whose capture was cancelled
+             */
+            @Override
+            protected void onPointerCaptureCancelled(MouseButton button) {
+                events.add("cancel:" + button);
+            }
+        };
+        widget.setBounds(ROOT_BOUNDS);
+        WidgetManager manager = manager(new TestBackend(), widget);
+        manager.handle(new PointerPressed(10, 10, MouseButton.LEFT, Modifiers.NONE));
+        manager.handle(new PointerMoved(40, 10));
+        events.clear();
+
+        manager.handle(new FocusChanged(false));
+
+        assertEquals(List.of("cancel:LEFT"), events);
+        assertFalse(widget.isPressed());
+    }
+
+    @Test
     void addRejectsParentedAndDuplicateWidgets() {
         TestBackend backend = new TestBackend();
         Probe root = new Probe("root", new ArrayList<>());

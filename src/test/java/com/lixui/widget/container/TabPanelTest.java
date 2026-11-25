@@ -9,6 +9,7 @@ import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
+import com.lixui.input.event.FocusChanged;
 import com.lixui.input.event.PointerMoved;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
@@ -143,6 +144,30 @@ class TabPanelTest {
             assertEquals(List.of(second, first, third), panel.tabs());
             assertSame(second, panel.selected());
             assertSame(second, panel.tabs().getFirst());
+        }
+    }
+
+    @Test
+    void focusLossStopsDragEdgeScrolling() {
+        try (WidgetManager manager = manager(new TestBackend())) {
+            TabPanel panel = panel();
+            panel.setBounds(new Rect(0, 0, 200, 300));
+            for (int index = 0; index < 10; index++) {
+                panel.addTab("Tab " + index, new FixedWidget(10, 10));
+            }
+            manager.add(panel);
+            manager.render();
+
+            manager.handle(new PointerPressed(100, 15, MouseButton.LEFT, Modifiers.NONE));
+            manager.handle(new PointerMoved(195, 15));
+            manager.update(0.1f);
+            assertTrue(panel.scrollOffset() > 0);
+            manager.handle(new FocusChanged(false));
+            float stoppedAt = panel.scrollOffset();
+
+            manager.update(1);
+
+            assertEquals(stoppedAt, panel.scrollOffset(), 0.001f);
         }
     }
 

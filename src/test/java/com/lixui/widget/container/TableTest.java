@@ -5,6 +5,7 @@ import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
+import com.lixui.input.event.FocusChanged;
 import com.lixui.input.event.PointerMoved;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
@@ -245,6 +246,28 @@ class TableTest {
     }
 
     @Test
+    void focusLossCancelsAnUnfinishedMarquee() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
+        manager.resize(TestViewports.HIDPI);
+        Table table = tableWithRows(Table.SelectionMode.MULTIPLE);
+        manager.add(table);
+        manager.render();
+
+        manager.handle(new PointerPressed(30, rowCenter(1), MouseButton.LEFT, Modifiers.NONE));
+        manager.handle(new PointerMoved(120, rowCenter(2)));
+        manager.render();
+        var marqueeColor = manager.context().theme().primary().withAlpha(0.16f);
+        assertTrue(hasMarquee(backend, marqueeColor));
+
+        manager.handle(new FocusChanged(false));
+        manager.render();
+
+        assertFalse(hasMarquee(backend, marqueeColor));
+        assertFalse(table.isPressed());
+    }
+
+    @Test
     void singleModeKeepsOnlyOneSelectedRow() {
         WidgetManager manager = manager();
         Table table = tableWithRows(Table.SelectionMode.SINGLE);
@@ -325,6 +348,13 @@ class TableTest {
         WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
         manager.resize(TestViewports.HIDPI);
         return manager;
+    }
+
+    private static boolean hasMarquee(TestBackend backend, Color color) {
+        return backend.lastDrawList().commands().stream()
+                .filter(RoundedRectCommand.class::isInstance)
+                .map(RoundedRectCommand.class::cast)
+                .anyMatch(command -> command.color().equals(color));
     }
 
     private static void click(WidgetManager manager, float x, float y) {
