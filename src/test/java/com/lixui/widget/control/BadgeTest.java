@@ -82,7 +82,7 @@ class BadgeTest {
             assertEquals(3, commands.size());
             RoundedRectCommand fill = assertInstanceOf(RoundedRectCommand.class, commands.get(0));
             assertEquals(background, fill.color());
-            assertEquals(20, fill.radius(), 0.001f);
+            assertEquals(19.5f, fill.radius(), 0.001f);
             assertInstanceOf(MeshCommand.class, commands.get(1));
             TextCommand label = assertInstanceOf(TextCommand.class, commands.get(2));
             assertEquals(text, label.colors().getFirst());

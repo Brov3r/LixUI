@@ -237,7 +237,7 @@ public class Badge extends Widget {
         }
         float width = localBounds().width();
         float height = localBounds().height();
-        float radius = Math.min(width, height) / 2;
+        float radius = Math.max(0, Math.min(width, height) / 2 - 0.5f);
         renderer.roundedRect(localBounds(), radius, background);
         drawBorder(renderer, radius, borderColor != null ? borderColor : theme.border());
         Font font = font();
