@@ -239,6 +239,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 outerTabs.addTab("Select", new DemoSelectPage(fontFamily, this::bindIcon).create())::setIcon);
         bindIcon("menu-02.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Menu bar", new DemoMenuPage(fontFamily, this::bindIcon).create())::setIcon);
+        bindIcon("arrow-right-04.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Breadcrumbs", new DemoBreadcrumbsPage(fontFamily).create())::setIcon);
         bindIcon("text.svg", outerTabs.iconSize(), outerTabs.addTab("Labels", labelsPage)::setIcon);
         bindIcon("ui.svg", outerTabs.iconSize(), outerTabs.addTab("Tabs", innerTabs)::setIcon);
         bindIcon("adjustment.svg", outerTabs.iconSize(), outerTabs.addTab("Controls", createControlsPage())::setIcon);
