@@ -716,8 +716,12 @@ public class Window extends ScrollPanel {
 
     private void updateContentInsets() {
         float corner = reservesResizeCorner() ? RESIZE_SIZE : 0;
-        setContentInsets(headerHeight + contentPaddingTop, contentPaddingRight + corner,
-                contentPaddingBottom + corner, contentPaddingLeft);
+        float top = headerHeight + contentPaddingTop;
+        float right = contentPaddingRight + corner;
+        float bottom = contentPaddingBottom + corner;
+        setContentInsets(top, right, bottom, contentPaddingLeft);
+        // Scrollbars are anchored to the window edges, so the chrome must not inflate their gap.
+        setScrollBarInsets(top, right, bottom, contentPaddingLeft);
     }
 
     private boolean reservesResizeCorner() {

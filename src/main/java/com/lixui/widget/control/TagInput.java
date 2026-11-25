@@ -8,7 +8,11 @@ import com.lixui.graphics.Paint;
 import com.lixui.input.Key;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
+import com.lixui.platform.Cursor;
 import com.lixui.render.RenderManager;
+import com.lixui.text.Font;
+import com.lixui.text.HorizontalAlignment;
+import com.lixui.text.VerticalAlignment;
 import com.lixui.theme.Theme;
 import com.lixui.theme.WidgetState;
 import com.lixui.theme.WidgetStyle;
@@ -28,7 +32,7 @@ import java.util.function.Predicate;
  * A tag editor that combines a text field with removable chips.
  * Enter adds the typed value, a chip cross removes it, and Backspace in an empty field removes the
  * last tag. Chips wrap onto new lines and the editor grows with the rows. A row limit or a
- * constrained height replaces the tags that no longer fit with an overflow chip such as
+ * constrained height replaces the tags that no longer fit with a plain overflow count such as
  * {@code +3}.
  * <p>
  * The input is the only focusable part; pressing anywhere on the surface focuses it. A validator
@@ -203,8 +207,8 @@ public class TagInput extends Panel {
 
     /**
      * Sets the maximum number of chip rows.
-     * Tags that do not fit into the limit are represented by a single overflow chip. A zero limit
-     * lets the editor grow with every row.
+     * Tags that do not fit into the limit are represented by a single plain-text overflow
+     * indicator. A zero limit lets the editor grow with every row.
      *
      * @param maxRows non-negative row limit, or zero for no limit
      * @throws IllegalArgumentException if the limit is negative
@@ -340,7 +344,7 @@ public class TagInput extends Panel {
 
     /**
      * Measures the field and the wrapped chip rows.
-     * Tags beyond the row limit are replaced by the overflow chip in the measurement.
+     * Tags beyond the row limit are replaced by the overflow indicator in the measurement.
      *
      * @param constraints available and required dimensions
      * @return the natural editor size
@@ -490,8 +494,8 @@ public class TagInput extends Panel {
     /**
      * Finds the largest visible tag count that fits the row limit and the height budget.
      * A negative height budget means the height is unbounded, which is used during measurement.
-     * When even the overflow pill is wider than the chip area, the pill alone is kept so a narrow
-     * editor never becomes empty.
+     * When even the overflow indicator is wider than the chip area, the indicator alone is kept so
+     * a narrow editor never becomes empty.
      */
     private Pack plan(float availableWidth, float heightBudget) {
         int total = tags.size();
@@ -654,9 +658,26 @@ public class TagInput extends Panel {
         }
 
         /**
+         * Measures a removable chip with its remove cross, or the overflow indicator as plain text.
+         *
+         * @param constraints available and required dimensions
+         * @return the natural chip or indicator size
+         */
+        @Override
+        protected Size onMeasure(LayoutConstraints constraints) {
+            if (removable) {
+                return super.onMeasure(constraints);
+            }
+            Size padded = super.onMeasure(constraints);
+            Font font = font();
+            float width = font == null || text().isEmpty() ? 0 : font.measure(text()).width();
+            return new Size(width, padded.height());
+        }
+
+        /**
          * Reserves the trailing slot for the remove cross.
          *
-         * @return the cross slot width, or zero for the overflow chip
+         * @return the cross slot width, or zero for the overflow indicator
          */
         @Override
         protected float trailingSlotWidth() {
@@ -664,15 +685,30 @@ public class TagInput extends Panel {
         }
 
         /**
-         * Paints the chip surface, label and the remove cross.
+         * Requests the pointer cursor only for removable chips.
+         *
+         * @return the pointer cursor for a chip, or the default cursor for the overflow indicator
+         */
+        @Override
+        public Cursor cursor() {
+            return removable ? super.cursor() : Cursor.DEFAULT;
+        }
+
+        /**
+         * Paints a removable chip surface, its label and the remove cross, or the overflow count as
+         * plain text without a chip surface.
          *
          * @param renderer drawing manager for the current frame
          * @param frame timing information for the current frame
          */
         @Override
         protected void onDraw(RenderManager renderer, FrameInfo frame) {
+            if (!removable) {
+                drawOverflow(renderer);
+                return;
+            }
             super.onDraw(renderer, frame);
-            if (!removable || localBounds().isEmpty()) {
+            if (localBounds().isEmpty()) {
                 return;
             }
             WidgetStyle style = surfaceStyle();
@@ -690,8 +726,26 @@ public class TagInput extends Panel {
                     CROSS_STROKE, Paint.solid(color));
         }
 
+        private void drawOverflow(RenderManager renderer) {
+            Font font = font();
+            UiContext uiContext = context();
+            if (font == null || text().isEmpty() || localBounds().isEmpty() || uiContext == null) {
+                return;
+            }
+            String indicator = text();
+            float totalWidth = font.measure(indicator).width();
+            float startX = (localBounds().width() - totalWidth) / 2;
+            float centerY = localBounds().height() / 2;
+            renderer.text(font, "+", startX, centerY, uiContext.theme().textMuted(),
+                    HorizontalAlignment.LEFT, VerticalAlignment.CENTER);
+            renderer.text(font, indicator.substring(1), startX + font.measure("+").width(),
+                    centerY, isEnabled() ? uiContext.theme().text() : uiContext.theme().textMuted(),
+                    HorizontalAlignment.LEFT, VerticalAlignment.CENTER);
+        }
+
         /**
          * Removes the tag on a cross click and focuses the field on a body click.
+         * The overflow indicator does not consume clicks.
          *
          * @param x horizontal pointer position relative to the widget
          * @param y vertical pointer position relative to the widget
@@ -701,11 +755,11 @@ public class TagInput extends Panel {
          */
         @Override
         protected boolean onClick(float x, float y, MouseButton button, Modifiers modifiers) {
-            if (button != MouseButton.LEFT) {
+            if (!removable || button != MouseButton.LEFT) {
                 return false;
             }
             focusField();
-            if (removable && x >= localBounds().width() - CROSS_SLOT) {
+            if (x >= localBounds().width() - CROSS_SLOT) {
                 removeTag(tag);
             }
             return true;

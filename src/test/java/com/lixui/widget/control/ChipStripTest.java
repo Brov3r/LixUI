@@ -6,12 +6,18 @@ import com.lixui.render.RenderManager;
 import com.lixui.render.Viewport;
 import com.lixui.render.command.DrawCommand;
 import com.lixui.render.command.RoundedRectCommand;
+import com.lixui.render.command.TextCommand;
+import com.lixui.text.Font;
+import com.lixui.text.FontData;
+import com.lixui.text.SystemFonts;
 import com.lixui.theme.Theme;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.testsupport.TestViewports;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -44,24 +50,31 @@ class ChipStripTest {
     }
 
     @Test
-    void keepsWholeChipsAndCountsTheRestInThePill() {
-        ChipStrip strip = strip("Alpha", "Beta", "Gamma", "Delta");
+    void keepsWholeChipsAndPlansTheOverflowTextWidth() {
+        Font font = font();
+        ChipStrip strip = strip("Highpass", "Lowpass", "Bandpass", "Notch");
+        float firstChip = chipWidth(font, "Highpass");
+        float overflow = font.measure("+3").width();
+        float availableWidth = firstChip + ChipStrip.CHIP_GAP + overflow + 1;
 
-        ChipStrip.Plan plan = strip.plan(null, 40);
+        ChipStrip.Plan plan = strip.plan(font, availableWidth);
 
-        assertEquals(List.of("Alpha"), plan.labels());
+        assertEquals(List.of("Highpass"), plan.labels());
         assertEquals(3, plan.hidden());
-        assertEquals(40, plan.width(), 0.001f);
+        assertEquals(firstChip + ChipStrip.CHIP_GAP + overflow, plan.width(), 0.001f);
+        assertTrue(plan.width() <= availableWidth);
     }
 
     @Test
-    void measuresWithinTheAvailableWidthUsingTheOverflowPolicy() {
-        ChipStrip strip = strip("Alpha", "Beta", "Gamma", "Delta");
+    void measuresTheOverflowIndicatorWithoutChipPadding() {
+        Font font = font();
+        ChipStrip strip = strip("Highpass", "Lowpass", "Bandpass", "Notch");
+        float overflow = font.measure("+4").width();
 
-        assertEquals(40, strip.measure(null, 40).width(), 0.001f);
-        assertEquals(ChipStrip.CHIP_PADDING * 2, strip.measure(null, 30).width(), 0.001f);
-        assertEquals(10, strip.measure(null, 10).width(), 0.001f);
-        assertEquals(ChipStrip.CHIP_HEIGHT, strip.measure(null, 10).height(), 0.001f);
+        Size size = strip.measure(font, overflow);
+
+        assertEquals(overflow, size.width(), 0.001f);
+        assertEquals(ChipStrip.CHIP_HEIGHT, size.height(), 0.001f);
     }
 
     @Test
@@ -81,62 +94,86 @@ class ChipStripTest {
     }
 
     @Test
-    void paintsATrailingPillForChipsThatDoNotFit() {
-        List<RoundedRectCommand> chips = chips(paint(
-                strip("Alpha", "Beta", "Gamma", "Delta"),
-                new Rect(0, 0, 40, 20), new Rect(0, 0, 40, 20)));
+    void paintsTheFullOverflowCountWithoutAChipBackground() {
+        ChipStrip strip = strip("Highpass", "Lowpass", "Bandpass", "Notch");
+        Fixture fixture = fixture();
+        Font font = fixture.font();
+        float firstChip = chipWidth(font, "Highpass");
+        float overflow = font.measure("+3").width();
+        float availableWidth = firstChip + ChipStrip.CHIP_GAP + overflow + 1;
+        Rect content = new Rect(10, 10, availableWidth, 20);
+        Rect clip = new Rect(10, 10, availableWidth, 20);
 
-        assertEquals(2, chips.size());
-        assertEquals(ChipStrip.CHIP_PADDING * 2, chips.get(0).bounds().width(), 0.001f);
-        assertEquals(ChipStrip.CHIP_PADDING * 2, chips.get(1).bounds().width(), 0.001f);
+        List<DrawCommand> commands = paint(strip, fixture, content, clip);
+
+        assertEquals(1, chips(commands).size());
+        List<TextCommand> indicators = overflowTexts(commands);
+        assertEquals(2, indicators.size());
+        assertEquals(2, overflowGlyphCount(indicators));
+        assertTrue(indicators.getFirst().bounds().x() >= content.x());
+        assertTrue(indicators.getLast().bounds().right() <= content.right() + 0.001f);
+        for (TextCommand indicator : indicators) {
+            assertEquals(clip, indicator.clip());
+        }
     }
 
     @Test
-    void paintsASinglePillWhenNoChipFitsNextToIt() {
-        List<RoundedRectCommand> chips = chips(paint(
-                strip("Alpha", "Beta", "Gamma", "Delta"),
-                new Rect(0, 0, 30, 20), new Rect(0, 0, 30, 20)));
+    void showsTheDigitWhenTheOverflowTextExactlyFitsTheStrip() {
+        ChipStrip strip = strip("Highpass", "Lowpass");
+        Fixture fixture = fixture();
+        Font font = fixture.font();
+        float firstChip = chipWidth(font, "Highpass");
+        float overflow = font.measure("+1").width();
+        float availableWidth = firstChip + ChipStrip.CHIP_GAP + overflow;
 
-        assertEquals(1, chips.size());
-        assertEquals(ChipStrip.CHIP_PADDING * 2, chips.get(0).bounds().width(), 0.001f);
+        List<DrawCommand> commands = paint(strip, fixture, new Rect(0, 0, availableWidth, 20),
+                new Rect(0, 0, availableWidth, 20));
+
+        assertEquals(1, chips(commands).size());
+        assertEquals(2, overflowGlyphCount(overflowTexts(commands)));
     }
 
     @Test
-    void paintsOnlyTheFullPillWhenEvenThePillIsWiderThanTheContent() {
-        Rect content = new Rect(0, 0, 12, 20);
+    void paintsOnlyTheOverflowTextWhenNoChipFitsNextToIt() {
+        ChipStrip strip = strip("Alpha", "Beta", "Gamma", "Delta");
+        Fixture fixture = fixture();
+        Font font = fixture.font();
+        float overflow = font.measure("+4").width();
 
-        List<RoundedRectCommand> chips = chips(paint(
-                strip("Alpha", "Beta", "Gamma", "Delta"), content, content));
+        List<DrawCommand> commands = paint(strip, fixture, new Rect(0, 0, overflow, 20),
+                new Rect(0, 0, overflow, 20));
 
-        assertEquals(1, chips.size());
-        assertEquals(ChipStrip.CHIP_PADDING * 2, chips.get(0).bounds().width(), 0.001f);
-        assertTrue(chips.get(0).bounds().right() > content.right());
-        assertEquals(content, chips.get(0).clip());
+        assertTrue(chips(commands).isEmpty());
+        assertEquals(2, overflowGlyphCount(overflowTexts(commands)));
     }
 
     @Test
-    void countsEveryHiddenChipInThePill() {
+    void keepsEveryDigitOfALargeHiddenCount() {
         List<SelectOption> options = IntStream.range(0, 150)
                 .mapToObj(index -> new SelectOption("Tag " + index))
                 .toList();
         ChipStrip strip = ChipStrip.of(options);
+        Fixture fixture = fixture();
+        Font font = fixture.font();
+        float overflow = font.measure("+150").width();
 
-        ChipStrip.Plan plan = strip.plan(null, 40);
+        List<DrawCommand> commands = paint(strip, fixture, new Rect(0, 0, overflow, 20),
+                new Rect(0, 0, overflow, 20));
 
-        assertEquals(1, plan.labels().size());
-        assertEquals(149, plan.hidden());
-        assertEquals(2, chips(paint(strip, new Rect(0, 0, 40, 20),
-                new Rect(0, 0, 40, 20))).size());
+        assertTrue(chips(commands).isEmpty());
+        assertEquals(4, overflowGlyphCount(overflowTexts(commands)));
     }
 
     @Test
-    void ignoresDisabledOptionsWhenCountingThePill() {
+    void ignoresDisabledOptionsWhenCountingTheOverflowText() {
+        Font font = font();
         SelectOption alpha = new SelectOption("Alpha");
         SelectOption beta = new SelectOption("Beta");
         SelectOption gamma = new SelectOption("Gamma");
         beta.setDisabled(true);
 
-        ChipStrip.Plan plan = ChipStrip.of(List.of(alpha, beta, gamma)).plan(null, 30);
+        ChipStrip.Plan plan = ChipStrip.of(List.of(alpha, beta, gamma))
+                .plan(font, font.measure("+2").width());
 
         assertTrue(plan.labels().isEmpty());
         assertEquals(2, plan.hidden());
@@ -144,6 +181,10 @@ class ChipStripTest {
 
     private static ChipStrip strip(String... labels) {
         return ChipStrip.of(List.of(labels).stream().map(SelectOption::new).toList());
+    }
+
+    private static float chipWidth(Font font, String label) {
+        return font.measure(label).width() + ChipStrip.CHIP_PADDING * 2;
     }
 
     private static List<DrawCommand> paint(ChipStrip strip, Rect content, Rect clip) {
@@ -156,10 +197,54 @@ class ChipStripTest {
         return backend.lastDrawList().commands();
     }
 
+    private static List<DrawCommand> paint(ChipStrip strip, Fixture fixture, Rect content,
+                                           Rect clip) {
+        RenderManager renderer = fixture.renderer();
+        renderer.begin();
+        strip.paint(renderer, content, clip, fixture.font(), Theme.dark(), false);
+        renderer.end();
+        return fixture.backend().lastDrawList().commands();
+    }
+
     private static List<RoundedRectCommand> chips(List<DrawCommand> commands) {
         return commands.stream()
                 .filter(RoundedRectCommand.class::isInstance)
                 .map(RoundedRectCommand.class::cast)
                 .toList();
+    }
+
+    private static List<TextCommand> overflowTexts(List<DrawCommand> commands) {
+        Theme theme = Theme.dark();
+        return commands.stream()
+                .filter(TextCommand.class::isInstance)
+                .map(TextCommand.class::cast)
+                .filter(command -> command.colors().getFirst().equals(theme.textMuted())
+                        || command.colors().getFirst().equals(theme.text()))
+                .toList();
+    }
+
+    private static int overflowGlyphCount(List<TextCommand> commands) {
+        return commands.stream().mapToInt(command -> command.glyphs().size()).sum();
+    }
+
+    private static Fixture fixture() {
+        TestBackend backend = new TestBackend();
+        RenderManager renderer = new RenderManager(backend);
+        renderer.resize(VIEWPORT);
+        Font font = renderer.createFont(fontData(), 16);
+        return new Fixture(backend, renderer, font);
+    }
+
+    private static Font font() {
+        return Font.load(fontData(), 16);
+    }
+
+    private static FontData fontData() {
+        Optional<FontData> data = SystemFonts.findDefault();
+        Assumptions.assumeTrue(data.isPresent(), "No readable system font is installed.");
+        return data.get();
+    }
+
+    private record Fixture(TestBackend backend, RenderManager renderer, Font font) {
     }
 }

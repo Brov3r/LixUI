@@ -6,6 +6,7 @@ import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
 import com.lixui.input.event.PointerMoved;
 import com.lixui.render.RenderManager;
+import com.lixui.render.command.TextCommand;
 import com.lixui.text.Font;
 import com.lixui.text.FontData;
 import com.lixui.text.SystemFonts;
@@ -209,6 +210,102 @@ class ToastManagerTest {
         }
         assertTrue(toast.bounds().width() <= 120 + 24 + 30 + 0.001f,
                 "the card must follow the wrapped text width");
+    }
+
+    @Test
+    void longMessageStaysAboveTheTimerBarAtTheDrawnWrapWidth() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
+        manager.resize(TestViewports.LOGICAL);
+        manager.setDefaultFont(font(manager));
+        ToastManager toasts = overlay(manager);
+        ToastManager.Toast toast = toasts.show(new ToastManager.Options(LONG_MESSAGE)
+                .type(ToastManager.Type.ERROR)
+                .title("Upload failed")
+                .maxWidth(140)
+                .maxLines(0)
+                .duration(5));
+
+        manager.update(0.3f);
+        manager.layout();
+        manager.render();
+
+        Rect bounds = toast.bounds();
+        assertEquals(140 + 24 + 30, bounds.width(), 0.001f,
+                "the card must be sized for the wrap width that is actually drawn");
+        TextLayout layout = toast.messageLayout();
+        assertNotNull(layout);
+        assertTrue(layout.lines().size() > 3, "the long message must wrap into several lines");
+        for (TextLine line : layout.lines()) {
+            assertTrue(line.width() <= 140.001f,
+                    "a wrapped line must not exceed the wrap width");
+        }
+        TextCommand message = textCommands(backend).getLast();
+        float barTop = bounds.height() - 12 - 3;
+        assertTrue(message.bounds().bottom() <= barTop - 7 + 1,
+                "the last drawn message line must stay above the timer bar");
+        assertTrue(bounds.height() >= message.bounds().bottom() + 12 + 7 + 3 - 1,
+                "the card must reserve bottom padding and the timer rows below the text");
+    }
+
+    @Test
+    void cardWidthUsesTheConfiguredWrapWidthInsteadOfTheNarrowestLine() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
+        manager.resize(TestViewports.LOGICAL);
+        manager.setDefaultFont(font(manager));
+        ToastManager toasts = overlay(manager);
+        ToastManager.Toast toast = toasts.show(new ToastManager.Options(LONG_MESSAGE)
+                .maxWidth(200)
+                .maxLines(0)
+                .duration(5));
+
+        manager.update(0.3f);
+        manager.layout();
+        manager.render();
+
+        Rect bounds = toast.bounds();
+        assertEquals(200 + 24 + 30, bounds.width(), 0.001f,
+                "a message wider than the wrap width must keep the full text column");
+        TextLayout layout = toast.messageLayout();
+        assertNotNull(layout);
+        assertEquals(200, layout.style().maxWidth(), 0.001f);
+        assertTrue(layout.size().height() <= bounds.height() - 24 - 10 + 0.001f,
+                "the reserved height must cover every line wrapped at the drawn width");
+        TextCommand message = textCommands(backend).getLast();
+        assertTrue(message.bounds().right() <= bounds.width() - 12 + 1,
+                "the drawn glyphs must stay inside the card padding");
+    }
+
+    @Test
+    void constrainedCardHeightTruncatesTheMessageInsteadOfOverflowingIt() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
+        manager.resize(TestViewports.LOGICAL);
+        manager.setDefaultFont(font(manager));
+        Panel host = new Panel();
+        host.setBounds(new Rect(0, 0, 400, 300));
+        manager.add(host);
+        Toast toast = new Toast(new Toast.Options(LONG_MESSAGE)
+                .maxWidth(200)
+                .maxLines(0)
+                .duration(5));
+        toast.setBounds(new Rect(0, 0, 240, 72));
+        host.add(toast);
+
+        manager.update(0.3f);
+        manager.render();
+
+        TextLayout layout = toast.messageLayout();
+        assertNotNull(layout);
+        assertTrue(layout.lines().getLast().end() < LONG_MESSAGE.length(),
+                "a height-constrained card must ellipsize the message instead of clipping it");
+        Rect bounds = toast.bounds();
+        assertTrue(layout.size().height() + 12 + 7 + 3 <= bounds.height() + 1,
+                "the clamped message must still fit above the timer bar");
+        TextCommand message = textCommands(backend).getLast();
+        assertTrue(message.bounds().bottom() <= bounds.height() - 12 - 10 + 1,
+                "drawn message glyphs must stay above the timer bar");
     }
 
     @Test
@@ -510,6 +607,13 @@ class ToastManagerTest {
 
     private static List<String> messages(ToastManager toasts) {
         return toasts.visibleToasts().stream().map(ToastManager.Toast::message).toList();
+    }
+
+    private static List<TextCommand> textCommands(TestBackend backend) {
+        return backend.lastDrawList().commands().stream()
+                .filter(TextCommand.class::isInstance)
+                .map(TextCommand.class::cast)
+                .toList();
     }
 
     private static Font font(WidgetManager manager) {

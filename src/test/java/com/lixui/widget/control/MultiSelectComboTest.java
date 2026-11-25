@@ -13,6 +13,7 @@ import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.render.Viewport;
 import com.lixui.render.command.RoundedRectCommand;
+import com.lixui.render.command.TextCommand;
 import com.lixui.text.FontData;
 import com.lixui.text.SystemFonts;
 import com.lixui.widget.Widget;
@@ -240,19 +241,31 @@ class MultiSelectComboTest {
     }
 
     @Test
-    void drawsAnOverflowPillWhenTheFieldIsNarrow() {
+    void drawsTheOverflowCountAsPlainTextWhenTheFieldIsNarrow() {
         TestBackend backend = new TestBackend();
         WidgetManager manager = manager(backend);
+        useFont(manager);
         MultiSelectCombo combobox = combobox();
         combobox.setAll(true);
         manager.add(combobox);
-        combobox.setBounds(new Rect(10, 10, 60, 36));
+        float overflow = combobox.font().measure("+3").width();
+        combobox.setBounds(new Rect(10, 10, overflow + 40, 36));
         manager.render();
 
         List<RoundedRectCommand> chips = chipCommands(manager, backend);
+        Color muted = manager.context().theme().textMuted();
+        Color text = manager.context().theme().text();
+        List<TextCommand> indicators = backend.lastDrawList().commands().stream()
+                .filter(TextCommand.class::isInstance)
+                .map(TextCommand.class::cast)
+                .filter(command -> command.colors().getFirst().equals(muted)
+                        || command.colors().getFirst().equals(text))
+                .toList();
 
-        assertEquals(1, chips.size());
-        assertEquals(ChipStrip.CHIP_PADDING * 2, chips.get(0).bounds().width(), 0.01f);
+        assertTrue(chips.isEmpty());
+        assertEquals(2, indicators.size());
+        assertEquals(2, indicators.stream()
+                .mapToInt(command -> command.glyphs().size()).sum());
         assertEquals("Alpha +2", combobox.text());
     }
 

@@ -788,19 +788,18 @@ public class Toast extends Panel {
             return new Size(Math.max(1, width),
                     Math.max(MIN_HEIGHT, CARD_PADDING * 2 + timerRows));
         }
-        textWidth = textLimit(availableCardWidth);
         Font font = font();
-        Size titleSize = measure(font, title, titleStyle(textWidth));
-        Size messageSize = measure(font, message, messageStyle(textWidth));
-        float naturalTextWidth = Math.max(titleSize.width(), messageSize.width());
-        float width = Math.clamp(naturalTextWidth + CARD_PADDING * 2 + ICON_SPACE,
+        float naturalTextWidth = Math.max(naturalTextWidth(font, title),
+                naturalTextWidth(font, message));
+        float width = Math.clamp(Math.min(maxWidth, naturalTextWidth)
+                        + CARD_PADDING * 2 + ICON_SPACE,
                 lowerBound, availableCardWidth);
-        float textHeight = titleSize.height()
-                + (titleSize.height() > 0 && messageSize.height() > 0 ? TITLE_GAP : 0)
-                + messageSize.height();
-        float contentHeight = Math.max(ICON_SIZE, textHeight);
+        textWidth = textLimit(width);
+        TextBlock block = textBlock(font, textWidth, contentLimit(constraints.maxHeight()));
+        float contentHeight = Math.max(ICON_SIZE, block.textHeight());
         float height = Math.max(MIN_HEIGHT, contentHeight + CARD_PADDING * 2 + timerRows);
-        return new Size(Math.max(1, width), height);
+        height = Math.min(height, constraints.maxHeight());
+        return new Size(Math.max(1, width), Math.max(1, height));
     }
 
     /**
@@ -821,14 +820,9 @@ public class Toast extends Panel {
         if (customRenderer != null) {
             return;
         }
-        float availableText = Math.max(1, width - CARD_PADDING * 2 - ICON_SPACE);
-        textWidth = Math.max(1, Math.min(maxWidth, availableText));
-        Font font = font();
-        Size titleSize = measure(font, title, titleStyle(textWidth));
-        Size messageSize = measure(font, message, messageStyle(textWidth));
-        float textHeight = titleSize.height()
-                + (titleSize.height() > 0 && messageSize.height() > 0 ? TITLE_GAP : 0)
-                + messageSize.height();
+        textWidth = textLimit(width);
+        TextBlock block = textBlock(font(), textWidth, contentLimit(height));
+        float textHeight = block.textHeight();
         float iconY = CARD_PADDING + Math.max(0, (textHeight - ICON_SIZE) / 2);
         iconView.layout(new Rect(CARD_PADDING, iconY, ICON_SIZE, ICON_SIZE));
     }
@@ -878,39 +872,33 @@ public class Toast extends Panel {
 
     private void drawBody(RenderManager renderer, Theme theme, Color accentColor) {
         float width = localBounds().width();
-        float wrapWidth = Math.max(1, Math.min(maxWidth,
-                width - CARD_PADDING * 2 - ICON_SPACE));
+        float wrapWidth = textLimit(width);
         float textX = CARD_PADDING + ICON_SPACE;
         Font font = font();
-        float titleHeight = 0;
+        TextBlock block = textBlock(font, wrapWidth, contentLimit(localBounds().height()));
         if (font != null) {
-            if (!title.isEmpty()) {
-                TextStyle style = titleStyle(wrapWidth);
-                titleHeight = font.measure(title, style).height();
-                renderer.text(font, title, textX, CARD_PADDING, accentColor, style);
-                if (!message.isEmpty()) {
-                    titleHeight += TITLE_GAP;
-                }
+            if (block.titleLines() > 0) {
+                renderer.text(font, title, textX, CARD_PADDING, accentColor,
+                        titleStyle(wrapWidth, block.titleLines()));
             }
-            if (!message.isEmpty()) {
-                renderer.text(font, message, textX, CARD_PADDING + titleHeight,
-                        theme.text(), messageStyle(wrapWidth));
+            if (block.messageLines() > 0) {
+                float messageY = CARD_PADDING;
+                if (block.titleLines() > 0) {
+                    messageY += block.titleHeight() + TITLE_GAP;
+                }
+                renderer.text(font, message, textX, messageY, theme.text(),
+                        messageStyle(wrapWidth, block.messageLines()));
             }
         }
-        drawIcon(renderer, font, accentColor, wrapWidth);
+        drawIcon(renderer, accentColor, block);
     }
 
-    private void drawIcon(RenderManager renderer, Font font, Color accentColor, float wrapWidth) {
+    private void drawIcon(RenderManager renderer, Color accentColor, TextBlock block) {
         Texture texture = iconView.displayedTexture();
         if (texture == null) {
             return;
         }
-        Size titleSize = measure(font, title, titleStyle(wrapWidth));
-        Size messageSize = measure(font, message, messageStyle(wrapWidth));
-        float textHeight = titleSize.height()
-                + (titleSize.height() > 0 && messageSize.height() > 0 ? TITLE_GAP : 0)
-                + messageSize.height();
-        float iconY = CARD_PADDING + Math.max(0, (textHeight - ICON_SIZE) / 2);
+        float iconY = CARD_PADDING + Math.max(0, (block.textHeight() - ICON_SIZE) / 2);
         renderer.icon(texture, new Rect(CARD_PADDING, iconY, ICON_SIZE, ICON_SIZE),
                 ImageStyle.CONTAIN, accentColor);
     }
@@ -979,12 +967,74 @@ public class Toast extends Panel {
                 cardWidth - CARD_PADDING * 2 - ICON_SPACE));
     }
 
-    private static Options requireOptions(Options options) {
-        return Objects.requireNonNull(options, "options");
+    private float contentLimit(float cardHeight) {
+        return Math.max(0, cardHeight - CARD_PADDING * 2 - timerRows());
     }
 
-    private static Size measure(Font font, String text, TextStyle style) {
-        return font == null || text.isEmpty() ? new Size(0, 0) : font.measure(text, style);
+    private static float naturalTextWidth(Font font, String text) {
+        return font == null || text.isEmpty() ? 0 : font.measure(text).width();
+    }
+
+    /**
+     * Resolves the visible title and message rows for an exact card width and content height.
+     * The message is truncated with an ellipsis when the card height cannot show every wrapped
+     * line, so measurement, layout and drawing always agree on the same number of rows.
+     */
+    private TextBlock textBlock(Font font, float wrapWidth, float contentHeight) {
+        if (font == null) {
+            return new TextBlock(0, 0, 0, 0);
+        }
+        float lineHeight = font.lineHeight();
+        int fittingLines = linesThatFit(contentHeight, lineHeight);
+        int titleLines = 0;
+        float titleHeight = 0;
+        if (!title.isEmpty() && fittingLines > 0) {
+            Size natural = font.measure(title, titleStyle(wrapWidth));
+            int naturalLines = lineCount(natural.height(), lineHeight);
+            int reservedForMessage = message.isEmpty() ? 0 : 1;
+            titleLines = Math.min(naturalLines,
+                    Math.max(0, fittingLines - reservedForMessage));
+            if (titleLines > 0) {
+                titleHeight = titleLines < naturalLines
+                        ? font.measure(title, titleStyle(wrapWidth, titleLines)).height()
+                        : natural.height();
+            }
+        }
+        int messageLines = 0;
+        float messageHeight = 0;
+        if (!message.isEmpty()) {
+            float messageBudget = contentHeight - titleHeight;
+            if (titleHeight > 0) {
+                messageBudget -= TITLE_GAP;
+            }
+            int fittingForMessage = linesThatFit(messageBudget, lineHeight);
+            if (fittingForMessage > 0) {
+                int lineLimit = maxLines > 0 ? maxLines : Integer.MAX_VALUE;
+                Size natural = font.measure(message, messageStyle(wrapWidth, lineLimit));
+                int naturalLines = lineCount(natural.height(), lineHeight);
+                messageLines = Math.min(naturalLines, fittingForMessage);
+                messageHeight = messageLines < naturalLines
+                        ? font.measure(message, messageStyle(wrapWidth, messageLines)).height()
+                        : natural.height();
+            }
+        }
+        return new TextBlock(titleHeight, messageHeight, titleLines, messageLines);
+    }
+
+    private static int lineCount(float height, float lineHeight) {
+        return Math.max(1, Math.round(height / lineHeight));
+    }
+
+    private static int linesThatFit(float height, float lineHeight) {
+        if (height <= 0 || lineHeight <= 0) {
+            return 0;
+        }
+        // A tiny epsilon keeps an exact row multiple from losing its last line to float rounding.
+        return (int) Math.floor(height / lineHeight + 0.0001f);
+    }
+
+    private static Options requireOptions(Options options) {
+        return Objects.requireNonNull(options, "options");
     }
 
     TextLayout messageLayout() {
@@ -992,16 +1042,26 @@ public class Toast extends Panel {
         if (font == null) {
             return null;
         }
-        return font.layoutBlockRelative(message, messageStyle(resolvedTextWidth()));
+        float width = localBounds().width();
+        if (width <= 0) {
+            return font.layoutBlockRelative(message, messageStyle(resolvedTextWidth()));
+        }
+        TextBlock block = textBlock(font, textLimit(width), contentLimit(localBounds().height()));
+        if (block.messageLines() <= 0) {
+            return font.layoutBlockRelative(message,
+                    messageStyle(textLimit(width), Math.max(1, maxLines)));
+        }
+        return font.layoutBlockRelative(message,
+                messageStyle(textLimit(width), block.messageLines()));
     }
 
     private float resolvedTextWidth() {
-        if (textWidth > 0) {
-            return textWidth;
-        }
         float width = localBounds().width();
         if (width > 0) {
-            return Math.max(1, Math.min(maxWidth, width - CARD_PADDING * 2 - ICON_SPACE));
+            return textLimit(width);
+        }
+        if (textWidth > 0) {
+            return textWidth;
         }
         return Math.max(1, Math.min(maxWidth,
                 maxCardWidth - CARD_PADDING * 2 - ICON_SPACE));
@@ -1098,6 +1158,11 @@ public class Toast extends Panel {
                 HorizontalAlignment.LEFT, VerticalAlignment.TOP);
     }
 
+    private static TextStyle titleStyle(float width, int maxLines) {
+        return new TextStyle(width, 0, maxLines, TextOverflow.ELLIPSIS,
+                HorizontalAlignment.LEFT, VerticalAlignment.TOP);
+    }
+
     private static TextStyle messageStyle(float width, int maxLines) {
         return new TextStyle(width, 0, maxLines, TextOverflow.ELLIPSIS,
                 HorizontalAlignment.LEFT, VerticalAlignment.TOP);
@@ -1105,5 +1170,29 @@ public class Toast extends Panel {
 
     private TextStyle messageStyle(float width) {
         return messageStyle(width, maxLines);
+    }
+
+    /**
+     * Resolved text rows for the card width and height currently being measured or drawn.
+     *
+     * @param titleHeight visible title height in logical UI units
+     * @param messageHeight visible message height in logical UI units
+     * @param titleLines visible title rows
+     * @param messageLines visible message rows
+     */
+    private record TextBlock(float titleHeight, float messageHeight,
+                             int titleLines, int messageLines) {
+        /**
+         * Returns the combined height of the visible title and message rows.
+         *
+         * @return the text block height in logical UI units
+         */
+        float textHeight() {
+            float height = titleHeight + messageHeight;
+            if (titleHeight > 0 && messageHeight > 0) {
+                height += TITLE_GAP;
+            }
+            return height;
+        }
     }
 }

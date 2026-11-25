@@ -241,7 +241,7 @@ final class DemoWidgetScene implements AutoCloseable {
         feedback.addTab("Toasts", new DemoScrollPage(createToastPage()));
 
         TabPanel navigation = createGroupTabs();
-        navigation.addTab("Menu bar", new DemoMenuPage(fontFamily, this::bindIcon).create());
+        navigation.addTab("Menu bar", new DemoMenuPage(fontFamily).create());
         navigation.addTab("Breadcrumbs", new DemoBreadcrumbsPage(fontFamily).create());
         navigation.addTab("Radial", new DemoScrollPage(
                 new RadialMenuDemoPage(fontFamily, this::bindIcon).build()));

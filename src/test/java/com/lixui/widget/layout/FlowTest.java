@@ -3,6 +3,7 @@ package com.lixui.widget.layout;
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
 import com.lixui.widget.LayoutConstraints;
+import com.lixui.widget.Panel;
 import com.lixui.widget.Widget;
 import com.lixui.widget.testsupport.FixedWidget;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,22 @@ class FlowTest {
 
         assertEquals(124, measured.width(), 0.001f);
         assertEquals(54, measured.height(), 0.001f);
+    }
+
+    @Test
+    void zeroSizedLayoutKeepsPresetChildBounds() {
+        Flow flow = new Flow();
+        Panel cell = new Panel();
+        cell.setBounds(new Rect(0, 0, 60, 24));
+        flow.add(cell);
+
+        flow.layout(new Rect(0, 0, 0, 0));
+
+        assertEquals(new Rect(0, 0, 60, 24), cell.bounds());
+
+        flow.layout(new Rect(0, 0, 200, 100));
+
+        assertEquals(new Rect(0, 0, 60, 24), cell.bounds());
     }
 
     @Test

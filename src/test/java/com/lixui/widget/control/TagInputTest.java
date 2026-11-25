@@ -2,6 +2,7 @@ package com.lixui.widget.control;
 
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
+import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
 import com.lixui.input.Key;
 import com.lixui.input.Modifiers;
@@ -12,6 +13,8 @@ import com.lixui.input.event.KeyReleased;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.render.Viewport;
+import com.lixui.render.command.RoundedRectCommand;
+import com.lixui.render.command.TextCommand;
 import com.lixui.text.Font;
 import com.lixui.text.FontData;
 import com.lixui.text.SystemFonts;
@@ -235,7 +238,7 @@ class TagInputTest {
     }
 
     @Test
-    void replacesTagsBeyondTheRowLimitWithAnOverflowChip() {
+    void replacesTagsBeyondTheRowLimitWithAnOverflowIndicator() {
         TestBackend backend = new TestBackend();
         try (WidgetManager manager = manager(backend)) {
             manager.setDefaultFont(font(manager));
@@ -285,7 +288,7 @@ class TagInputTest {
     }
 
     @Test
-    void showsOnlyTheOverflowPillWhenTagsAndPillAreWiderThanTheChipArea() {
+    void showsOnlyTheOverflowIndicatorWhenTagsAndIndicatorAreWiderThanTheChipArea() {
         TestBackend backend = new TestBackend();
         try (WidgetManager manager = manager(backend)) {
             manager.setDefaultFont(font(manager));
@@ -307,6 +310,54 @@ class TagInputTest {
                     && button.isVisible()));
             assertTrue(overflow.isVisible());
             assertEquals("+150", overflow.text());
+        }
+    }
+
+    @Test
+    void paintsTheOverflowCountAsPlainTextWithoutAChipBackground() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            manager.setDefaultFont(font(manager));
+            TagInput input = new TagInput(List.of("alpha-long", "beta-long", "gamma-long",
+                    "delta-long", "epsilon-long", "zeta-long"));
+            input.setMaxRows(1);
+            input.setBounds(new Rect(0, 0, 190, 120));
+            manager.add(input);
+            manager.render();
+
+            Flow flow = (Flow) input.children().get(0);
+            List<Button> buttons = flow.children().stream()
+                    .map(Button.class::cast)
+                    .toList();
+            Button overflow = buttons.get(buttons.size() - 1);
+            Color chipFill = Color.mix(manager.context().theme().surface(),
+                    manager.context().theme().primary(), 0.2f);
+            long chipBackgrounds = backend.lastDrawList().commands().stream()
+                    .filter(RoundedRectCommand.class::isInstance)
+                    .map(RoundedRectCommand.class::cast)
+                    .filter(command -> command.color().equals(chipFill))
+                    .count();
+            long visibleTags = buttons.stream()
+                    .filter(button -> button != overflow && button.isVisible())
+                    .count();
+            Point origin = overflow.absolutePosition();
+            float left = origin.x() - 0.5f;
+            float right = origin.x() + overflow.bounds().width() + 0.5f;
+            // Text bounds are local to the widget; the widget transform holds the absolute offset.
+            List<TextCommand> indicators = backend.lastDrawList().commands().stream()
+                    .filter(TextCommand.class::isInstance)
+                    .map(TextCommand.class::cast)
+                    .filter(command -> command.bounds().x() + command.transform().m02() >= left
+                            && command.bounds().x() + command.transform().m02() <= right)
+                    .toList();
+
+            assertTrue(overflow.isVisible());
+            assertTrue(overflow.text().startsWith("+"));
+            assertTrue(overflow.bounds().width() + 0.01f
+                    >= overflow.font().measure(overflow.text()).width());
+            assertEquals(visibleTags, chipBackgrounds);
+            assertEquals(overflow.text().length(), indicators.stream()
+                    .mapToInt(command -> command.glyphs().size()).sum());
         }
     }
 

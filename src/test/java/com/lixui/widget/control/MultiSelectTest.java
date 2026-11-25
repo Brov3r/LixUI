@@ -12,6 +12,7 @@ import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.render.Viewport;
 import com.lixui.render.command.RoundedRectCommand;
+import com.lixui.render.command.TextCommand;
 import com.lixui.text.Font;
 import com.lixui.text.FontData;
 import com.lixui.text.SystemFonts;
@@ -166,7 +167,7 @@ class MultiSelectTest {
     }
 
     @Test
-    void drawsAnOverflowPillInsideTheContentClip() {
+    void drawsTheOverflowCountAsPlainTextInsideTheContentClip() {
         TestBackend backend = new TestBackend();
         WidgetManager manager = manager(backend);
         useFont(manager);
@@ -180,37 +181,42 @@ class MultiSelectTest {
         Font font = multi.font();
 
         float alpha = font.measure("Alpha").width() + ChipStrip.CHIP_PADDING * 2;
-        float beta = font.measure("Beta").width() + ChipStrip.CHIP_PADDING * 2;
-        float pill = font.measure("+3").width() + ChipStrip.CHIP_PADDING * 2;
-        float contentWidth = alpha + ChipStrip.CHIP_GAP + pill + ChipStrip.CHIP_GAP
-                + beta - 1;
+        float overflow = font.measure("+3").width();
+        float contentWidth = alpha + ChipStrip.CHIP_GAP + overflow + 1;
         multi.setBounds(new Rect(10, 10, contentWidth + 40, 36));
         manager.render();
 
         List<RoundedRectCommand> chips = chipCommands(manager, backend);
+        List<TextCommand> indicators = overflowTextCommands(manager, backend);
 
-        assertEquals(2, chips.size());
+        assertEquals(1, chips.size());
         assertEquals(alpha, chips.get(0).bounds().width(), 0.01f);
-        assertEquals(pill, chips.get(1).bounds().width(), 0.01f);
         assertEquals(new Rect(18, 18, contentWidth, 20), chips.get(0).clip());
-        assertEquals(new Rect(18, 18, contentWidth, 20), chips.get(1).clip());
+        assertEquals(2, indicators.size());
+        assertEquals(2, indicatorGlyphCount(indicators));
+        for (TextCommand indicator : indicators) {
+            assertEquals(new Rect(18, 18, contentWidth, 20), indicator.clip());
+        }
+        assertTrue(indicators.getLast().bounds().right() <= 18 + contentWidth + 0.01f);
     }
 
     @Test
-    void drawsOnlyTheFullOverflowPillWhenTheFieldIsTooNarrowForAChip() {
+    void drawsOnlyTheOverflowCountWhenTheFieldIsTooNarrowForAChip() {
         TestBackend backend = new TestBackend();
         WidgetManager manager = manager(backend);
+        useFont(manager);
         MultiSelect multi = multiSelect();
         multi.setAll(true);
         manager.add(multi);
-        multi.setBounds(new Rect(10, 10, 50, 36));
+        float overflow = multi.font().measure("+3").width();
+        multi.setBounds(new Rect(10, 10, overflow + 40, 36));
         manager.render();
 
-        List<RoundedRectCommand> chips = chipCommands(manager, backend);
+        assertTrue(chipCommands(manager, backend).isEmpty());
+        List<TextCommand> indicators = overflowTextCommands(manager, backend);
 
-        assertEquals(1, chips.size());
-        assertEquals(ChipStrip.CHIP_PADDING * 2, chips.get(0).bounds().width(), 0.01f);
-        assertEquals(new Rect(18, 18, 10, 20), chips.get(0).clip());
+        assertEquals(2, indicators.size());
+        assertEquals(2, indicatorGlyphCount(indicators));
     }
 
     @Test
@@ -307,6 +313,22 @@ class MultiSelectTest {
                 .map(RoundedRectCommand.class::cast)
                 .filter(command -> command.color().equals(chipFill))
                 .toList();
+    }
+
+    private static List<TextCommand> overflowTextCommands(WidgetManager manager,
+                                                          TestBackend backend) {
+        Color muted = manager.context().theme().textMuted();
+        Color text = manager.context().theme().text();
+        return backend.lastDrawList().commands().stream()
+                .filter(TextCommand.class::isInstance)
+                .map(TextCommand.class::cast)
+                .filter(command -> command.colors().getFirst().equals(muted)
+                        || command.colors().getFirst().equals(text))
+                .toList();
+    }
+
+    private static int indicatorGlyphCount(List<TextCommand> commands) {
+        return commands.stream().mapToInt(command -> command.glyphs().size()).sum();
     }
 
     private static void useFont(WidgetManager manager) {

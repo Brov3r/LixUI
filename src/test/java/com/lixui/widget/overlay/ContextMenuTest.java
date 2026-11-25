@@ -17,6 +17,7 @@ import com.lixui.widget.Panel;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.testsupport.TestBackend;
+import com.lixui.widget.testsupport.TestTexture;
 import com.lixui.widget.testsupport.TestViewports;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -241,6 +242,31 @@ class ContextMenuTest {
         assertThrows(IllegalArgumentException.class, () -> menu.setCornerRadius(-1));
         assertThrows(NullPointerException.class, () -> menu.setDangerColor(null));
         assertThrows(NullPointerException.class, () -> menu.addItem((ContextMenu.Item) null));
+    }
+
+    @Test
+    void hidesIconsAndTheCheckSlotWhenIconsAreDisabled() {
+        WidgetManager manager = manager();
+        ContextMenu plain = new ContextMenu();
+        plain.setMinimumMenuWidth(0);
+        plain.addItem("Open", null);
+        plain.open(manager.context(), 100, 100);
+        manager.layout();
+        float plainWidth = plain.levelBounds(0).width();
+        plain.close();
+
+        ContextMenu menu = new ContextMenu();
+        menu.setMinimumMenuWidth(0);
+        assertTrue(menu.isIconsVisible());
+        menu.setIconsVisible(false);
+        assertFalse(menu.isIconsVisible());
+        ContextMenu.Item open = menu.addItem("Open", null);
+        open.setChecked(true);
+        open.setIcon(new TestTexture(16, 16));
+        menu.open(manager.context(), 100, 100);
+        manager.layout();
+
+        assertEquals(plainWidth, menu.levelBounds(0).width(), 0.01f);
     }
 
     private static void click(WidgetManager manager, float x, float y) {

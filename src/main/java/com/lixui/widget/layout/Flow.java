@@ -14,7 +14,9 @@ import java.util.List;
  * line; {@link Widget#grow()} is ignored. Each line is as tall as its tallest child, and the gap is
  * applied both between children on a line and between lines.
  * <p>
- * Invisible children take no space and keep their bounds.
+ * When an axis has no space, the layout keeps the current child bounds instead of shrinking every
+ * child to zero, so preset sizes survive transient hidden or collapsed layouts. Invisible children
+ * take no space and keep their bounds.
  */
 public final class Flow extends LayoutContainer {
     private float gap;
@@ -93,6 +95,9 @@ public final class Flow extends LayoutContainer {
     protected void onLayout() {
         float contentWidth = contentWidth();
         float contentHeight = contentHeight();
+        if (contentWidth <= 0 || contentHeight <= 0) {
+            return;
+        }
         float x = 0;
         float y = 0;
         float lineHeight = 0;

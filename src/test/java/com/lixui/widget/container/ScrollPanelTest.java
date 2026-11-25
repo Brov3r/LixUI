@@ -369,10 +369,33 @@ class ScrollPanelTest {
         manager.add(panel);
         manager.render();
 
-        assertEquals(new Rect(177, 8, 8, 117),
+        assertEquals(new Rect(178, 7, 8, 119),
                 bar(panel, ScrollBar.Orientation.VERTICAL).bounds());
-        assertEquals(new Rect(10, 125, 167, 8),
+        assertEquals(new Rect(9, 126, 169, 8),
                 bar(panel, ScrollBar.Orientation.HORIZONTAL).bounds());
+    }
+
+    @Test
+    void keepsBothScrollbarsFourPixelsFromThePanelEdges() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
+        manager.resize(VIEWPORT);
+        ScrollPanel panel = new ScrollPanel();
+        panel.setBounds(PANEL_BOUNDS);
+        panel.setContentInsets(0, 12, 12, 0);
+        Widget content = new Widget() { };
+        content.setBounds(new Rect(0, 0, 400, 600));
+        panel.setContent(content);
+        manager.add(panel);
+        manager.render();
+
+        ScrollBar vertical = bar(panel, ScrollBar.Orientation.VERTICAL);
+        ScrollBar horizontal = bar(panel, ScrollBar.Orientation.HORIZONTAL);
+        assertEquals(4, panel.scrollBarMargin(), 0.001f);
+        assertEquals(PANEL_BOUNDS.right() - 4, vertical.bounds().right(), 0.001f);
+        assertEquals(PANEL_BOUNDS.bottom() - 4, horizontal.bounds().bottom(), 0.001f);
+        assertTrue(hasDrawnBounds(backend, vertical.bounds()));
+        assertTrue(hasDrawnBounds(backend, horizontal.bounds()));
     }
 
     @Test
@@ -389,6 +412,13 @@ class ScrollPanelTest {
 
         assertFalse(bar(panel, ScrollBar.Orientation.VERTICAL).isVisible());
         assertFalse(bar(panel, ScrollBar.Orientation.HORIZONTAL).isVisible());
+    }
+
+    private static boolean hasDrawnBounds(TestBackend backend, Rect bounds) {
+        return backend.lastDrawList().commands().stream()
+                .filter(RoundedRectCommand.class::isInstance)
+                .map(RoundedRectCommand.class::cast)
+                .anyMatch(command -> command.bounds().equals(bounds));
     }
 
     private static ScrollBar bar(ScrollPanel panel, ScrollBar.Orientation orientation) {

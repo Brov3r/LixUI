@@ -80,6 +80,7 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
     private float cornerRadius = DEFAULT_CORNER_RADIUS;
     private Color dangerColor = Color.hex("#E06C75");
     private boolean closeOnOutsideClick = true;
+    private boolean iconsVisible = true;
     private Runnable closeListener;
     private Widget focusReturn;
 
@@ -260,6 +261,26 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
             throw new IllegalArgumentException("Icon size must be finite and positive.");
         }
         this.iconSize = iconSize;
+    }
+
+    /**
+     * Reports whether item icons and the check-mark slot are shown.
+     *
+     * @return true when icons and check marks occupy a leading slot
+     */
+    public final boolean isIconsVisible() {
+        return iconsVisible;
+    }
+
+    /**
+     * Enables or disables the leading icon slot.
+     * When disabled, item icons are not drawn, no icon or check-mark width is reserved, and a
+     * checked item shows no mark. Shortcuts and submenu arrows are unaffected.
+     *
+     * @param iconsVisible true to reserve and draw the icon slot
+     */
+    public final void setIconsVisible(boolean iconsVisible) {
+        this.iconsVisible = iconsVisible;
     }
 
     /**
@@ -552,7 +573,7 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
                 ? SCROLLBAR_THICKNESS + SCROLLBAR_GAP : 0;
         float contentRight = level.bounds.right() - padding - scrollbarSpace;
         float y = level.bounds.y() + padding - level.scrollY;
-        boolean checkSlot = hasChecked(level);
+        boolean checkSlot = iconsVisible && hasChecked(level);
         for (int index = 0; index < level.items.size(); index++) {
             Item item = level.items.get(index);
             float height = rowHeight(item);
@@ -593,7 +614,7 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
             }
             x += iconSize + ICON_GAP;
         }
-        if (item.icon() != null) {
+        if (item.icon() != null && iconsVisible) {
             renderer.icon(item.icon(), new Rect(x, y + (height - iconSize) / 2,
                     iconSize, iconSize), ImageStyle.ICON, color);
             x += iconSize + ICON_GAP;
@@ -719,7 +740,7 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
     private float measureWidth(Level level) {
         Font font = font();
         float content = 0;
-        boolean checkSlot = hasChecked(level);
+        boolean checkSlot = iconsVisible && hasChecked(level);
         for (Item item : level.items) {
             if (item.isSeparator()) {
                 continue;
@@ -735,7 +756,7 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
         if (checkSlot) {
             width += iconSize + ICON_GAP;
         }
-        if (item.icon() != null) {
+        if (item.icon() != null && iconsVisible) {
             width += iconSize + ICON_GAP;
         }
         if (font != null && !item.label().isEmpty()) {

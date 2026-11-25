@@ -53,7 +53,7 @@ final class OptionList extends Widget {
     }
 
     private static final float BAR_THICKNESS = 6;
-    private static final float BAR_MARGIN = 2;
+    private static final float BAR_MARGIN = 4;
     private static final float ICON_GAP = 6;
     private static final float CHECK_SIZE = 14;
 

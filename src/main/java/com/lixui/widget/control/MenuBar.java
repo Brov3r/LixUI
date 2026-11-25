@@ -26,9 +26,10 @@ import java.util.Objects;
  * A permanent row of menu titles that opens dropdown menus on click or hover.
  * Titles are flat text labels with a subtle hover highlight and an accented open state, so the bar
  * reads as a menu strip rather than a row of buttons.
- * Each dropdown reuses {@link ContextMenu}, so it supports icons, shortcuts, check marks, disabled
- * rows and nested submenus. Moving the pointer to another title switches the open menu; an outside
- * press or Escape closes it and returns keyboard focus to the title when appropriate.
+ * Each dropdown reuses {@link ContextMenu}, so it supports shortcuts, disabled rows and nested
+ * submenus. Item icons and check marks are disabled for bar dropdowns. Moving the pointer to
+ * another title switches the open menu; an outside press or Escape closes it and returns
+ * keyboard focus to the title when appropriate.
  */
 public class MenuBar extends Panel {
     private final HBox row = new HBox();
@@ -316,15 +317,6 @@ public class MenuBar extends Panel {
             return menu.items();
         }
 
-        /**
-         * Returns the icon edge length used by dropdown items.
-         *
-         * @return the icon size in logical UI units
-         */
-        public float iconSize() {
-            return menu.iconSize();
-        }
-
         ContextMenu contextMenu() {
             return menu;
         }
@@ -340,7 +332,6 @@ public class MenuBar extends Panel {
         private static final float HOVER_ALPHA = 0.12f;
         private static final float PRESSED_ALPHA = 0.18f;
         private static final float OPEN_ALPHA = 0.16f;
-        private static final float UNDERLINE_HEIGHT = 2;
 
         private boolean open;
 
@@ -415,7 +406,6 @@ public class MenuBar extends Panel {
             if (open) {
                 renderer.roundedRect(localBounds(), HIGHLIGHT_RADIUS,
                         theme.primary().withAlpha(OPEN_ALPHA));
-                drawUnderline(renderer, theme);
             } else if (state == WidgetState.PRESSED) {
                 renderer.roundedRect(localBounds(), HIGHLIGHT_RADIUS,
                         theme.primary().withAlpha(PRESSED_ALPHA));
@@ -424,20 +414,13 @@ public class MenuBar extends Panel {
                         theme.primary().withAlpha(HOVER_ALPHA));
             }
         }
-
-        private void drawUnderline(RenderManager renderer, Theme theme) {
-            float height = localBounds().height();
-            float width = Math.max(0, localBounds().width() - HORIZONTAL_PADDING);
-            if (width <= 0 || height <= 0) {
-                return;
-            }
-            float thickness = Math.min(UNDERLINE_HEIGHT, height);
-            renderer.rect(new Rect(HORIZONTAL_PADDING / 2, height - thickness, width, thickness),
-                    theme.primary());
-        }
     }
 
     private final class BarMenu extends ContextMenu {
+        private BarMenu() {
+            setIconsVisible(false);
+        }
+
         /**
          * Switches to the menu title under the pointer.
          *

@@ -6,8 +6,6 @@ import com.lixui.graphics.Color;
 import com.lixui.render.RenderManager;
 import com.lixui.text.Font;
 import com.lixui.text.HorizontalAlignment;
-import com.lixui.text.TextOverflow;
-import com.lixui.text.TextStyle;
 import com.lixui.text.VerticalAlignment;
 import com.lixui.theme.Theme;
 
@@ -17,8 +15,9 @@ import java.util.Objects;
 
 /**
  * Measures and paints the horizontal strip of selected-value chips shared by multi-select fields.
- * Whole chips are shown first; a trailing pill reports how many chips do not fit, so a narrow
- * field never truncates an individual chip to make room for the count.
+ * Whole chips are shown first; a trailing plain-text indicator reports how many chips do not fit.
+ * The indicator has no chip surface, so a narrow field never truncates an individual chip to make
+ * room for the count.
  */
 final class ChipStrip {
     static final float CHIP_HEIGHT = 20;
@@ -84,9 +83,9 @@ final class ChipStrip {
 
     /**
      * Measures the strip using the overflow policy for the supplied width.
-     * Whole chips that fit are kept, and the remaining count collapses into a trailing pill.
-     * When even one whole chip does not fit, the result is the width of the pill alone, clamped to
-     * the available width.
+     * Whole chips that fit are kept, and the remaining count collapses into a trailing plain-text
+     * indicator. When even one whole chip does not fit, the result is the width of the indicator
+     * alone, clamped to the available width.
      *
      * @param font font used for labels, or null when no font is available
      * @param availableWidth width available for the strip
@@ -102,7 +101,8 @@ final class ChipStrip {
     }
 
     /**
-     * Chooses the whole chips that fit and counts the rest for the trailing pill.
+     * Chooses the whole chips that fit and counts the rest for the trailing text indicator.
+     * The indicator width is the measured text width and never includes chip padding.
      *
      * @param font font used for labels, or null when no font is available
      * @param availableWidth width available for the strip
@@ -118,7 +118,7 @@ final class ChipStrip {
         for (int candidate = 1; candidate < labels.size(); candidate++) {
             int hidden = labels.size() - candidate;
             float width = prefixWidth(widths, candidate)
-                    + CHIP_GAP + chipWidth(font, "+" + hidden);
+                    + CHIP_GAP + textWidth(font, overflowText(hidden));
             if (width > availableWidth) {
                 break;
             }
@@ -126,7 +126,7 @@ final class ChipStrip {
         }
         int hidden = labels.size() - visible;
         float width = prefixWidth(widths, visible)
-                + (visible > 0 ? CHIP_GAP : 0) + chipWidth(font, "+" + hidden);
+                + (visible > 0 ? CHIP_GAP : 0) + textWidth(font, overflowText(hidden));
         return new Plan(labels.subList(0, visible), hidden, width);
     }
 
@@ -153,16 +153,18 @@ final class ChipStrip {
         }
         Color fill = Color.mix(theme.surface(), theme.primary(), CHIP_FILL_AMOUNT);
         Color text = disabled ? theme.textMuted() : theme.primary();
+        Color overflowMark = theme.textMuted();
+        Color overflowCount = disabled ? theme.textMuted() : theme.text();
         renderer.pushClip(clip);
         try {
-            paintClipped(renderer, content, font, fill, text);
+            paintClipped(renderer, content, font, fill, text, overflowMark, overflowCount);
         } finally {
             renderer.popClip();
         }
     }
 
     private void paintClipped(RenderManager renderer, Rect content, Font font,
-                              Color fill, Color text) {
+                              Color fill, Color text, Color overflowMark, Color overflowCount) {
         float chipHeight = Math.min(CHIP_HEIGHT, content.height());
         float chipY = content.y() + (content.height() - chipHeight) / 2;
         Plan plan = plan(font, content.width());
@@ -172,10 +174,9 @@ final class ChipStrip {
             drawChip(renderer, chipX, chipY, width, chipHeight, label, font, fill, text);
             chipX += width + CHIP_GAP;
         }
-        if (plan.hidden() > 0) {
-            String pill = "+" + plan.hidden();
-            drawChip(renderer, chipX, chipY, chipWidth(font, pill), chipHeight, pill,
-                    font, fill, text);
+        if (plan.hidden() > 0 && font != null) {
+            drawOverflow(renderer, chipX, content, font, overflowMark, overflowCount,
+                    plan.hidden());
         }
     }
 
@@ -199,15 +200,23 @@ final class ChipStrip {
     }
 
     private static float chipWidth(Font font, String label) {
-        return textSize(font, label).width() + CHIP_PADDING * 2;
+        return textWidth(font, label) + CHIP_PADDING * 2;
     }
 
-    private static Size textSize(Font font, String label) {
-        return font == null ? new Size(0, 0) : font.measure(label);
+    private static float textWidth(Font font, String text) {
+        return textSize(font, text).width();
+    }
+
+    private static Size textSize(Font font, String text) {
+        return font == null ? new Size(0, 0) : font.measure(text);
     }
 
     private static float totalWidth(List<Float> widths) {
         return prefixWidth(widths, widths.size());
+    }
+
+    private static String overflowText(int hidden) {
+        return "+" + hidden;
     }
 
     private static void drawChip(RenderManager renderer, float x, float y, float width,
@@ -218,14 +227,20 @@ final class ChipStrip {
         }
         renderer.roundedRect(new Rect(x, y, width, height), height / 2, fill);
         if (font != null) {
+            // Clipping to width - padding * 2 can round below the measured advance and wrap the
+            // last glyph out of the single-line layout.
             renderer.text(font, label, x + CHIP_PADDING, y + height / 2, textColor,
-                    clip(Math.max(0, width - CHIP_PADDING * 2)));
+                    HorizontalAlignment.LEFT, VerticalAlignment.CENTER);
         }
     }
 
-    private static TextStyle clip(float width) {
-        return new TextStyle(width, 0, 1, TextOverflow.CLIP,
+    private static void drawOverflow(RenderManager renderer, float x, Rect content, Font font,
+                                     Color markColor, Color countColor, int hidden) {
+        float centerY = content.y() + content.height() / 2;
+        renderer.text(font, "+", x, centerY, markColor,
                 HorizontalAlignment.LEFT, VerticalAlignment.CENTER);
+        renderer.text(font, Integer.toString(hidden), x + font.measure("+").width(), centerY,
+                countColor, HorizontalAlignment.LEFT, VerticalAlignment.CENTER);
     }
 
     record Plan(List<String> labels, int hidden, float width) {

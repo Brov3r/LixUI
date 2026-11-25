@@ -20,7 +20,7 @@ import java.util.Objects;
  */
 public class ScrollPanel extends Panel {
     private static final float BAR_THICKNESS = 8;
-    private static final float DEFAULT_BAR_MARGIN = 5;
+    private static final float DEFAULT_BAR_MARGIN = 4;
     private static final float WHEEL_STEP = 48;
     private static final float SMOOTH_SCROLL_SECONDS = 0.18f;
 
@@ -172,7 +172,9 @@ public class ScrollPanel extends Panel {
 
     /**
      * Sets the inset of the scrollable content area from this panel's edges.
-     * The inset keeps fixed chrome outside the scrolled content and is used for scrollbar placement.
+     * The inset keeps fixed chrome outside the scrolled content. Scrollbars are positioned from the
+     * panel edges, so use {@link #setScrollBarInsets(float, float, float, float)} to keep them clear
+     * of the same chrome.
      *
      * @param top top inset in logical UI units
      * @param right right inset in logical UI units
@@ -230,7 +232,9 @@ public class ScrollPanel extends Panel {
 
     /**
      * Sets additional insets applied only to the scrollbar tracks.
-     * This keeps scrollbars clear of resize handles or other fixed corner controls.
+     * Insets are measured from the panel edges and are added to the configured scrollbar margin.
+     * This keeps scrollbars clear of resize handles or other fixed corner controls without changing
+     * the content viewport.
      *
      * @param top top scrollbar inset
      * @param right right scrollbar inset
@@ -326,18 +330,20 @@ public class ScrollPanel extends Panel {
     }
 
     /**
-     * Returns the scrollbar inset from the panel edges.
+     * Returns the gap between the scrollbar inset boundary and the visible scrollbar surface.
      *
-     * @return the inset in logical UI units
+     * @return the gap in logical UI units
      */
     public float scrollBarMargin() {
         return scrollBarMargin;
     }
 
     /**
-     * Sets the scrollbar inset from the panel edges.
+     * Sets the gap between the scrollbar inset boundary and the visible scrollbar surface.
+     * The gap applies to the right edge of the vertical bar and the bottom edge of the horizontal
+     * bar; it does not include the bar thickness. The default is 4 logical UI units.
      *
-     * @param scrollBarMargin non-negative inset in logical UI units
+     * @param scrollBarMargin non-negative gap in logical UI units
      * @throws IllegalArgumentException if the margin is negative or non-finite
      */
     public void setScrollBarMargin(float scrollBarMargin) {
@@ -518,8 +524,10 @@ public class ScrollPanel extends Panel {
     }
 
     private void updateScrollbars() {
-        float width = contentAreaWidth();
-        float height = contentAreaHeight();
+        float viewportWidth = contentAreaWidth();
+        float viewportHeight = contentAreaHeight();
+        float panelWidth = localBounds().width();
+        float panelHeight = localBounds().height();
         float contentWidth = content.bounds().width();
         float contentHeight = content.bounds().height();
         float maxX = maxScrollX();
@@ -531,19 +539,19 @@ public class ScrollPanel extends Panel {
         setVisibleIfChanged(horizontalBar, horizontal);
         setVisibleIfChanged(verticalBar, vertical);
         syncScrollbars();
-        horizontalBar.setVisibleFraction(contentWidth > 0 ? width / contentWidth : 1);
-        verticalBar.setVisibleFraction(contentHeight > 0 ? height / contentHeight : 1);
-        float verticalHeight = Math.max(0, height - scrollBarInsetTop - scrollBarInsetBottom
+        horizontalBar.setVisibleFraction(contentWidth > 0 ? viewportWidth / contentWidth : 1);
+        verticalBar.setVisibleFraction(contentHeight > 0 ? viewportHeight / contentHeight : 1);
+        float verticalHeight = Math.max(0, panelHeight - scrollBarInsetTop - scrollBarInsetBottom
                 - scrollBarMargin * 2 - (horizontal ? BAR_THICKNESS : 0));
-        float horizontalWidth = Math.max(0, width - scrollBarInsetLeft - scrollBarInsetRight
+        float horizontalWidth = Math.max(0, panelWidth - scrollBarInsetLeft - scrollBarInsetRight
                 - scrollBarMargin * 2 - (vertical ? BAR_THICKNESS : 0));
         verticalBar.layout(new Rect(
-                contentInsetLeft + width - scrollBarInsetRight - scrollBarMargin - BAR_THICKNESS,
-                contentInsetTop + scrollBarInsetTop + scrollBarMargin,
+                panelWidth - scrollBarInsetRight - scrollBarMargin - BAR_THICKNESS,
+                scrollBarInsetTop + scrollBarMargin,
                 BAR_THICKNESS, verticalHeight));
         horizontalBar.layout(new Rect(
-                contentInsetLeft + scrollBarInsetLeft + scrollBarMargin,
-                contentInsetTop + height - scrollBarInsetBottom - scrollBarMargin - BAR_THICKNESS,
+                scrollBarInsetLeft + scrollBarMargin,
+                panelHeight - scrollBarInsetBottom - scrollBarMargin - BAR_THICKNESS,
                 horizontalWidth, BAR_THICKNESS));
     }
 

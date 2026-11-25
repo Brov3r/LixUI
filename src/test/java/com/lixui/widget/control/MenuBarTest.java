@@ -164,11 +164,9 @@ class MenuBarTest {
         Color primary = manager.context().theme().primary();
         List<RoundedRectCommand> open = roundedRectsInside(backend.lastDrawList().commands(),
                 absoluteBounds(title));
-        assertEquals(2, open.size());
-        assertTrue(open.stream().anyMatch(command -> command.radius() == 3
-                && command.color().equals(primary.withAlpha(0.16f))));
-        assertTrue(open.stream().anyMatch(command -> command.color().equals(primary)
-                && command.bounds().height() == 2));
+        assertEquals(1, open.size());
+        assertEquals(3, open.getFirst().radius(), 0.0001f);
+        assertEquals(primary.withAlpha(0.16f), open.getFirst().color());
 
         Widget emptyTitle = button(bar, 1);
         move(manager, emptyTitle);
@@ -225,7 +223,7 @@ class MenuBarTest {
     }
 
     @Test
-    void droppedIconsAndCheckedRowsStillRenderInsideTheMenu() {
+    void hidesIconsAndCheckMarksInsideTheDropdown() {
         TestBackend backend = new TestBackend();
         WidgetManager manager = manager(backend);
         MenuBar bar = bar();
@@ -249,8 +247,7 @@ class MenuBarTest {
                 .filter(ImageCommand.class::isInstance)
                 .map(ImageCommand.class::cast)
                 .toList();
-        assertTrue(images.stream().anyMatch(command -> command.texture() == icon));
-        assertTrue(images.stream().anyMatch(command -> command.texture() != icon));
+        assertTrue(images.isEmpty());
     }
 
     private static MenuBar bar() {
