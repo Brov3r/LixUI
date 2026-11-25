@@ -80,6 +80,7 @@ import com.lixui.widget.layout.HBox;
 import com.lixui.widget.layout.Stack;
 import com.lixui.widget.layout.VBox;
 import com.lixui.widget.overlay.ContextMenu;
+import com.lixui.widget.overlay.ToastManager;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -125,6 +126,7 @@ final class DemoWidgetScene implements AutoCloseable {
 
     private final WidgetManager manager;
     private final RenderBackend backend;
+    private final ToastManager toasts;
     private final Widget background;
     private final Button themeButton;
     private final Dropdown themeSelect;
@@ -154,6 +156,7 @@ final class DemoWidgetScene implements AutoCloseable {
     DemoWidgetScene(InputState input, RenderBackend backend, UiPlatform platform) {
         this.backend = backend;
         manager = new WidgetManager(input, backend, platform);
+        toasts = new ToastManager(manager.context());
         fontFamily = createFontFamily();
         background = new Background();
         themeButton = new Button();
@@ -245,6 +248,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 outerTabs.addTab("Reorder", createReorderPage())::setIcon);
         bindIcon("menu-open.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Accordion", createAccordionPage())::setIcon);
+        bindIcon("notification.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Toasts", createToastPage())::setIcon);
         window = new Window();
         window.setTitle("LixUI - Demo Window");
         bindIcon("ui.svg", THEME_ICON_SIZE, window::setHeaderIcon);
@@ -1638,6 +1643,92 @@ final class DemoWidgetScene implements AutoCloseable {
         return label;
     }
 
+    private Widget createToastPage() {
+        Label status = new Label("Toasts stack in the selected corner and expire automatically.");
+        status.setFontFamily(fontFamily);
+        status.setAutoSize(false);
+        status.setWrap(true);
+
+        SegmentedButton corner = new SegmentedButton();
+        corner.setSelectionMode(SegmentedButton.SelectionMode.SINGLE);
+        for (String name : List.of("Top left", "Top right", "Bottom left", "Bottom right")) {
+            corner.addSegment(name);
+        }
+        corner.setSelectedIndex(1);
+        corner.setOnSelectionChange(index -> {
+            ToastManager.Corner selected = ToastManager.Corner.values()[index];
+            toasts.setCorner(selected);
+            status.setText("Corner: " + selected + ". Visible limit: "
+                    + toasts.maxVisible() + ".");
+        });
+
+        SegmentedButton duration = new SegmentedButton();
+        duration.setSelectionMode(SegmentedButton.SelectionMode.SINGLE);
+        for (String name : List.of("2s", "4s", "8s")) {
+            duration.addSegment(name);
+        }
+        duration.setSelectedIndex(1);
+        float[] durations = {2, 4, 8};
+        duration.setOnSelectionChange(index -> {
+            toasts.setDefaultDuration(durations[index]);
+            status.setText("Default lifetime: " + durations[index] + "s.");
+        });
+
+        Button shortToast = new Button("Show toast");
+        shortToast.setOnAction(() -> {
+            toasts.show("Settings saved.");
+            status.setText("Shown \"Settings saved.\" for " + toasts.defaultDuration() + "s.");
+        });
+        Button longToast = new Button("Long toast");
+        longToast.setOnAction(() -> {
+            toasts.show("A longer notification wraps across several lines. The card keeps at "
+                    + "most three lines and truncates the rest with an ellipsis so the stack "
+                    + "stays compact and readable.", 6);
+            status.setText("Shown a long toast with a six second lifetime.");
+        });
+        Button hoverToast = new Button("Hover test");
+        hoverToast.setOnAction(() -> {
+            toasts.show("Hover this toast to pause its countdown, then move away to resume.", 8);
+            status.setText("Shown an eight second toast. Hover it to pause the timer.");
+        });
+        Button burst = new Button("Queue 4");
+        burst.setOnAction(() -> {
+            for (int index = 1; index <= 4; index++) {
+                toasts.show("Queued notification " + index + ".");
+            }
+            status.setText("Queued 4 toasts; " + toasts.visibleCount()
+                    + " visible, " + toasts.queuedCount() + " waiting.");
+        });
+        Button clear = new Button("Dismiss all");
+        clear.setOnAction(() -> {
+            toasts.dismissAll();
+            status.setText("All toasts are fading out.");
+        });
+
+        HBox primaryActions = new HBox();
+        primaryActions.setGap(8);
+        primaryActions.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        primaryActions.add(shortToast).add(longToast).add(hoverToast);
+
+        HBox queueActions = new HBox();
+        queueActions.setGap(8);
+        queueActions.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        queueActions.add(burst).add(clear);
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(10);
+        page.add(sliderCaption("Corner"))
+                .add(corner)
+                .add(sliderCaption("Default lifetime"))
+                .add(duration)
+                .add(sliderCaption("Queue, long text and hover pause"))
+                .add(primaryActions)
+                .add(queueActions)
+                .add(status);
+        return page;
+    }
+
     private Widget createTablePage() {
         SplitPanel stacked = new SplitPanel(SplitPanel.Orientation.VERTICAL);
         stacked.setDividerThickness(8);
@@ -1956,6 +2047,7 @@ final class DemoWidgetScene implements AutoCloseable {
      */
     @Override
     public void close() {
+        toasts.close();
         manager.close();
     }
 
