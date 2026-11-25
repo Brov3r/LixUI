@@ -147,6 +147,7 @@ final class DemoWidgetScene implements AutoCloseable {
     private final Label justifiedLabel;
     private final RichLabel richLabel;
     private final DemoStatsPanel statsPanel;
+    private final BenchmarkDemoPage benchmarkPage;
     private Button randomizeProgressButton;
     private final List<IconSlot> iconSlots = new ArrayList<>();
     private final List<GroupBox> groupBoxes = new ArrayList<>();
@@ -157,6 +158,7 @@ final class DemoWidgetScene implements AutoCloseable {
     private int fps;
     private int fpsFrames;
     private double fpsElapsed;
+    private float lastDeltaSeconds;
     private Viewport viewport;
 
     DemoWidgetScene(InputState input, RenderBackend backend, UiPlatform platform) {
@@ -258,6 +260,9 @@ final class DemoWidgetScene implements AutoCloseable {
         outerTabs = new TabPanel();
         bindIcon("puzzle-03.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Basics", basics)::setIcon);
+        benchmarkPage = new BenchmarkDemoPage(message -> toasts.show(message));
+        bindIcon("lightning.svg", outerTabs.iconSize(), outerTabs.addTab("Benchmark",
+                new DemoScrollPage(benchmarkPage))::setIcon);
         bindIcon("keyboard.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Inputs", inputs)::setIcon);
         bindIcon("adjustment.svg", outerTabs.iconSize(),
@@ -2239,6 +2244,7 @@ final class DemoWidgetScene implements AutoCloseable {
      * @param deltaSeconds elapsed time in seconds
      */
     void update(float deltaSeconds) {
+        lastDeltaSeconds = deltaSeconds;
         updateFrameRate(deltaSeconds);
         manager.update(deltaSeconds);
         statsPanel.setFps(fps);
@@ -2258,6 +2264,7 @@ final class DemoWidgetScene implements AutoCloseable {
         statsPanel.resizeToContent(manager.renderer(), THEME_BUTTON_SIZE);
         manager.render();
         statsPanel.setDrawCalls(backend.drawCallCount());
+        benchmarkPage.recordLiveFrame(lastDeltaSeconds, backend.drawCallCount());
     }
 
     /**
