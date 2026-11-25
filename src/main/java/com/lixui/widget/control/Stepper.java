@@ -35,6 +35,8 @@ import java.util.function.IntConsumer;
  * A horizontal progress indicator made of numbered or icon steps and connecting lines.
  * A step is completed when it lies before the current step, current when it matches the current
  * index, and future otherwise. Individual steps can additionally be marked as failed or disabled.
+ * Besides the normal current-index range, the stepper can sit before the first step, where no step
+ * has started and every step is future, or after the last step, where every step is completed.
  * Connector fill animates between the previous and the new current step, while the step faces switch
  * to their new states immediately. Steps are clickable only when clicking is enabled; disabled steps
  * never accept a click. Titles are measured with the inherited font and truncated to their column.
@@ -66,6 +68,7 @@ public class Stepper extends Widget {
     private static final float TITLE_SIDE_PADDING = 3;
     private static final float ANIMATION_SNAP = 0.001f;
     private static final Color DEFAULT_ERROR_COLOR = Color.hex("#E06C75");
+    private static final int NOT_STARTED = -1;
 
     private final List<Step> steps = new ArrayList<>();
     private final IconSet checkIcons = new IconSet("tick.svg");
@@ -116,7 +119,9 @@ public class Stepper extends Widget {
     /**
      * Appends a step with a title and an optional icon.
      * The icon replaces the step number in current and future states; completed steps keep the
-     * check mark and failed steps keep the exclamation mark.
+     * check mark and failed steps keep the exclamation mark. The first step becomes current.
+     * When every step was completed, the appended step is completed as well and the selection stays
+     * after the list. Otherwise an existing selection or the not-started boundary is preserved.
      *
      * @param title step title
      * @param icon step icon, or null to show the step number
@@ -124,11 +129,16 @@ public class Stepper extends Widget {
      * @throws NullPointerException if {@code title} is null
      */
     public final Step addStep(String title, Texture icon) {
+        boolean completed = !steps.isEmpty() && currentIndex >= steps.size();
         Step step = new Step(Objects.requireNonNull(title, "title"), icon);
         steps.add(step);
         if (steps.size() == 1) {
             currentIndex = 0;
             displayedPosition = 0;
+        } else if (completed) {
+            cancelAnimation();
+            currentIndex = steps.size();
+            displayedPosition = currentIndex;
         }
         return step;
     }
@@ -139,6 +149,7 @@ public class Stepper extends Widget {
      * decreases and the change callback runs with the new index. Removing the current step selects
      * the next remaining step, or the previous step when the current one was last; the callback
      * runs with the new index. Removing a later step keeps the selection and the callback silent.
+     * The not-started boundary stays not started, and the all-completed boundary stays completed.
      * Removing the last remaining step clears the selection without invoking the callback.
      *
      * @param step step to remove
@@ -185,12 +196,68 @@ public class Stepper extends Widget {
     }
 
     /**
-     * Returns the zero-based current step index.
+     * Returns the current step index.
+     * The value is -1 before any step has started and {@code steps().size()} when every step is
+     * completed. An empty stepper reports zero. Otherwise the value is a zero-based index inside
+     * the step list.
      *
-     * @return the current index
+     * @return the current index or a boundary value outside the step list
      */
     public final int currentIndex() {
         return currentIndex;
+    }
+
+    /**
+     * Reports whether at least one step has started.
+     * A stepper with no steps or one reset to its not-started boundary returns false, while a
+     * stepper whose steps are all completed returns true.
+     *
+     * @return true when the stepper has a current step or lies after the completed last step
+     */
+    public final boolean hasStarted() {
+        return !steps.isEmpty() && currentIndex >= 0;
+    }
+
+    /**
+     * Reports whether every step is completed.
+     * Progress is complete when the current position lies after the last step. Explicitly failed or
+     * disabled steps keep their own visual state. A stepper with no steps is not complete.
+     *
+     * @return true when no step is current or future
+     */
+    public final boolean isComplete() {
+        return !steps.isEmpty() && currentIndex >= steps.size();
+    }
+
+    /**
+     * Moves the stepper to its not-started boundary, so every step is future and no connector is
+     * filled.
+     * The connector fill animates backward to the empty position. The change callback receives -1.
+     * Does nothing when the stepper has no steps or no step has started.
+     */
+    public final void resetProgress() {
+        if (steps.isEmpty() || currentIndex == NOT_STARTED) {
+            return;
+        }
+        currentIndex = NOT_STARTED;
+        startAnimation();
+        notifyChange();
+    }
+
+    /**
+     * Moves the stepper past its last step, so every step is completed and every connector is
+     * filled.
+     * The connector fill animates forward to the end. The change callback receives
+     * {@code steps().size()}. Does nothing when the stepper has no steps or every step is already
+     * completed.
+     */
+    public final void completeAll() {
+        if (steps.isEmpty() || currentIndex >= steps.size()) {
+            return;
+        }
+        currentIndex = steps.size();
+        startAnimation();
+        notifyChange();
     }
 
     /**
@@ -215,9 +282,11 @@ public class Stepper extends Widget {
 
     /**
      * Returns the animated connector position in step units.
-     * A value of two means the connectors up to the third step are filled.
+     * Zero fills no connector after the first step and two fills the connectors up to the third
+     * step. The value is -1 at the not-started boundary and {@code steps().size()} when every
+     * connector is filled.
      *
-     * @return the animated position in the step index range
+     * @return the animated position between the not-started and all-completed boundaries
      */
     public final float displayedPosition() {
         return displayedPosition;
@@ -478,9 +547,11 @@ public class Stepper extends Widget {
 
     /**
      * Assigns a callback invoked when the current step changes.
-     * The callback receives the new zero-based index for pointer and programmatic selection
-     * changes. It also runs when removing a step at or before the current one changes the current
-     * index or replaces the current step; removing a later step keeps it silent.
+     * The callback receives the new index for pointer and programmatic selection changes. It also
+     * runs when removing a step at or before the current one changes the current index or replaces
+     * the current step; removing a later step keeps it silent. Boundary moves report -1 after
+     * {@link #resetProgress()} and {@code steps().size()} after {@link #completeAll()}, so callers
+     * that look up a step by index must guard those values.
      *
      * @param onChange change callback, or null to clear it
      */
@@ -825,8 +896,8 @@ public class Stepper extends Widget {
         }
         animationOwner = owner.animator();
         animation = animationOwner.animate(displayedPosition, currentIndex, animationDuration,
-                animationEasing, value -> displayedPosition = Math.clamp(value, 0f,
-                        Math.max(0, steps.size() - 1)));
+                animationEasing, value -> displayedPosition = Math.clamp(value, NOT_STARTED,
+                        steps.size()));
         animation.setOnComplete(this::clearAnimation);
     }
 

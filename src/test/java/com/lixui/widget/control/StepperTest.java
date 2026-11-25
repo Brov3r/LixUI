@@ -71,6 +71,119 @@ class StepperTest {
     }
 
     @Test
+    void animatesBothBoundaryStates() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            Stepper stepper = stepper(3);
+            stepper.setAnimationDuration(0.3f);
+            stepper.setBounds(new Rect(0, 0, 300, 80));
+            List<Integer> indexes = new ArrayList<>();
+            stepper.setOnChange(indexes::add);
+            manager.add(stepper);
+            manager.render();
+            assertEquals(0, stepper.displayedPosition(), 0.001f);
+
+            stepper.resetProgress();
+            assertEquals(-1, stepper.currentIndex());
+            assertFalse(stepper.hasStarted());
+            assertFalse(stepper.isComplete());
+            for (int index = 0; index < 3; index++) {
+                assertEquals(Stepper.StepState.FUTURE, stepper.state(index));
+            }
+            manager.update(0.05f);
+            assertTrue(stepper.displayedPosition() < 0 && stepper.displayedPosition() > -1);
+            manager.update(1);
+            assertEquals(-1, stepper.displayedPosition(), 0.001f);
+            assertEquals(List.of(-1), indexes);
+
+            stepper.completeAll();
+            assertEquals(3, stepper.currentIndex());
+            assertTrue(stepper.hasStarted());
+            assertTrue(stepper.isComplete());
+            for (int index = 0; index < 3; index++) {
+                assertEquals(Stepper.StepState.COMPLETED, stepper.state(index));
+            }
+            manager.update(0.05f);
+            assertTrue(stepper.displayedPosition() > -1 && stepper.displayedPosition() < 3);
+            manager.update(1);
+            assertEquals(3, stepper.displayedPosition(), 0.001f);
+            assertEquals(List.of(-1, 3), indexes);
+        }
+    }
+
+    @Test
+    void walksForwardAndBackwardAcrossBoundaries() {
+        Stepper stepper = stepper(3);
+        stepper.setAnimationDuration(0);
+        stepper.resetProgress();
+        assertEquals(-1, stepper.currentIndex());
+        assertEquals(-1, stepper.displayedPosition(), 0.001f);
+        assertFalse(stepper.hasStarted());
+
+        stepper.setCurrentIndex(0);
+        assertTrue(stepper.hasStarted());
+        assertFalse(stepper.isComplete());
+        assertEquals(Stepper.StepState.CURRENT, stepper.state(0));
+
+        stepper.setCurrentIndex(2);
+        assertEquals(Stepper.StepState.COMPLETED, stepper.state(1));
+        assertEquals(Stepper.StepState.CURRENT, stepper.state(2));
+
+        stepper.completeAll();
+        assertTrue(stepper.isComplete());
+        assertEquals(3, stepper.displayedPosition(), 0.001f);
+
+        stepper.setCurrentIndex(1);
+        assertFalse(stepper.isComplete());
+        assertEquals(Stepper.StepState.COMPLETED, stepper.state(0));
+        assertEquals(Stepper.StepState.CURRENT, stepper.state(1));
+        assertEquals(Stepper.StepState.FUTURE, stepper.state(2));
+
+        stepper.resetProgress();
+        assertFalse(stepper.hasStarted());
+        for (int index = 0; index < 3; index++) {
+            assertEquals(Stepper.StepState.FUTURE, stepper.state(index));
+        }
+    }
+
+    @Test
+    void keepsBoundaryStatesWhenStepsChange() {
+        Stepper stepper = stepper(2);
+        stepper.completeAll();
+        Stepper.Step added = stepper.addStep("C");
+        assertEquals(3, stepper.currentIndex());
+        assertTrue(stepper.isComplete());
+        assertEquals(3, stepper.displayedPosition(), 0.001f);
+
+        assertTrue(stepper.removeStep(stepper.steps().getFirst()));
+        assertEquals(2, stepper.currentIndex());
+        assertTrue(stepper.isComplete());
+        assertEquals(2, stepper.displayedPosition(), 0.001f);
+
+        stepper.resetProgress();
+        assertEquals(-1, stepper.currentIndex());
+        assertEquals(-1, stepper.displayedPosition(), 0.001f);
+        stepper.addStep("D");
+        assertEquals(-1, stepper.currentIndex());
+        assertFalse(stepper.hasStarted());
+        assertTrue(stepper.removeStep(added));
+        assertEquals(-1, stepper.currentIndex());
+
+        stepper.clearSteps();
+        stepper.completeAll();
+        stepper.resetProgress();
+        assertFalse(stepper.hasStarted());
+        assertFalse(stepper.isComplete());
+        assertEquals(0, stepper.currentIndex());
+        assertEquals(0, stepper.displayedPosition(), 0.001f);
+
+        stepper.addStep("Only");
+        assertEquals(0, stepper.currentIndex());
+        assertTrue(stepper.hasStarted());
+        assertFalse(stepper.isComplete());
+    }
+
+    @Test
     void clickSelectsOnlyEnabledStepsWhenClickable() {
         TestBackend backend = new TestBackend();
         try (WidgetManager manager = manager(backend)) {

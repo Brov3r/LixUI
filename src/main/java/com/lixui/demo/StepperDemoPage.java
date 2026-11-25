@@ -49,24 +49,45 @@ final class StepperDemoPage {
         Stepper pipeline = createPipeline();
         Button back = new Button("Back");
         Button next = new Button("Next");
-        back.setOnAction(() -> pipeline.setCurrentIndex(
-                Math.max(0, pipeline.currentIndex() - 1)));
-        next.setOnAction(() -> pipeline.setCurrentIndex(
-                Math.min(pipeline.steps().size() - 1, pipeline.currentIndex() + 1)));
+        Button notStarted = new Button("Not started");
+        Button completed = new Button("Complete all");
+        back.setOnAction(() -> {
+            int index = pipeline.currentIndex();
+            if (index <= 0) {
+                pipeline.resetProgress();
+            } else {
+                pipeline.setCurrentIndex(index - 1);
+            }
+        });
+        next.setOnAction(() -> {
+            int index = pipeline.currentIndex();
+            if (index >= pipeline.steps().size() - 1) {
+                pipeline.completeAll();
+            } else {
+                pipeline.setCurrentIndex(index + 1);
+            }
+        });
+        notStarted.setOnAction(pipeline::resetProgress);
+        completed.setOnAction(pipeline::completeAll);
         Runnable updateButtons = () -> {
-            back.setEnabled(pipeline.currentIndex() > 0);
-            next.setEnabled(pipeline.currentIndex() < pipeline.steps().size() - 1);
+            int size = pipeline.steps().size();
+            back.setEnabled(pipeline.hasStarted());
+            next.setEnabled(size > 0 && !pipeline.isComplete());
+            notStarted.setEnabled(pipeline.hasStarted());
+            completed.setEnabled(size > 0 && !pipeline.isComplete());
         };
         pipeline.setOnChange(index -> {
-            status.setText("Pipeline: \"" + pipeline.steps().get(index).title()
-                    + "\" is the current step.");
+            status.setText(selectionStatus("Pipeline", pipeline, index,
+                    " is the current step."));
             updateButtons.run();
         });
+        status.setText(selectionStatus("Pipeline", pipeline, pipeline.currentIndex(),
+                " is the current step."));
         updateButtons.run();
         HBox pipelineControls = new HBox();
         pipelineControls.setGap(8);
         pipelineControls.setCrossAlignment(HBox.CrossAlignment.CENTER);
-        pipelineControls.add(back).add(next);
+        pipelineControls.add(back).add(next).add(notStarted).add(completed);
 
         Stepper order = createOrder(status);
         Button restart = new Button("Restart order");
@@ -92,7 +113,8 @@ final class StepperDemoPage {
         page.add(caption("A step row draws completed, current, future, failed and disabled faces. "
                         + "The connector fill animates when the current step changes."))
                 .add(clickable)
-                .add(caption("Pipeline: numbers, completed check marks and an animated connector"))
+                .add(caption("Pipeline: walk from not started to all completed and back. "
+                        + "Back and Next also cross both boundaries; connectors animate."))
                 .add(pipeline)
                 .add(pipelineControls)
                 .add(caption("Order: one row with a failed step and a disabled step"))
@@ -132,9 +154,8 @@ final class StepperDemoPage {
         stepper.steps().get(1).setError(true);
         stepper.steps().get(4).setDisabled(true);
         stepper.setCurrentIndex(2);
-        stepper.setOnChange(index -> status.setText("Order: \""
-                + stepper.steps().get(index).title() + "\" selected. Failed and disabled steps "
-                + "ignore clicks."));
+        stepper.setOnChange(index -> status.setText(selectionStatus("Order", stepper, index,
+                " selected. Failed and disabled steps ignore clicks.")));
         return stepper;
     }
 
@@ -154,9 +175,22 @@ final class StepperDemoPage {
         iconBinder.bind("truck.svg", 20, shipping::setIcon);
         iconBinder.bind("location.svg", 20, delivered::setIcon);
         stepper.setCurrentIndex(2);
-        stepper.setOnChange(index -> status.setText("Icons: \""
-                + stepper.steps().get(index).title() + "\" selected."));
+        stepper.setOnChange(index -> status.setText(selectionStatus("Icons", stepper, index,
+                " selected.")));
         return stepper;
+    }
+
+    private static String selectionStatus(String name, Stepper stepper, int index, String suffix) {
+        if (stepper.steps().isEmpty()) {
+            return name + ": no steps.";
+        }
+        if (index < 0) {
+            return name + ": not started.";
+        }
+        if (index >= stepper.steps().size()) {
+            return name + ": all " + stepper.steps().size() + " steps completed.";
+        }
+        return name + ": \"" + stepper.steps().get(index).title() + "\"" + suffix;
     }
 
     private Label caption(String text) {
