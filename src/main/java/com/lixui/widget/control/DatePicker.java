@@ -10,9 +10,12 @@ import com.lixui.platform.Cursor;
 import com.lixui.render.RenderManager;
 import com.lixui.text.Font;
 import com.lixui.text.HorizontalAlignment;
+import com.lixui.text.TextOverflow;
 import com.lixui.text.TextStyle;
 import com.lixui.text.VerticalAlignment;
 import com.lixui.theme.Theme;
+import com.lixui.theme.WidgetState;
+import com.lixui.theme.WidgetStyle;
 import com.lixui.widget.FrameInfo;
 import com.lixui.widget.IconSet;
 import com.lixui.widget.LayoutConstraints;
@@ -34,20 +37,28 @@ import java.util.function.Consumer;
 
 /**
  * A date field that opens a popup calendar.
- * The calendar shows a month title, single month arrows and double year arrows and a six-week grid
- * with localized month and weekday names. Days of the previous and next month stay visible in a
- * muted color and select their own date when clicked. The selected day is highlighted, clicking a
- * day applies it, closes the popup and reports the date through {@link #setOnChange(Consumer)}.
- * Month and year navigation and Escape do not change the selected date.
+ * The calendar shows a fixed-size popup with a month title, transparent single month arrows and
+ * double year arrows and a six-week grid with localized month and weekday names. Days of the
+ * previous and next month stay visible in a muted color and select their own date when clicked.
+ * The selected day is highlighted, clicking a day applies it, closes the popup and reports the
+ * date through {@link #setOnChange(Consumer)}. Month and year navigation and Escape do not change
+ * the selected date.
  */
 public class DatePicker extends PickerField {
     private static final float NAV_ICON_SIZE = 16;
     private static final float HEADER_GAP = 6;
+    private static final float NAV_BUTTON_WIDTH = 32;
+    private static final float TITLE_WIDTH = 148;
+    private static final float HEADER_HEIGHT = 32;
+    private static final float POPUP_CONTENT_WIDTH = NAV_BUTTON_WIDTH * 4 + HEADER_GAP * 4
+            + TITLE_WIDTH;
+    private static final float POPUP_CONTENT_HEIGHT = HEADER_HEIGHT + HEADER_GAP
+            + CalendarGrid.WEEKDAY_HEIGHT + CalendarGrid.ROWS * CalendarGrid.CELL_HEIGHT;
 
-    private final Button previousYearButton = new Button();
-    private final Button previousMonthButton = new Button();
-    private final Button nextMonthButton = new Button();
-    private final Button nextYearButton = new Button();
+    private final Button previousYearButton = new NavButton();
+    private final Button previousMonthButton = new NavButton();
+    private final Button nextMonthButton = new NavButton();
+    private final Button nextYearButton = new NavButton();
     private final Label titleLabel = new Label();
     private final CalendarGrid grid;
     private final VBox popupContent = new VBox();
@@ -96,14 +107,16 @@ public class DatePicker extends PickerField {
         configureNavButton(nextMonthButton, "Next month", () -> shiftMonth(1));
         configureNavButton(nextYearButton, "Next year", () -> shiftYear(1));
         titleLabel.setAutoSize(false);
-        titleLabel.setWrap(false);
+        titleLabel.setWrap(true);
+        titleLabel.setMaxLines(1);
+        titleLabel.setOverflow(TextOverflow.ELLIPSIS);
         titleLabel.setAlignment(HorizontalAlignment.CENTER);
         titleLabel.setVerticalAlignment(VerticalAlignment.CENTER);
-        titleLabel.setGrow(1);
         HBox header = new HBox();
         header.setGap(HEADER_GAP);
         header.setCrossAlignment(HBox.CrossAlignment.CENTER);
-        header.add(previousYearButton).add(previousMonthButton).add(titleLabel)
+        header.add(previousYearButton).add(previousMonthButton)
+                .add(new TitleSlot(titleLabel, TITLE_WIDTH))
                 .add(nextMonthButton).add(nextYearButton);
         popupContent.setGap(HEADER_GAP);
         popupContent.add(header).add(grid);
@@ -116,6 +129,86 @@ public class DatePicker extends PickerField {
         button.setIconSize(NAV_ICON_SIZE);
         button.setTooltipText(tooltip);
         button.setOnAction(action);
+    }
+
+    /**
+     * A header arrow that stays transparent until hovered or pressed.
+     */
+    private static final class NavButton extends Button {
+        /**
+         * Resolves transparent surfaces with a subtle hover highlight and no border.
+         *
+         * @return the navigation button style
+         */
+        @Override
+        protected WidgetStyle surfaceStyle() {
+            Theme theme = context() == null ? null : context().theme();
+            if (theme == null) {
+                return super.surfaceStyle();
+            }
+            return new WidgetStyle(Color.TRANSPARENT,
+                    theme.surfaceHover().withAlpha(0.5f),
+                    theme.surfacePressed().withAlpha(0.65f),
+                    Color.TRANSPARENT, theme.text(), theme.textMuted(),
+                    Color.TRANSPARENT, Color.TRANSPARENT, 6, 8, 0);
+        }
+
+        /**
+         * Paints only the hover or pressed highlight and the arrow icon.
+         *
+         * @param renderer drawing manager for the current frame
+         * @param frame timing information for the current frame
+         */
+        @Override
+        protected void onDraw(RenderManager renderer, FrameInfo frame) {
+            if (localBounds().isEmpty()) {
+                return;
+            }
+            WidgetStyle style = surfaceStyle();
+            if (style != null) {
+                WidgetState state = state();
+                if (state == WidgetState.HOVERED || state == WidgetState.PRESSED) {
+                    renderer.roundedRect(localBounds(), style.cornerRadius(),
+                            style.background(state));
+                }
+            }
+            drawForeground(renderer, frame);
+        }
+    }
+
+    /**
+     * Reserves a fixed header slot so the popup width never follows the month name.
+     */
+    private static final class TitleSlot extends Widget {
+        private final Widget content;
+        private final float width;
+
+        private TitleSlot(Widget content, float width) {
+            this.content = content;
+            this.width = width;
+            add(content);
+        }
+
+        /**
+         * Measures the title inside the fixed slot width.
+         *
+         * @param constraints available and required dimensions
+         * @return the slot size
+         */
+        @Override
+        protected Size onMeasure(LayoutConstraints constraints) {
+            Size natural = content.measure(LayoutConstraints.loose(width, constraints.maxHeight()));
+            return new Size(Math.min(width, constraints.maxWidth()),
+                    Math.min(natural.height(), constraints.maxHeight()));
+        }
+
+        /**
+         * Stretches the title over the slot bounds.
+         */
+        @Override
+        protected void onLayout() {
+            content.layout(new Rect(0, 0, bounds().width(), bounds().height()));
+        }
     }
 
     /**
@@ -220,7 +313,7 @@ public class DatePicker extends PickerField {
         updateHeader();
         Rect anchor = new Rect(absolutePosition().x(), absolutePosition().y(),
                 bounds().width(), bounds().height());
-        popup().open(context(), anchor);
+        popup().open(context(), anchor, POPUP_CONTENT_WIDTH, POPUP_CONTENT_HEIGHT);
     }
 
     /**

@@ -2,19 +2,26 @@ package com.lixui.widget.control;
 
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
+import com.lixui.geometry.Size;
 import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
 import com.lixui.input.Key;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
 import com.lixui.input.event.KeyPressed;
+import com.lixui.input.event.PointerMoved;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
+import com.lixui.platform.Cursor;
 import com.lixui.render.Viewport;
+import com.lixui.render.command.RoundedRectCommand;
 import com.lixui.render.command.TextCommand;
 import com.lixui.text.Font;
 import com.lixui.text.FontData;
 import com.lixui.text.SystemFonts;
+import com.lixui.theme.Theme;
+import com.lixui.theme.WidgetState;
+import com.lixui.theme.WidgetStyle;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.overlay.Popup;
@@ -33,6 +40,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -275,6 +283,121 @@ class DatePickerTest {
         clickDay(commonManager, commonGrid, 28);
 
         assertEquals(LocalDate.of(2026, 2, 28), commonPicker.date());
+    }
+
+    @Test
+    void keepsThePopupSizeFixedAcrossMonthsLocalesAndLongNames() {
+        Size expected = null;
+        for (Locale locale : List.of(Locale.US, Locale.forLanguageTag("ru-RU"))) {
+            for (LocalDate date : List.of(LocalDate.of(2026, 2, 1),
+                    LocalDate.of(2026, 5, 12), LocalDate.of(2026, 8, 1),
+                    LocalDate.of(2026, 9, 30))) {
+                TestBackend backend = new TestBackend();
+                try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
+                    manager.resize(VIEWPORT);
+                    DatePicker picker = picker(date, locale);
+                    manager.add(picker);
+                    manager.render();
+                    openPopup(manager, picker);
+
+                    Popup popup = popup(manager);
+                    Size size = popupSize(popup);
+                    if (expected == null) {
+                        expected = size;
+                    } else {
+                        assertEquals(expected.width(), size.width(), 0.001f,
+                                "Popup width changed for " + locale + " and " + date);
+                        assertEquals(expected.height(), size.height(), 0.001f,
+                                "Popup height changed for " + locale + " and " + date);
+                    }
+
+                    Widget title = header(popup).get(2);
+                    float titleWidth = title.bounds().width();
+                    clickWidget(manager, header(popup).get(3));
+                    manager.render();
+
+                    assertEquals(expected.width(), popupSize(popup).width(), 0.001f);
+                    assertEquals(expected.height(), popupSize(popup).height(), 0.001f);
+                    assertEquals(titleWidth, title.bounds().width(), 0.001f);
+                    assertTrue(title.bounds().right()
+                            <= popup.content().bounds().width() + 0.001f);
+
+                    manager.handle(new KeyPressed(Key.ESCAPE, Modifiers.NONE, false));
+                }
+            }
+        }
+        assertTrue(expected.width() > 0);
+        assertTrue(expected.height() > 0);
+    }
+
+    @Test
+    void drawsNavigationArrowsAsTransparentHoverTargets() {
+        for (Theme theme : List.of(Theme.dark(), Theme.light())) {
+            TestBackend backend = new TestBackend();
+            try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
+                manager.resize(VIEWPORT);
+                manager.setTheme(theme);
+                DatePicker picker = picker(LocalDate.of(2026, 5, 12), LOCALE);
+                manager.add(picker);
+                manager.render();
+                openPopup(manager, picker);
+
+                List<Widget> header = header(popup(manager));
+                for (int index : List.of(0, 1, 3, 4)) {
+                    Button button = assertInstanceOf(Button.class, header.get(index));
+                    WidgetStyle style = button.surfaceStyle();
+                    assertEquals(0, style.background(WidgetState.NORMAL).a(), 0.001f);
+                    assertEquals(0, style.background(WidgetState.FOCUSED).a(), 0.001f);
+                    assertEquals(0, style.borderWidth(), 0.001f);
+                    assertEquals(0, style.border(WidgetState.NORMAL).a(), 0.001f);
+                    assertTrue(style.background(WidgetState.HOVERED).a() > 0);
+                    assertTrue(style.background(WidgetState.HOVERED).a() < 1);
+                    assertEquals(Cursor.POINTER, button.cursor());
+                }
+
+                Button nextMonth = (Button) header.get(3);
+                Rect buttonBounds = absoluteBounds(nextMonth);
+                assertFalse(backend.lastDrawList().commands().stream()
+                        .anyMatch(command -> command instanceof RoundedRectCommand rounded
+                                && rounded.bounds().equals(buttonBounds)));
+
+                Point center = nextMonth.absolutePosition();
+                float x = center.x() + nextMonth.bounds().width() / 2;
+                float y = center.y() + nextMonth.bounds().height() / 2;
+                manager.handle(new PointerMoved(x, y));
+                manager.render();
+                assertTrue(hasRoundedColor(backend, buttonBounds,
+                        manager.context().theme().surfaceHover().withAlpha(0.5f)));
+
+                manager.handle(new PointerPressed(x, y, MouseButton.LEFT, Modifiers.NONE));
+                manager.render();
+                assertTrue(hasRoundedColor(backend, buttonBounds,
+                        manager.context().theme().surfacePressed().withAlpha(0.65f)));
+
+                manager.handle(new PointerReleased(x, y, MouseButton.LEFT, Modifiers.NONE));
+                assertTrue(picker.isPopupOpen());
+
+                manager.handle(new KeyPressed(Key.ESCAPE, Modifiers.NONE, false));
+            }
+        }
+    }
+
+    private static Size popupSize(Popup popup) {
+        Rect bounds = popup.popupBounds();
+        return new Size(bounds.width(), bounds.height());
+    }
+
+    private static boolean hasRoundedColor(TestBackend backend, Rect bounds, Color color) {
+        return backend.lastDrawList().commands().stream()
+                .filter(RoundedRectCommand.class::isInstance)
+                .map(RoundedRectCommand.class::cast)
+                .anyMatch(command -> command.bounds().equals(bounds) && command.color().equals(color));
+    }
+
+    private static Rect absoluteBounds(Widget widget) {
+        Point origin = widget.absolutePosition();
+        return new Rect(origin.x(), origin.y(), widget.bounds().width(),
+                widget.bounds().height());
     }
 
     private static DatePicker picker(LocalDate date, Locale locale) {
