@@ -2,6 +2,7 @@ package com.lixui.widget.control;
 
 import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
+import com.lixui.graphics.Color;
 import com.lixui.input.InputState;
 import com.lixui.input.Key;
 import com.lixui.input.Modifiers;
@@ -11,6 +12,7 @@ import com.lixui.input.event.KeyPressed;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.render.Viewport;
+import com.lixui.render.command.RoundedRectCommand;
 import com.lixui.text.FontData;
 import com.lixui.text.SystemFonts;
 import com.lixui.widget.Widget;
@@ -223,6 +225,38 @@ class MultiSelectComboTest {
     }
 
     @Test
+    void measuresAndPaintsChipsWhileTextKeepsTheSummary() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = manager(backend);
+        MultiSelectCombo combobox = combobox();
+        combobox.setAll(true);
+        manager.add(combobox);
+        manager.render();
+
+        assertEquals("Alpha +2", combobox.text());
+        assertEquals(ChipStrip.CHIP_PADDING * 6 + ChipStrip.CHIP_GAP * 2,
+                combobox.onFieldContentSize(null).width(), 0.001f);
+        assertEquals(3, chipCommands(manager, backend).size());
+    }
+
+    @Test
+    void drawsAnOverflowPillWhenTheFieldIsNarrow() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = manager(backend);
+        MultiSelectCombo combobox = combobox();
+        combobox.setAll(true);
+        manager.add(combobox);
+        combobox.setBounds(new Rect(10, 10, 60, 36));
+        manager.render();
+
+        List<RoundedRectCommand> chips = chipCommands(manager, backend);
+
+        assertEquals(1, chips.size());
+        assertEquals(ChipStrip.CHIP_PADDING * 2, chips.get(0).bounds().width(), 0.01f);
+        assertEquals("Alpha +2", combobox.text());
+    }
+
+    @Test
     void popupResizesWhenOptionsChangeWhileOpen() {
         WidgetManager manager = manager();
         MultiSelectCombo combobox = combobox();
@@ -308,8 +342,23 @@ class MultiSelectComboTest {
                 .orElseThrow();
     }
 
+    private static List<RoundedRectCommand> chipCommands(WidgetManager manager,
+                                                        TestBackend backend) {
+        Color chipFill = Color.mix(manager.context().theme().surface(),
+                manager.context().theme().primary(), 0.18f);
+        return backend.lastDrawList().commands().stream()
+                .filter(RoundedRectCommand.class::isInstance)
+                .map(RoundedRectCommand.class::cast)
+                .filter(command -> command.color().equals(chipFill))
+                .toList();
+    }
+
     private static WidgetManager manager() {
-        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
+        return manager(new TestBackend());
+    }
+
+    private static WidgetManager manager(TestBackend backend) {
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(VIEWPORT);
         return manager;
     }

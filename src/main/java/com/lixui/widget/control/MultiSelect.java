@@ -24,10 +24,6 @@ import java.util.function.BiConsumer;
  * Selected options are shown as chips in the closed field; the popup rows show a check mark.
  */
 public class MultiSelect extends PopupSelect {
-    private static final float CHIP_HEIGHT = 20;
-    private static final float CHIP_PADDING = 9;
-    private static final float CHIP_GAP = 4;
-
     private final Set<Integer> selected = new LinkedHashSet<>();
     private String placeholder = "None selected";
     private BiConsumer<SelectOption, Boolean> onChange;
@@ -172,31 +168,26 @@ public class MultiSelect extends PopupSelect {
     }
 
     /**
-     * Measures the placeholder or a compact summary of the selected chips.
+     * Measures the placeholder or the selected chip strip.
      *
      * @param font resolved field font, or null when no font is available
      * @return the content size without padding and the arrow
      */
     @Override
     protected Size fieldContentSize(Font font) {
+        ChipStrip strip = ChipStrip.of(selectedOptions());
+        if (!strip.isEmpty()) {
+            return strip.measure(font);
+        }
         if (font == null) {
             return new Size(0, 0);
         }
-        List<Integer> indices = selectedIndices();
-        String text = placeholder;
-        if (!indices.isEmpty()) {
-            SelectOption first = optionAt(indices.get(0));
-            text = first == null ? placeholder : first.label();
-            if (indices.size() > 1) {
-                text += " +" + (indices.size() - 1);
-            }
-        }
-        Size size = font.measure(text);
-        return new Size(size.width(), Math.max(size.height(), CHIP_HEIGHT));
+        Size size = font.measure(placeholder);
+        return new Size(size.width(), Math.max(size.height(), ChipStrip.CHIP_HEIGHT));
     }
 
     /**
-     * Paints selected chips or the placeholder.
+     * Paints the selected chip strip or the placeholder.
      *
      * @param renderer drawing manager for the current frame
      * @param content content rectangle inside the field padding and arrow slot
@@ -207,8 +198,8 @@ public class MultiSelect extends PopupSelect {
     protected void drawFieldContent(RenderManager renderer, Rect content,
                                     Color color, WidgetState state) {
         Font font = font();
-        List<Integer> indices = selectedIndices();
-        if (indices.isEmpty()) {
+        ChipStrip strip = ChipStrip.of(selectedOptions());
+        if (strip.isEmpty()) {
             if (font != null && !placeholder.isEmpty()) {
                 renderer.text(font, placeholder, content.x(), content.y() + content.height() / 2,
                         disabledColor(color), ellipsis(content.width()));
@@ -216,80 +207,9 @@ public class MultiSelect extends PopupSelect {
             return;
         }
         Theme theme = context().theme();
-        Color chipFill = Color.mix(theme.surface(), theme.primary(), 0.18f);
-        Color chipText = state == WidgetState.DISABLED ? disabledColor(color) : theme.primary();
-        float chipHeight = Math.min(CHIP_HEIGHT, content.height());
-        float chipY = content.y() + (content.height() - chipHeight) / 2;
-        List<Float> widths = chipWidths(indices, font);
-        float totalWidth = 0;
-        for (int index = 0; index < widths.size(); index++) {
-            totalWidth += widths.get(index) + (index > 0 ? CHIP_GAP : 0);
-        }
-        if (totalWidth <= content.width()) {
-            drawChips(renderer, indices, widths, font, chipY, chipHeight,
-                    chipFill, chipText, content.x());
-            return;
-        }
-        String moreText = "+" + indices.size();
-        float moreWidth = font == null ? 0 : font.measure(moreText).width();
-        float available = Math.max(0, content.width() - moreWidth - CHIP_GAP);
-        float used = 0;
-        int drawn = 0;
-        for (int index = 0; index < indices.size(); index++) {
-            float chipWidth = Math.min(content.width(), widths.get(index));
-            float gap = drawn > 0 ? CHIP_GAP : 0;
-            if (used + gap + chipWidth > available) {
-                break;
-            }
-            SelectOption option = optionAt(indices.get(index));
-            if (option != null) {
-                drawChip(renderer, content.x() + used + gap, chipY, chipWidth, chipHeight,
-                        option.label(), font, chipFill, chipText);
-            }
-            used += gap + chipWidth;
-            drawn++;
-        }
-        int remaining = indices.size() - drawn;
-        float moreX = content.x() + used + (drawn > 0 ? CHIP_GAP : 0);
-        moreX = Math.max(content.x(), Math.min(moreX, content.right() - moreWidth));
-        if (font != null && remaining > 0) {
-            renderer.text(font, "+" + remaining, moreX, content.y() + content.height() / 2,
-                    chipText, ellipsis(Math.max(0, content.right() - moreX)));
-        }
-    }
-
-    private List<Float> chipWidths(List<Integer> indices, Font font) {
-        List<Float> widths = new ArrayList<>();
-        for (int index : indices) {
-            SelectOption option = optionAt(index);
-            float textWidth = font == null || option == null ? 0 : font.measure(option.label()).width();
-            widths.add(textWidth + CHIP_PADDING * 2);
-        }
-        return widths;
-    }
-
-    private void drawChips(RenderManager renderer, List<Integer> indices,
-                           List<Float> widths, Font font, float chipY, float chipHeight,
-                           Color chipFill, Color chipText, float startX) {
-        float chipX = startX;
-        for (int index = 0; index < indices.size(); index++) {
-            SelectOption option = optionAt(indices.get(index));
-            if (option == null) {
-                continue;
-            }
-            drawChip(renderer, chipX, chipY, widths.get(index), chipHeight,
-                    option.label(), font, chipFill, chipText);
-            chipX += widths.get(index) + CHIP_GAP;
-        }
-    }
-
-    private void drawChip(RenderManager renderer, float x, float y, float width, float height,
-                          String label, Font font, Color fill, Color textColor) {
-        renderer.roundedRect(new Rect(x, y, width, height), height / 2, fill);
-        if (font != null) {
-            renderer.text(font, label, x + CHIP_PADDING, y + height / 2, textColor,
-                    ellipsis(Math.max(0, width - CHIP_PADDING * 2)));
-        }
+        Rect clip = new Rect(absolutePosition().x() + content.x(),
+                absolutePosition().y() + content.y(), content.width(), content.height());
+        strip.paint(renderer, content, clip, font, theme, state == WidgetState.DISABLED);
     }
 
     private Color disabledColor(Color fallback) {

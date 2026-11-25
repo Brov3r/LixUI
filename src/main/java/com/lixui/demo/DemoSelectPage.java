@@ -128,6 +128,21 @@ final class DemoSelectPage {
                 + regions.selectedCount() + " selected, " + option.label()
                 + (checked ? " added." : " removed.")));
 
+        MultiSelectCombo traits = new MultiSelectCombo();
+        traits.setPlaceholder("Choose traits");
+        traits.setSearchPlaceholder("Search traits...");
+        traits.setMinimumSize(190, FIELD_HEIGHT);
+        traits.setMaximumSize(190, FIELD_HEIGHT + 6);
+        traits.setMaxPopupHeight(150);
+        for (String name : List.of("Quickstep", "Iron Skin", "Night Sight", "Beast Speech",
+                "Arcane Focus")) {
+            traits.addOption(name);
+        }
+        traits.setAll(true);
+        traits.setOnChange((option, checked) -> status.setText("Traits: "
+                + traits.selectedCount() + " selected, " + option.label()
+                + (checked ? " added." : " removed.")));
+
         Button selectAll = new Button("Select all");
         selectAll.setOnAction(() -> {
             regions.setAll(true);
@@ -166,6 +181,9 @@ final class DemoSelectPage {
                 .add(caption("Icon-free multi-select: a long list with disabled regions and "
                         + "bulk actions"))
                 .add(regions)
+                .add(caption("Narrow multi-select: chips stay inside the field and the trailing "
+                        + "pill counts the values that do not fit"))
+                .add(traits)
                 .add(regionActions)
                 .add(status);
         return new DemoScrollPage(page);

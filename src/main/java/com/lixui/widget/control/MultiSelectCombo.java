@@ -9,6 +9,7 @@ import com.lixui.text.HorizontalAlignment;
 import com.lixui.text.TextOverflow;
 import com.lixui.text.TextStyle;
 import com.lixui.text.VerticalAlignment;
+import com.lixui.theme.Theme;
 import com.lixui.theme.WidgetState;
 
 import java.util.ArrayList;
@@ -19,8 +20,8 @@ import java.util.function.BiConsumer;
 
 /**
  * A multi-choice select field with an editable filter that keeps its popup open while options are
- * toggled. The closed field shows a compact summary of the selected labels; the popup rows show a
- * check mark and Enter toggles the highlighted row without closing the popup.
+ * toggled. The closed field shows the selected labels as chips; the popup rows show a check mark
+ * and Enter toggles the highlighted row without closing the popup.
  */
 public class MultiSelectCombo extends FilterableSelect {
     private final Set<Integer> selected = new LinkedHashSet<>();
@@ -176,21 +177,26 @@ public class MultiSelectCombo extends FilterableSelect {
     }
 
     /**
-     * Measures the placeholder or the compact selection summary.
+     * Measures the placeholder, the selected chip strip or the compact summary used by {@link #text()}.
      *
      * @param font resolved field font, or null when no font is available
      * @return the content size without padding and the arrow
      */
     @Override
     protected Size onFieldContentSize(Font font) {
+        ChipStrip strip = ChipStrip.of(selectedOptions());
+        if (!strip.isEmpty()) {
+            return strip.measure(font);
+        }
         if (font == null) {
             return new Size(0, 0);
         }
-        return font.measure(summary());
+        Size size = font.measure(summary());
+        return new Size(size.width(), Math.max(size.height(), ChipStrip.CHIP_HEIGHT));
     }
 
     /**
-     * Paints the placeholder or the compact selection summary.
+     * Paints the selected chip strip, the placeholder or the compact summary of disabled selections.
      *
      * @param renderer drawing manager for the current frame
      * @param content content rectangle inside the field padding and arrow slot
@@ -201,14 +207,21 @@ public class MultiSelectCombo extends FilterableSelect {
     protected void drawFieldContent(RenderManager renderer, Rect content,
                                     Color color, WidgetState state) {
         Font font = font();
+        ChipStrip strip = ChipStrip.of(selectedOptions());
+        if (!strip.isEmpty()) {
+            Theme theme = context().theme();
+            Rect clip = new Rect(absolutePosition().x() + content.x(),
+                    absolutePosition().y() + content.y(), content.width(), content.height());
+            strip.paint(renderer, content, clip, font, theme, state == WidgetState.DISABLED);
+            return;
+        }
         String text = summary();
         if (font == null || text.isEmpty()) {
             return;
         }
         Color textColor = selected.isEmpty() ? mutedColor(color) : color;
         renderer.text(font, text, content.x(), content.y() + content.height() / 2, textColor,
-                new TextStyle(content.width(), 0, 1, TextOverflow.ELLIPSIS,
-                        HorizontalAlignment.LEFT, VerticalAlignment.CENTER));
+                ellipsis(content.width()));
     }
 
     /**
@@ -288,6 +301,11 @@ public class MultiSelectCombo extends FilterableSelect {
         SelectOption first = optionAt(indices.get(0));
         String label = first == null ? placeholder() : first.label();
         return indices.size() > 1 ? label + " +" + (indices.size() - 1) : label;
+    }
+
+    private static TextStyle ellipsis(float width) {
+        return new TextStyle(Math.max(0, width), 0, 1, TextOverflow.ELLIPSIS,
+                HorizontalAlignment.LEFT, VerticalAlignment.CENTER);
     }
 
     private void notifyChange(SelectOption option, boolean checked) {
