@@ -96,15 +96,37 @@ final class DemoWidgetScene implements AutoCloseable {
     private static final float WINDOW_HEIGHT = 560;
     private static final float CONTENT_PADDING = 10;
     private static final float CONTENT_GAP = 8;
+    private static final float THEME_SELECT_WIDTH = 210;
+    private static final float FIXED_COLOR_BADGE_WIDTH = 110;
+    private static final float FIXED_COLOR_BADGE_HEIGHT = 24;
     private static final Color BLUE = Color.hex("#7EA6F5");
     private static final Color GREEN = Color.hex("#86C46A");
     private static final Color ORANGE = Color.hex("#E39A5B");
     private static final Color PURPLE = Color.hex("#C39BF2");
+    private static final Color FIXED_BADGE_BACKGROUND = Color.hex("#FF9E64");
+    private static final Color FIXED_BADGE_TEXT = Color.hex("#1A1A1A");
+    private static final Theme EMBER_THEME = Theme.dracula()
+            .withPrimary(Color.hex("#FF9E64"))
+            .withOnPrimary(Color.hex("#282A36"))
+            .withFocusRing(Color.hex("#E0AF68"));
+    private static final List<ThemeChoice> THEME_CHOICES = List.of(
+            new ThemeChoice("Dark", Theme.dark()),
+            new ThemeChoice("Light", Theme.light()),
+            new ThemeChoice("Dracula", Theme.dracula()),
+            new ThemeChoice("Catppuccin Latte", Theme.catppuccinLatte()),
+            new ThemeChoice("Catppuccin Frappé", Theme.catppuccinFrappe()),
+            new ThemeChoice("Catppuccin Macchiato", Theme.catppuccinMacchiato()),
+            new ThemeChoice("Catppuccin Mocha", Theme.catppuccinMocha()),
+            new ThemeChoice("Nord", Theme.nord()),
+            new ThemeChoice("Gruvbox Dark", Theme.gruvboxDark()),
+            new ThemeChoice("Ember (custom)", EMBER_THEME));
 
     private final WidgetManager manager;
     private final RenderBackend backend;
     private final Widget background;
     private final Button themeButton;
+    private final Dropdown themeSelect;
+    private final Badge fixedColorBadge;
     private final Window window;
     private final TabPanel outerTabs;
     private final TabPanel innerTabs;
@@ -122,6 +144,7 @@ final class DemoWidgetScene implements AutoCloseable {
     private Texture lightThemeIcon;
     private Texture darkThemeIcon;
     private final FontFamily fontFamily;
+    private boolean syncingThemeSelection;
     private int fps;
     private int fpsFrames;
     private double fpsElapsed;
@@ -137,6 +160,14 @@ final class DemoWidgetScene implements AutoCloseable {
         bindIcon("light-mode.svg", THEME_ICON_SIZE, icon -> lightThemeIcon = icon);
         bindIcon("dark-mode.svg", THEME_ICON_SIZE, icon -> darkThemeIcon = icon);
         themeButton.setOnAction(this::toggleTheme);
+        themeSelect = new Dropdown();
+        themeSelect.setPlaceholder("Theme");
+        themeSelect.setMinimumSize(THEME_SELECT_WIDTH, THEME_BUTTON_SIZE);
+        themeSelect.setMaximumSize(THEME_SELECT_WIDTH, THEME_BUTTON_SIZE);
+        fixedColorBadge = new Badge("Fixed color");
+        fixedColorBadge.setAutoSize(false);
+        fixedColorBadge.setBackgroundColor(FIXED_BADGE_BACKGROUND);
+        fixedColorBadge.setTextColor(FIXED_BADGE_TEXT);
         titleLabel = new Label("Labels and rich text");
         bodyLabel = new Label("A wrapped label reflows at the window width and aligns its text "
                 + "inside the assigned bounds. Resize the window and the lines reflow again, "
@@ -200,8 +231,23 @@ final class DemoWidgetScene implements AutoCloseable {
         window.setHeaderIconSize(THEME_ICON_SIZE);
         window.setContent(outerTabs);
         statsPanel = new DemoStatsPanel();
+        for (ThemeChoice choice : THEME_CHOICES) {
+            themeSelect.addOption(new SelectOption(choice.label(), choice.theme()));
+        }
+        themeSelect.setSelectedIndex(0);
+        themeSelect.setOnChange(option -> {
+            if (!syncingThemeSelection && option != null && option.value() instanceof Theme theme) {
+                applyTheme(theme);
+            }
+        });
+        // Keep the toolbar above the window when a small viewport shifts the window upward.
+        themeButton.setAlwaysOnTop(true);
+        themeSelect.setAlwaysOnTop(true);
+        fixedColorBadge.setAlwaysOnTop(true);
+        statsPanel.setAlwaysOnTop(true);
         applyStyles();
-        manager.add(background).add(themeButton).add(statsPanel).add(window);
+        manager.add(background).add(themeButton).add(themeSelect).add(fixedColorBadge)
+                .add(statsPanel).add(window);
     }
 
     /**
@@ -218,10 +264,16 @@ final class DemoWidgetScene implements AutoCloseable {
         for (IconSlot slot : iconSlots) {
             slot.resize(manager.context().density());
         }
-        themeButton.setIcon(manager.context().theme().equals(Theme.light()) ? darkThemeIcon : lightThemeIcon);
+        updateThemeButtonIcon();
         background.setBounds(new Rect(0, 0, viewport.logicalWidth(), viewport.logicalHeight()));
         themeButton.setBounds(new Rect(16, 16, THEME_BUTTON_SIZE, THEME_BUTTON_SIZE));
-        statsPanel.setPosition(16 + THEME_BUTTON_SIZE + STATS_GAP, 16);
+        float controlsX = 16 + THEME_BUTTON_SIZE + STATS_GAP;
+        themeSelect.setBounds(new Rect(controlsX, 16, THEME_SELECT_WIDTH, THEME_BUTTON_SIZE));
+        float badgeX = controlsX + THEME_SELECT_WIDTH + STATS_GAP;
+        fixedColorBadge.setBounds(new Rect(badgeX,
+                16 + (THEME_BUTTON_SIZE - FIXED_COLOR_BADGE_HEIGHT) / 2,
+                FIXED_COLOR_BADGE_WIDTH, FIXED_COLOR_BADGE_HEIGHT));
+        statsPanel.setPosition(badgeX + FIXED_COLOR_BADGE_WIDTH + STATS_GAP, 16);
         float windowX = Math.max(0, (viewport.logicalWidth() - WINDOW_WIDTH) / 2);
         float windowY = Math.max(0, (viewport.logicalHeight() - WINDOW_HEIGHT) / 2);
         window.setBounds(new Rect(windowX, windowY, WINDOW_WIDTH, WINDOW_HEIGHT));
@@ -1594,10 +1646,37 @@ final class DemoWidgetScene implements AutoCloseable {
     }
 
     private void toggleTheme() {
-        boolean useLight = manager.context().theme().equals(Theme.dark());
-        manager.setTheme(useLight ? Theme.light() : Theme.dark());
-        themeButton.setIcon(useLight ? darkThemeIcon : lightThemeIcon);
+        Theme next = isLight(manager.context().theme()) ? Theme.dark() : Theme.light();
+        applyTheme(next);
+    }
+
+    private void applyTheme(Theme theme) {
+        manager.setTheme(theme);
+        updateThemeButtonIcon();
         applyStyles();
+        int index = themeIndex(theme);
+        if (index >= 0 && themeSelect.selectedIndex() != index) {
+            syncingThemeSelection = true;
+            try {
+                themeSelect.setSelectedIndex(index);
+            } finally {
+                syncingThemeSelection = false;
+            }
+        }
+    }
+
+    private void updateThemeButtonIcon() {
+        themeButton.setIcon(isLight(manager.context().theme())
+                ? darkThemeIcon : lightThemeIcon);
+    }
+
+    private static int themeIndex(Theme theme) {
+        for (int index = 0; index < THEME_CHOICES.size(); index++) {
+            if (THEME_CHOICES.get(index).theme().equals(theme)) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     private void applyStyles() {
@@ -1854,6 +1933,9 @@ final class DemoWidgetScene implements AutoCloseable {
                     Math.max(0, bounds().width() - INSET * 2),
                     Math.max(0, bounds().height() - INSET * 2)));
         }
+    }
+
+    private record ThemeChoice(String label, Theme theme) {
     }
 
     private static final class Background extends Widget {
