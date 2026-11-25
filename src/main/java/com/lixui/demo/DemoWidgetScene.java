@@ -565,7 +565,7 @@ final class DemoWidgetScene implements AutoCloseable {
         return panel;
     }
 
-    private VBox createFormPage() {
+    private Widget createFormPage() {
         Input name = new Input("Aria");
         name.setPlaceholder("Player name");
 
@@ -598,8 +598,9 @@ final class DemoWidgetScene implements AutoCloseable {
         VBox page = new VBox();
         page.setPadding(CONTENT_PADDING);
         page.setGap(10);
-        page.add(nameField).add(emailField).add(roleField).add(updatesField).add(showError);
-        return page;
+        page.add(nameField).add(emailField).add(roleField).add(updatesField).add(showError)
+                .add(DemoFormWidgets.tagInputs());
+        return new DemoScrollPage(page);
     }
 
     private Widget createPickersPage() {
