@@ -12,14 +12,23 @@ import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.platform.Cursor;
 import com.lixui.render.Viewport;
+import com.lixui.render.command.TextCommand;
+import com.lixui.text.Font;
+import com.lixui.text.FontData;
+import com.lixui.text.SystemFonts;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.testsupport.TestBackend;
+import com.lixui.widget.testsupport.TestTexture;
 import com.lixui.widget.testsupport.TestViewports;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -263,6 +272,56 @@ class RadialMenuTest {
     }
 
     @Test
+    void longLabelsStayInsideNarrowSectorsWithoutIcons() {
+        assertLongLabelsStayInsideSectors(false);
+    }
+
+    @Test
+    void longLabelsStayInsideNarrowSectorsWithIcons() {
+        assertLongLabelsStayInsideSectors(true);
+    }
+
+    @Test
+    void longLabelsDoNotGrowTheViewportRadius() {
+        FontData data = fontData();
+        TestBackend backend = new TestBackend();
+        Viewport viewport = new Viewport(300, 300, 300, 300);
+        try (WidgetManager manager = manager(backend, viewport)) {
+            manager.setDefaultFont(manager.context().createFont(data, 14));
+            RadialMenu menu = menu(6);
+            menu.setRadius(150);
+            menu.setInnerRadiusRatio(0.4f);
+            menu.setTitle("");
+            menu.setAnimationDuration(0);
+            String token = "SupercalifragilisticexpialidociousTokenWithoutSpaces0123456789";
+            for (RadialMenu.Item item : menu.items()) {
+                item.setLabel(token);
+            }
+            menu.open(manager.context(), 150, 150);
+            manager.layout();
+
+            assertEquals(144, menu.menuBounds().width() / 2, 0.01f);
+        }
+    }
+
+    @Test
+    void truncatedLabelsKeepSurrogatePairsWhole() {
+        FontData data = fontData();
+        Font font = Font.load(data, 20, new int[]{'A', 0x1F680, 0x2026});
+        String text = "AAAA" + "\uD83D\uDE80".repeat(8) + "AAAA";
+        boolean truncated = false;
+        for (int width = 1; width <= 80; width++) {
+            String fitted = RadialMenu.fitLabelText(font, text, width);
+            if (fitted == null) {
+                continue;
+            }
+            truncated |= fitted.length() < text.length();
+            assertNoUnpairedSurrogates(fitted);
+        }
+        assertTrue(truncated);
+    }
+
+    @Test
     void rejectsInvalidConfiguration() {
         TestBackend backend = new TestBackend();
         try (WidgetManager manager = manager(backend)) {
@@ -287,6 +346,111 @@ class RadialMenuTest {
         }
     }
 
+    private static void assertLongLabelsStayInsideSectors(boolean withIcons) {
+        FontData data = fontData();
+        TestBackend backend = new TestBackend();
+        Viewport viewport = new Viewport(400, 400, 400, 400);
+        try (WidgetManager manager = manager(backend, viewport)) {
+            manager.setDefaultFont(manager.context().createFont(data, 14));
+            RadialMenu menu = new RadialMenu();
+            menu.setRadius(100);
+            menu.setInnerRadiusRatio(0.4f);
+            menu.setIconSize(16);
+            menu.setTitle("");
+            menu.setAnimationDuration(0);
+            String token = "SupercalifragilisticexpialidociousTokenWithoutSpaces0123456789";
+            for (int index = 0; index < 6; index++) {
+                RadialMenu.Item item = menu.addItem(token, null);
+                if (withIcons) {
+                    item.setIcon(new TestTexture(18, 18));
+                }
+            }
+            menu.open(manager.context(), 200, 200);
+            manager.layout();
+            manager.render();
+
+            List<TextCommand> labels = backend.lastDrawList().commands().stream()
+                    .filter(TextCommand.class::isInstance)
+                    .map(TextCommand.class::cast)
+                    .toList();
+            assertFalse(labels.isEmpty());
+            assertTrue(labels.size() >= 3);
+            assertLabelsInside(menu, labels, 6);
+            Rect bounds = menu.menuBounds();
+            Set<Integer> quadrants = new HashSet<>();
+            for (TextCommand label : labels) {
+                float angle = (float) Math.atan2(label.bounds().center().y() - bounds.center().y(),
+                        label.bounds().center().x() - bounds.center().x());
+                quadrants.add((int) (normalize(angle) / (Math.PI / 2)) % 4);
+                assertTrue(label.glyphs().size() < token.codePointCount(0, token.length()));
+            }
+            assertTrue(quadrants.size() >= 2);
+            assertEquals(token, menu.items().getFirst().label());
+        }
+    }
+
+    private static void assertLabelsInside(RadialMenu menu, List<TextCommand> labels, int count) {
+        Rect bounds = menu.menuBounds();
+        float centerX = bounds.center().x();
+        float centerY = bounds.center().y();
+        float outer = bounds.width() / 2;
+        float inner = outer * menu.innerRadiusRatio();
+        float sweep = (float) (Math.PI * 2 / count);
+        float start = (float) (-Math.PI / 2 - sweep / 2);
+        for (TextCommand label : labels) {
+            Rect text = label.bounds();
+            float relative = normalize((float) Math.atan2(text.center().y() - centerY,
+                    text.center().x() - centerX) - start);
+            int index = Math.min((int) (relative / sweep), count - 1);
+            float sectorCenter = start + (index + 0.5f) * sweep;
+            for (float x : List.of(text.x(), text.right())) {
+                for (float y : List.of(text.y(), text.bottom())) {
+                    double radius = Math.hypot(x - centerX, y - centerY);
+                    assertTrue(radius >= inner - 0.5 && radius <= outer + 0.5);
+                    double difference = Math.abs(normalizeSigned((float) Math.atan2(y - centerY,
+                            x - centerX) - sectorCenter));
+                    assertTrue(difference <= sweep / 2 + 0.01);
+                }
+            }
+        }
+    }
+
+    private static void assertNoUnpairedSurrogates(String text) {
+        for (int index = 0; index < text.length(); index++) {
+            char character = text.charAt(index);
+            if (Character.isHighSurrogate(character)) {
+                assertTrue(index + 1 < text.length());
+                assertTrue(Character.isLowSurrogate(text.charAt(index + 1)));
+                index++;
+            } else {
+                assertFalse(Character.isLowSurrogate(character));
+            }
+        }
+    }
+
+    private static float normalize(float angle) {
+        float fullTurn = (float) (Math.PI * 2);
+        float normalized = angle % fullTurn;
+        return normalized < 0 ? normalized + fullTurn : normalized;
+    }
+
+    private static float normalizeSigned(float angle) {
+        float fullTurn = (float) (Math.PI * 2);
+        float normalized = angle % fullTurn;
+        if (normalized > Math.PI) {
+            normalized -= fullTurn;
+        } else if (normalized < -Math.PI) {
+            normalized += fullTurn;
+        }
+        return normalized;
+    }
+
+    private static FontData fontData() {
+        Optional<FontData> data = SystemFonts.findDefault();
+        Assumptions.assumeTrue(data.isPresent(), "No readable system font is installed.");
+        return data.get();
+    }
+
     private static RadialMenu menu(int count) {
         RadialMenu menu = new RadialMenu();
         for (int index = 0; index < count; index++) {
@@ -304,11 +468,14 @@ class RadialMenuTest {
     }
 
     private static WidgetManager manager(TestBackend backend) {
+        return manager(backend, TestViewports.LOGICAL);
+    }
+
+    private static WidgetManager manager(TestBackend backend, Viewport viewport) {
         WidgetManager manager = new WidgetManager(new InputState(), backend);
-        manager.resize(TestViewports.LOGICAL);
+        manager.resize(viewport);
         Widget root = new Widget() { };
-        root.setBounds(new Rect(0, 0, TestViewports.LOGICAL.logicalWidth(),
-                TestViewports.LOGICAL.logicalHeight()));
+        root.setBounds(new Rect(0, 0, viewport.logicalWidth(), viewport.logicalHeight()));
         manager.add(root);
         return manager;
     }

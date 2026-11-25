@@ -52,6 +52,8 @@ final class RadialMenuDemoPage {
         RadialMenu file = createFileMenu(status);
         RadialMenu edit = createEditMenu(status);
         RadialMenu tools = createToolsMenu(status);
+        RadialMenu longLabels = createLongLabelMenu(status);
+        List<RadialMenu> menus = List.of(file, edit, tools, longLabels);
 
         Button fileButton = new Button("File actions");
         fileButton.setOnAction(() -> openAt(fileButton, file));
@@ -59,6 +61,8 @@ final class RadialMenuDemoPage {
         editButton.setOnAction(() -> openAt(editButton, edit));
         Button toolsButton = new Button("Tools");
         toolsButton.setOnAction(() -> openAt(toolsButton, tools));
+        Button longButton = new Button("Long labels");
+        longButton.setOnAction(() -> openAt(longButton, longLabels));
         Button cornerButton = new Button("Open near corner");
         cornerButton.setOnAction(() -> {
             UiContext context = cornerButton.context();
@@ -70,12 +74,12 @@ final class RadialMenuDemoPage {
 
         Flow buttons = new Flow();
         buttons.setGap(8);
-        buttons.add(fileButton).add(editButton).add(toolsButton).add(cornerButton);
+        buttons.add(fileButton).add(editButton).add(toolsButton).add(longButton).add(cornerButton);
 
         CheckBox outside = new CheckBox("Close on outside click");
         outside.setChecked(true);
         outside.setOnChange(checked -> {
-            for (RadialMenu menu : List.of(file, edit, tools)) {
+            for (RadialMenu menu : menus) {
                 menu.setCloseOnOutsideClick(checked);
             }
         });
@@ -83,7 +87,7 @@ final class RadialMenuDemoPage {
         CheckBox animate = new CheckBox("Animate open and close");
         animate.setChecked(true);
         animate.setOnChange(checked -> {
-            for (RadialMenu menu : List.of(file, edit, tools)) {
+            for (RadialMenu menu : menus) {
                 menu.setAnimationDuration(checked ? ANIMATION_SECONDS : 0);
             }
         });
@@ -96,7 +100,8 @@ final class RadialMenuDemoPage {
         page.setPadding(CONTENT_PADDING);
         page.setGap(CONTENT_GAP);
         page.add(caption("File has six icon sectors around a titled center, Edit has eight "
-                        + "compact sectors, and Tools has four large sectors. The center closes "
+                        + "compact sectors, Tools has four large sectors, and Long labels uses "
+                        + "narrow sectors with ellipsized continuous tokens. The center closes "
                         + "the menu; the last button opens the file menu at the viewport edge."))
                 .add(buttons)
                 .add(controls)
@@ -146,6 +151,24 @@ final class RadialMenuDemoPage {
         add(menu, "Palette", "palette.svg", status);
         add(menu, "Wand", "wand.svg", status);
         add(menu, "Pick", "target.svg", status);
+        return menu;
+    }
+
+    private RadialMenu createLongLabelMenu(Label status) {
+        RadialMenu menu = new RadialMenu();
+        menu.setRadius(124);
+        menu.setInnerRadiusRatio(0.42f);
+        menu.setIconSize(ICON_SIZE);
+        menu.setTitle("Long");
+        add(menu, "Short", "file.svg", status);
+        add(menu, "SupercalifragilisticexpialidociousTokenWithoutSpaces0123456789",
+                "pen.svg", status);
+        add(menu, "A very long label that must stay inside its sector",
+                "folder.svg", status);
+        add(menu, "AnotherIrritatinglyLongContinuousTokenThatCannotWrap",
+                "save.svg", status);
+        add(menu, "Medium label", "share.svg", status);
+        add(menu, "Done", "tick.svg", status);
         return menu;
     }
 

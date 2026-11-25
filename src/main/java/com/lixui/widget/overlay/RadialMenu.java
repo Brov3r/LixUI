@@ -45,6 +45,8 @@ public class RadialMenu extends Widget {
         private Texture icon;
         private Runnable action;
         private boolean enabled = true;
+        private PlacementKey placementKey;
+        private Placement placement;
 
         /**
          * Creates an enabled item without an icon or action.
@@ -159,8 +161,20 @@ public class RadialMenu extends Widget {
     private static final float DEFAULT_INNER_RADIUS_RATIO = 0.4f;
     private static final float DEFAULT_ICON_SIZE = 20;
     private static final float DEFAULT_ANIMATION_SECONDS = 0.22f;
-    private static final float LABEL_GAP = 12;
-    private static final float MAX_LABEL_WIDTH = 110;
+    private static final float LABEL_OUTER_MARGIN = 4;
+    private static final float LABEL_INNER_MARGIN = 2;
+    private static final float LABEL_GLYPH_PADDING = 2;
+    private static final float LABEL_ANGLE_MARGIN = 0.02f;
+    private static final float LABEL_VISIBLE_AMOUNT = 0.995f;
+    private static final float ICON_INNER_MARGIN = 2;
+    private static final float ICON_OUTER_MARGIN = 2;
+    private static final float ICON_LABEL_GAP = 4;
+    private static final float ICON_RADIAL_RATIO = 0.3f;
+    private static final float MIN_ICON_EDGE = 4;
+    private static final int LABEL_RADIUS_CANDIDATES = 5;
+    private static final int LABEL_WIDTH_STEPS = 10;
+    private static final int ICON_EDGE_STEPS = 8;
+    private static final int FULL_TEXT_MEASURE_LIMIT = 256;
     private static final float VIEWPORT_MARGIN = 6;
     private static final float SECTOR_GAP = 0.02f;
     private static final float HOVER_LIFT = 4;
@@ -190,7 +204,6 @@ public class RadialMenu extends Widget {
     private float centerX;
     private float centerY;
     private float effectiveRadius;
-    private float labelWidth;
     private float openAmount;
     private int hoveredIndex = -1;
     private boolean centerHovered;
@@ -550,7 +563,8 @@ public class RadialMenu extends Widget {
     }
 
     /**
-     * Positions the menu center and shrinks the radius to keep the ring and labels in the viewport.
+     * Positions the menu center and shrinks the radius so the whole ring stays in the viewport.
+     * Labels are fitted inside their sectors and never increase the ring radius.
      */
     @Override
     protected void onLayout() {
@@ -564,25 +578,14 @@ public class RadialMenu extends Widget {
             effectiveRadius = 0;
             return;
         }
-        Font font = font();
-        float widestLabel = 0;
-        if (font != null) {
-            for (Item item : items) {
-                widestLabel = Math.max(widestLabel, font.measure(item.label).width());
-            }
-        }
-        labelWidth = font == null ? 0
-                : Math.min(widestLabel, Math.min(MAX_LABEL_WIDTH, viewportWidth * 0.25f));
-        float labelHeight = font == null ? 0 : font.lineHeight();
-        float maxRadiusX = viewportWidth / 2 - VIEWPORT_MARGIN - LABEL_GAP - labelWidth / 2;
-        float maxRadiusY = viewportHeight / 2 - VIEWPORT_MARGIN - LABEL_GAP - labelHeight / 2;
-        effectiveRadius = Math.max(0, Math.min(radius, Math.min(maxRadiusX, maxRadiusY)));
-        float extentX = effectiveRadius + LABEL_GAP + labelWidth / 2 + VIEWPORT_MARGIN;
-        float extentY = effectiveRadius + LABEL_GAP + labelHeight / 2 + VIEWPORT_MARGIN;
-        centerX = extentX * 2 >= viewportWidth
-                ? viewportWidth / 2 : Math.clamp(requestedX, extentX, viewportWidth - extentX);
-        centerY = extentY * 2 >= viewportHeight
-                ? viewportHeight / 2 : Math.clamp(requestedY, extentY, viewportHeight - extentY);
+        float maxRadius = Math.min(viewportWidth, viewportHeight) / 2 - VIEWPORT_MARGIN;
+        effectiveRadius = Math.max(0, Math.min(radius, maxRadius));
+        float extent = effectiveRadius + VIEWPORT_MARGIN;
+        centerX = extent * 2 >= viewportWidth
+                ? viewportWidth / 2 : Math.clamp(requestedX, extent, viewportWidth - extent);
+        centerY = extent * 2 >= viewportHeight
+                ? viewportHeight / 2 : Math.clamp(requestedY, extent, viewportHeight - extent);
+        refreshPlacements();
     }
 
     /**
@@ -806,6 +809,7 @@ public class RadialMenu extends Widget {
         float inner = outer * innerRadiusRatio;
         float sweep = FULL_TURN / items.size();
         float gap = items.size() > 1 ? Math.min(SECTOR_GAP, sweep * 0.2f) : 0;
+        boolean labelsVisible = !closing && amount >= LABEL_VISIBLE_AMOUNT;
         for (int pass = 0; pass < 2; pass++) {
             for (int index = 0; index < items.size(); index++) {
                 boolean hovered = index == hoveredIndex;
@@ -816,7 +820,7 @@ public class RadialMenu extends Widget {
                     continue;
                 }
                 drawItem(renderer, theme, font, amount, index, hovered, inner, outer,
-                        sweep, gap);
+                        sweep, gap, labelsVisible);
             }
         }
         float centerRadius = inner * CENTER_CIRCLE_RATIO;
@@ -827,7 +831,7 @@ public class RadialMenu extends Widget {
 
     private void drawItem(RenderManager renderer, Theme theme, Font font, float amount,
                           int index, boolean hovered, float inner, float outer, float sweep,
-                          float gap) {
+                          float gap, boolean labelsVisible) {
         Item item = items.get(index);
         float start = sectorStart(index, sweep) + gap / 2;
         float itemSweep = sweep - gap;
@@ -838,32 +842,28 @@ public class RadialMenu extends Widget {
         }
         drawRingSector(renderer, new Point(centerX, centerY), inner, itemOuter, start,
                 itemSweep, Paint.solid(fill));
-        float midRadius = (inner + itemOuter) / 2;
-        float angle = start + itemSweep / 2;
-        if (item.icon != null) {
-            float edge = Math.min(iconSize * amount, (itemOuter - inner) * 0.6f);
+        Placement placement = item.placement;
+        if (placement == null) {
+            return;
+        }
+        float angle = sectorStart(index, sweep) + sweep / 2;
+        if (item.icon != null && placement.iconVisible) {
+            float edge = placement.iconEdge * amount;
+            float radius = placement.iconRadius * amount;
             if (edge > 0.5f) {
                 Color tint = item.enabled ? theme.text() : theme.textMuted().withAlpha(0.45f);
-                renderer.icon(item.icon, new Rect(centerX + (float) Math.cos(angle) * midRadius
-                                - edge / 2, centerY + (float) Math.sin(angle) * midRadius - edge / 2,
+                renderer.icon(item.icon, new Rect(centerX + (float) Math.cos(angle) * radius
+                                - edge / 2, centerY + (float) Math.sin(angle) * radius - edge / 2,
                         edge, edge), ImageStyle.ICON, tint);
             }
         }
-        drawLabel(renderer, theme, font, amount, item, angle, itemOuter);
-    }
-
-    private void drawLabel(RenderManager renderer, Theme theme, Font font, float amount,
-                           Item item, float angle, float outer) {
-        if (font == null || labelWidth <= 0 || item.label.isEmpty()) {
-            return;
+        if (labelsVisible && font != null && placement.labelText != null) {
+            float x = centerX + (float) Math.cos(angle) * placement.labelRadius;
+            float y = centerY + (float) Math.sin(angle) * placement.labelRadius;
+            Color color = item.enabled ? theme.text() : theme.textMuted().withAlpha(0.45f);
+            renderer.text(font, placement.labelText, x, y, color,
+                    HorizontalAlignment.CENTER, VerticalAlignment.CENTER);
         }
-        float labelRadius = outer + LABEL_GAP * amount;
-        float x = centerX + (float) Math.cos(angle) * labelRadius;
-        float y = centerY + (float) Math.sin(angle) * labelRadius;
-        Color color = item.enabled ? theme.text() : theme.textMuted().withAlpha(0.45f);
-        TextStyle style = new TextStyle(labelWidth, 0, 1, TextOverflow.ELLIPSIS,
-                HorizontalAlignment.CENTER, VerticalAlignment.CENTER);
-        renderer.text(font, item.label, x, y, color, style);
     }
 
     private void drawCenter(RenderManager renderer, Theme theme, Font font, float centerRadius) {
@@ -889,6 +889,253 @@ public class RadialMenu extends Widget {
         renderer.strokeLine(new Point(centerX - arm, centerY + arm),
                 new Point(centerX + arm, centerY - arm), 2, Paint.solid(color));
     }
+
+    private void refreshPlacements() {
+        if (items.isEmpty() || effectiveRadius <= 0) {
+            return;
+        }
+        Font font = font();
+        float inner = effectiveRadius * innerRadiusRatio;
+        float outer = effectiveRadius;
+        float sweep = FULL_TURN / items.size();
+        float gap = items.size() > 1 ? Math.min(SECTOR_GAP, sweep * 0.2f) : 0;
+        for (int index = 0; index < items.size(); index++) {
+            Item item = items.get(index);
+            float angle = START_OFFSET + index * sweep;
+            PlacementKey key = new PlacementKey(font, item.label, inner, outer, sweep, angle,
+                    iconSize, item.icon != null);
+            if (item.placement == null || !key.equals(item.placementKey)) {
+                item.placement = computePlacement(item, font, inner, outer, sweep, gap, angle);
+                item.placementKey = key;
+            }
+        }
+    }
+
+    private Placement computePlacement(Item item, Font font, float inner, float outer,
+                                       float sweep, float gap, float angle) {
+        float alpha = (sweep - gap) / 2 - LABEL_ANGLE_MARGIN;
+        if (alpha <= 0) {
+            return Placement.hidden();
+        }
+        float iconRadius = 0;
+        float iconEdge = 0;
+        boolean iconVisible = false;
+        if (item.icon != null) {
+            iconRadius = inner + (outer - inner) * ICON_RADIAL_RATIO;
+            float maxEdge = Math.min(iconSize, (outer - inner) * 0.55f);
+            iconEdge = fitSquare(iconRadius, maxEdge, angle, alpha,
+                    inner + ICON_INNER_MARGIN, outer - ICON_OUTER_MARGIN);
+            iconVisible = iconEdge >= MIN_ICON_EDGE;
+        }
+        if (font == null || item.label.isEmpty()) {
+            return new Placement(iconRadius, iconEdge, iconVisible, 0, null);
+        }
+        float height = font.lineHeight();
+        if (height <= 0) {
+            return new Placement(iconRadius, iconEdge, iconVisible, 0, null);
+        }
+        float textHeight = height + LABEL_GLYPH_PADDING * 2;
+        float iconExtent = iconVisible
+                ? iconRadius + (float) Math.hypot(iconEdge / 2, iconEdge / 2) : 0;
+        float labelMin = inner + LABEL_INNER_MARGIN + textHeight / 2;
+        if (iconVisible) {
+            labelMin = Math.max(labelMin, iconExtent + ICON_LABEL_GAP + textHeight / 2);
+        }
+        float labelMax = outer - LABEL_OUTER_MARGIN - textHeight / 2;
+        if (labelMax < labelMin) {
+            return new Placement(iconRadius, iconEdge, iconVisible, 0, null);
+        }
+        float bestWidth = 0;
+        float bestRadius = 0;
+        for (int step = 0; step < LABEL_RADIUS_CANDIDATES; step++) {
+            float fraction = (float) step / (LABEL_RADIUS_CANDIDATES - 1);
+            float candidate = labelMin + (labelMax - labelMin) * fraction;
+            float width = fitRectWidth(candidate, angle, textHeight, alpha,
+                    inner + LABEL_INNER_MARGIN, outer - LABEL_OUTER_MARGIN);
+            if (width > bestWidth) {
+                bestWidth = width;
+                bestRadius = candidate;
+            }
+        }
+        if (bestWidth <= 0) {
+            return new Placement(iconRadius, iconEdge, iconVisible, 0, null);
+        }
+        float textWidth = bestWidth - LABEL_GLYPH_PADDING * 2;
+        String fitted = textWidth <= 0 ? null : fitLabelText(font, item.label, textWidth);
+        if (fitted == null) {
+            return new Placement(iconRadius, iconEdge, iconVisible, 0, null);
+        }
+        return new Placement(iconRadius, iconEdge, iconVisible, bestRadius, fitted);
+    }
+
+    private static float fitSquare(float radius, float maxEdge, float angle, float alpha,
+                                   float inner, float outer) {
+        if (maxEdge <= 0) {
+            return 0;
+        }
+        float centerX = (float) Math.cos(angle) * radius;
+        float centerY = (float) Math.sin(angle) * radius;
+        if (rectFits(centerX, centerY, maxEdge, maxEdge, angle, alpha, inner, outer)) {
+            return maxEdge;
+        }
+        float low = 0;
+        float high = maxEdge;
+        for (int step = 0; step < ICON_EDGE_STEPS; step++) {
+            float middle = (low + high) / 2;
+            if (rectFits(centerX, centerY, middle, middle, angle, alpha, inner, outer)) {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        return low;
+    }
+
+    private static float fitRectWidth(float radius, float angle, float height, float alpha,
+                                      float inner, float outer) {
+        float centerX = (float) Math.cos(angle) * radius;
+        float centerY = (float) Math.sin(angle) * radius;
+        if (!rectFits(centerX, centerY, 0, height, angle, alpha, inner, outer)) {
+            return 0;
+        }
+        float low = 0;
+        float high = outer * 2;
+        for (int step = 0; step < LABEL_WIDTH_STEPS; step++) {
+            float middle = (low + high) / 2;
+            if (rectFits(centerX, centerY, middle, height, angle, alpha, inner, outer)) {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        return low;
+    }
+
+    private static boolean rectFits(float centerX, float centerY, float width, float height,
+                                    float angle, float alpha, float inner, float outer) {
+        float left = centerX - width / 2;
+        float right = centerX + width / 2;
+        float top = centerY - height / 2;
+        float bottom = centerY + height / 2;
+        if (!cornerFits(left, top, angle, alpha, inner, outer)
+                || !cornerFits(right, top, angle, alpha, inner, outer)
+                || !cornerFits(left, bottom, angle, alpha, inner, outer)
+                || !cornerFits(right, bottom, angle, alpha, inner, outer)) {
+            return false;
+        }
+        return inner <= 0 || minDistanceToRect(left, top, right, bottom) >= inner;
+    }
+
+    private static boolean cornerFits(float x, float y, float angle, float alpha,
+                                      float inner, float outer) {
+        double radius = Math.hypot(x, y);
+        if (radius < inner || radius > outer) {
+            return false;
+        }
+        double difference = Math.abs(normalizeSigned((float) Math.atan2(y, x) - angle));
+        return difference <= alpha;
+    }
+
+    private static double minDistanceToRect(float left, float top, float right, float bottom) {
+        if (left <= 0 && right >= 0 && top <= 0 && bottom >= 0) {
+            return 0;
+        }
+        double distance = distanceToSegment(0, 0, left, top, right, top);
+        distance = Math.min(distance, distanceToSegment(0, 0, right, top, right, bottom));
+        distance = Math.min(distance, distanceToSegment(0, 0, right, bottom, left, bottom));
+        distance = Math.min(distance, distanceToSegment(0, 0, left, bottom, left, top));
+        return distance;
+    }
+
+    private static double distanceToSegment(double x, double y, double x1, double y1,
+                                            double x2, double y2) {
+        double dx = x2 - x1;
+        double dy = y2 - y1;
+        double lengthSquared = dx * dx + dy * dy;
+        if (lengthSquared <= 0) {
+            return Math.hypot(x - x1, y - y1);
+        }
+        double projection = ((x - x1) * dx + (y - y1) * dy) / lengthSquared;
+        double clamped = Math.clamp(projection, 0.0, 1.0);
+        return Math.hypot(x - (x1 + clamped * dx), y - (y1 + clamped * dy));
+    }
+
+    private static boolean fitsFullText(Font font, String text, float maxWidth) {
+        if (text.length() <= FULL_TEXT_MEASURE_LIMIT) {
+            return font.measure(text).width() <= maxWidth;
+        }
+        float width = 0;
+        int index = 0;
+        int previous = -1;
+        while (index < text.length()) {
+            int codepoint = text.codePointAt(index);
+            width += font.advance(codepoint);
+            if (previous >= 0) {
+                width += font.kerning(previous, codepoint);
+            }
+            if (width > maxWidth) {
+                return false;
+            }
+            previous = codepoint;
+            index += Character.charCount(codepoint);
+        }
+        return font.measure(text).width() <= maxWidth;
+    }
+
+    static String fitLabelText(Font font, String text, float maxWidth) {
+        Objects.requireNonNull(font, "font");
+        Objects.requireNonNull(text, "text");
+        if (text.isEmpty() || maxWidth <= 0) {
+            return null;
+        }
+        if (fitsFullText(font, text, maxWidth)) {
+            return text;
+        }
+        String ellipsis = font.glyph(0x2026) != null ? "\u2026" : "...";
+        float ellipsisWidth = font.measure(ellipsis).width();
+        if (ellipsisWidth > maxWidth) {
+            return null;
+        }
+        float available = maxWidth - ellipsisWidth;
+        int index = 0;
+        int previous = -1;
+        int codePoints = 0;
+        float width = 0;
+        while (index < text.length()) {
+            int codepoint = text.codePointAt(index);
+            float advance = font.advance(codepoint);
+            if (previous >= 0) {
+                advance += font.kerning(previous, codepoint);
+            }
+            if (width + advance > available) {
+                break;
+            }
+            width += advance;
+            previous = codepoint;
+            codePoints++;
+            index += Character.charCount(codepoint);
+        }
+        if (codePoints == 0) {
+            return null;
+        }
+        int low = 0;
+        int high = codePoints;
+        while (low < high) {
+            int middle = (low + high + 1) >>> 1;
+            int end = text.offsetByCodePoints(0, middle);
+            if (font.measure(text.substring(0, end) + ellipsis).width() <= maxWidth) {
+                low = middle;
+            } else {
+                high = middle - 1;
+            }
+        }
+        if (low == 0) {
+            return null;
+        }
+        int end = text.offsetByCodePoints(0, low);
+        return text.substring(0, end) + ellipsis;
+    }
+
 
     private void drawRingSector(RenderManager renderer, Point center, float inner, float outer,
                                 float startAngle, float sweep, Paint paint) {
@@ -1064,5 +1311,26 @@ public class RadialMenu extends Widget {
     private static float normalize(float angle) {
         float normalized = angle % FULL_TURN;
         return normalized < 0 ? normalized + FULL_TURN : normalized;
+    }
+
+    private static float normalizeSigned(float angle) {
+        float normalized = angle % FULL_TURN;
+        if (normalized > Math.PI) {
+            normalized -= FULL_TURN;
+        } else if (normalized < -Math.PI) {
+            normalized += FULL_TURN;
+        }
+        return normalized;
+    }
+
+    private record PlacementKey(Font font, String text, float inner, float outer,
+                                float sweep, float angle, float iconSize, boolean icon) {
+    }
+
+    private record Placement(float iconRadius, float iconEdge, boolean iconVisible,
+                             float labelRadius, String labelText) {
+        private static Placement hidden() {
+            return new Placement(0, 0, false, 0, null);
+        }
     }
 }
