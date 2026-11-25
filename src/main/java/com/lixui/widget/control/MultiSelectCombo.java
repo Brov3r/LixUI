@@ -196,6 +196,23 @@ public class MultiSelectCombo extends FilterableSelect {
     }
 
     /**
+     * Measures the placeholder, the selected chip strip or the compact summary within the
+     * available content width.
+     *
+     * @param font resolved field font, or null when no font is available
+     * @param availableWidth width available for the field content
+     * @return the content size without padding and the arrow
+     */
+    @Override
+    protected Size onFieldContentSize(Font font, float availableWidth) {
+        ChipStrip strip = ChipStrip.of(selectedOptions());
+        if (!strip.isEmpty()) {
+            return strip.measure(font, availableWidth);
+        }
+        return onFieldContentSize(font);
+    }
+
+    /**
      * Paints the selected chip strip, the placeholder or the compact summary of disabled selections.
      *
      * @param renderer drawing manager for the current frame

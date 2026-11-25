@@ -12,6 +12,7 @@ import com.lixui.widget.testsupport.TestViewports;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -40,6 +41,27 @@ class ChipStripTest {
 
         assertEquals(ChipStrip.CHIP_PADDING * 4 + ChipStrip.CHIP_GAP,
                 strip.measure(null).width(), 0.001f);
+    }
+
+    @Test
+    void keepsWholeChipsAndCountsTheRestInThePill() {
+        ChipStrip strip = strip("Alpha", "Beta", "Gamma", "Delta");
+
+        ChipStrip.Plan plan = strip.plan(null, 40);
+
+        assertEquals(List.of("Alpha"), plan.labels());
+        assertEquals(3, plan.hidden());
+        assertEquals(40, plan.width(), 0.001f);
+    }
+
+    @Test
+    void measuresWithinTheAvailableWidthUsingTheOverflowPolicy() {
+        ChipStrip strip = strip("Alpha", "Beta", "Gamma", "Delta");
+
+        assertEquals(40, strip.measure(null, 40).width(), 0.001f);
+        assertEquals(ChipStrip.CHIP_PADDING * 2, strip.measure(null, 30).width(), 0.001f);
+        assertEquals(10, strip.measure(null, 10).width(), 0.001f);
+        assertEquals(ChipStrip.CHIP_HEIGHT, strip.measure(null, 10).height(), 0.001f);
     }
 
     @Test
@@ -80,13 +102,44 @@ class ChipStripTest {
     }
 
     @Test
-    void paintsTheFirstChipWhenEvenThePillDoesNotFit() {
+    void paintsOnlyTheFullPillWhenEvenThePillIsWiderThanTheContent() {
+        Rect content = new Rect(0, 0, 12, 20);
+
         List<RoundedRectCommand> chips = chips(paint(
-                strip("Alpha", "Beta", "Gamma", "Delta"),
-                new Rect(0, 0, 12, 20), new Rect(0, 0, 12, 20)));
+                strip("Alpha", "Beta", "Gamma", "Delta"), content, content));
 
         assertEquals(1, chips.size());
-        assertEquals(12, chips.get(0).bounds().width(), 0.001f);
+        assertEquals(ChipStrip.CHIP_PADDING * 2, chips.get(0).bounds().width(), 0.001f);
+        assertTrue(chips.get(0).bounds().right() > content.right());
+        assertEquals(content, chips.get(0).clip());
+    }
+
+    @Test
+    void countsEveryHiddenChipInThePill() {
+        List<SelectOption> options = IntStream.range(0, 150)
+                .mapToObj(index -> new SelectOption("Tag " + index))
+                .toList();
+        ChipStrip strip = ChipStrip.of(options);
+
+        ChipStrip.Plan plan = strip.plan(null, 40);
+
+        assertEquals(1, plan.labels().size());
+        assertEquals(149, plan.hidden());
+        assertEquals(2, chips(paint(strip, new Rect(0, 0, 40, 20),
+                new Rect(0, 0, 40, 20))).size());
+    }
+
+    @Test
+    void ignoresDisabledOptionsWhenCountingThePill() {
+        SelectOption alpha = new SelectOption("Alpha");
+        SelectOption beta = new SelectOption("Beta");
+        SelectOption gamma = new SelectOption("Gamma");
+        beta.setDisabled(true);
+
+        ChipStrip.Plan plan = ChipStrip.of(List.of(alpha, beta, gamma)).plan(null, 30);
+
+        assertTrue(plan.labels().isEmpty());
+        assertEquals(2, plan.hidden());
     }
 
     private static ChipStrip strip(String... labels) {

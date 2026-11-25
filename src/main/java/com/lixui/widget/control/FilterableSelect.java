@@ -337,8 +337,10 @@ abstract class FilterableSelect extends Panel {
     protected Size onMeasure(LayoutConstraints constraints) {
         WidgetStyle style = resolvedStyle();
         Font font = font();
-        Size content = onFieldContentSize(font);
         float padding = style == null ? 0 : style.padding();
+        float availableContent = Math.max(0,
+                constraints.maxWidth() - padding * 2 - iconSize - ARROW_GAP);
+        Size content = onFieldContentSize(font, availableContent);
         float width = content.width() + padding * 2 + iconSize + ARROW_GAP;
         float height = content.height() + padding * 2;
         return new Size(Math.max(minimumWidth(), Math.min(maximumWidth(), width)),
@@ -638,6 +640,18 @@ abstract class FilterableSelect extends Panel {
      * @return the content size without padding and the arrow
      */
     protected abstract Size onFieldContentSize(Font font);
+
+    /**
+     * Measures the content of the closed field within the available content width.
+     * The default keeps the natural measurement used by fields without an overflow policy.
+     *
+     * @param font resolved field font, or null when no font is available
+     * @param availableWidth width available for the field content
+     * @return the content size without padding and the arrow
+     */
+    protected Size onFieldContentSize(Font font, float availableWidth) {
+        return onFieldContentSize(font);
+    }
 
     /**
      * Paints the content of the closed field.

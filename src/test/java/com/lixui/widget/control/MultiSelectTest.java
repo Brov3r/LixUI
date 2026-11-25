@@ -197,7 +197,7 @@ class MultiSelectTest {
     }
 
     @Test
-    void drawsTheFirstChipWhenTheFieldCannotFitTheOverflowPill() {
+    void drawsOnlyTheFullOverflowPillWhenTheFieldIsTooNarrowForAChip() {
         TestBackend backend = new TestBackend();
         WidgetManager manager = manager(backend);
         MultiSelect multi = multiSelect();
@@ -209,7 +209,36 @@ class MultiSelectTest {
         List<RoundedRectCommand> chips = chipCommands(manager, backend);
 
         assertEquals(1, chips.size());
-        assertEquals(10, chips.get(0).bounds().width(), 0.01f);
+        assertEquals(ChipStrip.CHIP_PADDING * 2, chips.get(0).bounds().width(), 0.01f);
+        assertEquals(new Rect(18, 18, 10, 20), chips.get(0).clip());
+    }
+
+    @Test
+    void keepsSelectionClicksWorkingWithHundredsOfChips() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = manager(backend);
+        MultiSelect multi = new MultiSelect();
+        multi.setBounds(new Rect(10, 10, 120, 36));
+        multi.setMinimumSize(120, 36);
+        for (int index = 0; index < 120; index++) {
+            multi.addOption(new SelectOption("Option " + index));
+        }
+        for (int index = 0; index < 100; index++) {
+            multi.setSelected(index, true);
+        }
+        manager.add(multi);
+        manager.render();
+
+        assertEquals(3, chipCommands(manager, backend).size());
+
+        click(manager, 30, 20);
+        manager.render();
+        assertTrue(multi.isPopupOpen());
+
+        clickOption(manager, popup(manager).content(), 0);
+
+        assertFalse(multi.isSelected(0));
+        assertEquals(99, multi.selectedCount());
     }
 
     @Test

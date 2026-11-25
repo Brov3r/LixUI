@@ -134,8 +134,9 @@ final class DemoSelectPage {
         traits.setMinimumSize(190, FIELD_HEIGHT);
         traits.setMaximumSize(190, FIELD_HEIGHT + 6);
         traits.setMaxPopupHeight(150);
-        for (String name : List.of("Quickstep", "Iron Skin", "Night Sight", "Beast Speech",
-                "Arcane Focus")) {
+        for (String name : List.of("Agile", "Brave", "Calm", "Daring", "Eager", "Fierce",
+                "Graceful", "Hardy", "Insight", "Jolly", "Keen", "Lucky", "Mighty", "Nimble",
+                "Observant", "Patient", "Quick", "Rapid", "Sturdy", "Tough")) {
             traits.addOption(name);
         }
         traits.setAll(true);
@@ -181,8 +182,8 @@ final class DemoSelectPage {
                 .add(caption("Icon-free multi-select: a long list with disabled regions and "
                         + "bulk actions"))
                 .add(regions)
-                .add(caption("Narrow multi-select: chips stay inside the field and the trailing "
-                        + "pill counts the values that do not fit"))
+                .add(caption("Narrow multi-select: only whole chips are drawn and the trailing "
+                        + "+N pill counts every value that does not fit"))
                 .add(traits)
                 .add(regionActions)
                 .add(status);

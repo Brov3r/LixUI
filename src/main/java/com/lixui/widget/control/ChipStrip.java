@@ -17,7 +17,8 @@ import java.util.Objects;
 
 /**
  * Measures and paints the horizontal strip of selected-value chips shared by multi-select fields.
- * A trailing pill reports how many chips do not fit, so a narrow field never drops the whole strip.
+ * Whole chips are shown first; a trailing pill reports how many chips do not fit, so a narrow
+ * field never truncates an individual chip to make room for the count.
  */
 final class ChipStrip {
     static final float CHIP_HEIGHT = 20;
@@ -82,6 +83,54 @@ final class ChipStrip {
     }
 
     /**
+     * Measures the strip using the overflow policy for the supplied width.
+     * Whole chips that fit are kept, and the remaining count collapses into a trailing pill.
+     * When even one whole chip does not fit, the result is the width of the pill alone, clamped to
+     * the available width.
+     *
+     * @param font font used for labels, or null when no font is available
+     * @param availableWidth width available for the strip
+     * @return the measured strip size within the available width
+     */
+    Size measure(Font font, float availableWidth) {
+        Size natural = measure(font);
+        if (availableWidth >= natural.width()) {
+            return natural;
+        }
+        Plan plan = plan(font, availableWidth);
+        return new Size(Math.max(0, Math.min(plan.width(), availableWidth)), natural.height());
+    }
+
+    /**
+     * Chooses the whole chips that fit and counts the rest for the trailing pill.
+     *
+     * @param font font used for labels, or null when no font is available
+     * @param availableWidth width available for the strip
+     * @return the visible chips, the hidden count and the painted width
+     */
+    Plan plan(Font font, float availableWidth) {
+        List<Float> widths = chipWidths(font);
+        float natural = totalWidth(widths);
+        if (natural <= availableWidth || labels.isEmpty()) {
+            return new Plan(labels, 0, natural);
+        }
+        int visible = 0;
+        for (int candidate = 1; candidate < labels.size(); candidate++) {
+            int hidden = labels.size() - candidate;
+            float width = prefixWidth(widths, candidate)
+                    + CHIP_GAP + chipWidth(font, "+" + hidden);
+            if (width > availableWidth) {
+                break;
+            }
+            visible = candidate;
+        }
+        int hidden = labels.size() - visible;
+        float width = prefixWidth(widths, visible)
+                + (visible > 0 ? CHIP_GAP : 0) + chipWidth(font, "+" + hidden);
+        return new Plan(labels.subList(0, visible), hidden, width);
+    }
+
+    /**
      * Paints the strip inside the content rectangle and clips it to the supplied absolute clip.
      *
      * @param renderer drawing manager for the current frame
@@ -114,58 +163,20 @@ final class ChipStrip {
 
     private void paintClipped(RenderManager renderer, Rect content, Font font,
                               Color fill, Color text) {
-        float available = content.width();
         float chipHeight = Math.min(CHIP_HEIGHT, content.height());
         float chipY = content.y() + (content.height() - chipHeight) / 2;
-        List<Float> widths = chipWidths(font);
-        float totalWidth = totalWidth(widths);
-        if (totalWidth <= available) {
-            float chipX = content.x();
-            for (int index = 0; index < labels.size(); index++) {
-                drawChip(renderer, chipX, chipY, widths.get(index), chipHeight,
-                        labels.get(index), font, fill, text);
-                chipX += widths.get(index) + CHIP_GAP;
-            }
-            return;
+        Plan plan = plan(font, content.width());
+        float chipX = content.x();
+        for (String label : plan.labels()) {
+            float width = chipWidth(font, label);
+            drawChip(renderer, chipX, chipY, width, chipHeight, label, font, fill, text);
+            chipX += width + CHIP_GAP;
         }
-
-        String allText = "+" + labels.size();
-        float overflowWidth = chipWidth(font, allText);
-        float availableForChips = available - overflowWidth - CHIP_GAP;
-        float used = 0;
-        int full = 0;
-        if (availableForChips > 0) {
-            for (int index = 0; index < labels.size(); index++) {
-                float next = widths.get(index) + (full > 0 ? CHIP_GAP : 0);
-                if (used + next > availableForChips) {
-                    break;
-                }
-                used += next;
-                full++;
-            }
+        if (plan.hidden() > 0) {
+            String pill = "+" + plan.hidden();
+            drawChip(renderer, chipX, chipY, chipWidth(font, pill), chipHeight, pill,
+                    font, fill, text);
         }
-        if (full > 0) {
-            float chipX = content.x();
-            for (int index = 0; index < full; index++) {
-                drawChip(renderer, chipX, chipY, widths.get(index), chipHeight,
-                        labels.get(index), font, fill, text);
-                chipX += widths.get(index) + CHIP_GAP;
-            }
-            String remainingText = "+" + (labels.size() - full);
-            float remainingWidth = Math.min(chipWidth(font, remainingText),
-                    Math.max(0, content.right() - chipX));
-            drawChip(renderer, chipX, chipY, remainingWidth, chipHeight,
-                    remainingText, font, fill, text);
-            return;
-        }
-        if (overflowWidth <= available) {
-            drawChip(renderer, content.x(), chipY, overflowWidth, chipHeight,
-                    allText, font, fill, text);
-            return;
-        }
-        float firstWidth = Math.min(widths.get(0), available);
-        drawChip(renderer, content.x(), chipY, firstWidth, chipHeight,
-                labels.get(0), font, fill, text);
     }
 
     private List<Float> chipWidths(Font font) {
@@ -174,6 +185,17 @@ final class ChipStrip {
             widths.add(chipWidth(font, label));
         }
         return widths;
+    }
+
+    private static float prefixWidth(List<Float> widths, int count) {
+        float total = 0;
+        for (int index = 0; index < count; index++) {
+            total += widths.get(index);
+            if (index > 0) {
+                total += CHIP_GAP;
+            }
+        }
+        return total;
     }
 
     private static float chipWidth(Font font, String label) {
@@ -185,14 +207,7 @@ final class ChipStrip {
     }
 
     private static float totalWidth(List<Float> widths) {
-        float total = 0;
-        for (int index = 0; index < widths.size(); index++) {
-            total += widths.get(index);
-            if (index > 0) {
-                total += CHIP_GAP;
-            }
-        }
-        return total;
+        return prefixWidth(widths, widths.size());
     }
 
     private static void drawChip(RenderManager renderer, float x, float y, float width,
@@ -204,12 +219,15 @@ final class ChipStrip {
         renderer.roundedRect(new Rect(x, y, width, height), height / 2, fill);
         if (font != null) {
             renderer.text(font, label, x + CHIP_PADDING, y + height / 2, textColor,
-                    ellipsis(Math.max(0, width - CHIP_PADDING * 2)));
+                    clip(Math.max(0, width - CHIP_PADDING * 2)));
         }
     }
 
-    private static TextStyle ellipsis(float width) {
-        return new TextStyle(width, 0, 1, TextOverflow.ELLIPSIS,
+    private static TextStyle clip(float width) {
+        return new TextStyle(width, 0, 1, TextOverflow.CLIP,
                 HorizontalAlignment.LEFT, VerticalAlignment.CENTER);
+    }
+
+    record Plan(List<String> labels, int hidden, float width) {
     }
 }

@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -280,6 +281,32 @@ class TagInputTest {
             assertEquals("+1", overflow.text());
             assertTrue(overflow.bounds().x() + overflow.bounds().width()
                     <= flow.localBounds().width() + 0.01f);
+        }
+    }
+
+    @Test
+    void showsOnlyTheOverflowPillWhenTagsAndPillAreWiderThanTheChipArea() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            manager.setDefaultFont(font(manager));
+            List<String> tags = IntStream.range(0, 150)
+                    .mapToObj(index -> "t" + index)
+                    .toList();
+            TagInput input = new TagInput(tags);
+            input.setBounds(new Rect(0, 0, 40, 120));
+            manager.add(input);
+            manager.render();
+
+            Flow flow = (Flow) input.children().get(0);
+            List<Button> buttons = flow.children().stream()
+                    .map(Button.class::cast)
+                    .toList();
+            Button overflow = buttons.get(buttons.size() - 1);
+
+            assertTrue(buttons.stream().noneMatch(button -> button != overflow
+                    && button.isVisible()));
+            assertTrue(overflow.isVisible());
+            assertEquals("+150", overflow.text());
         }
     }
 

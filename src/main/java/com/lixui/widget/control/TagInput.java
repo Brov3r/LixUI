@@ -490,6 +490,8 @@ public class TagInput extends Panel {
     /**
      * Finds the largest visible tag count that fits the row limit and the height budget.
      * A negative height budget means the height is unbounded, which is used during measurement.
+     * When even the overflow pill is wider than the chip area, the pill alone is kept so a narrow
+     * editor never becomes empty.
      */
     private Pack plan(float availableWidth, float heightBudget) {
         int total = tags.size();
@@ -509,6 +511,11 @@ public class TagInput extends Panel {
                 continue;
             }
             return pack.withHidden(hidden);
+        }
+        if (total > 0 && chipSize(overflowChip).width() > availableWidth) {
+            overflowChip.setText("+" + total);
+            Size overflow = chipSize(overflowChip);
+            return new Pack(0, total, overflow.width(), overflow.height(), 1);
         }
         return new Pack(0, 0, 0, 0, 0);
     }
