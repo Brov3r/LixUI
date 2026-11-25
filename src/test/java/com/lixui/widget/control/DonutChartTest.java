@@ -28,7 +28,9 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -191,6 +193,119 @@ class DonutChartTest {
             manager.handle(new PointerMoved(100, 100));
             assertEquals("", tooltip.text());
             assertNull(chart.tooltip());
+        }
+    }
+
+    @Test
+    void reenteringASegmentBeforeTheNextUpdateReusesTheShownTooltip() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            DonutChart chart = chart();
+            chart.setBounds(new Rect(0, 0, 200, 200));
+            chart.setShowLegend(false);
+            chart.setAnimationDuration(0);
+            manager.add(chart);
+            manager.render();
+
+            manager.handle(new PointerMoved(151.6f, 48.4f));
+            manager.update(0.6f);
+            manager.update(0.06f);
+            TextTooltip tooltip = assertInstanceOf(TextTooltip.class, chart.tooltip());
+            assertEquals("A: 1 (33%)", tooltip.text());
+            assertNotNull(tooltip.context());
+
+            manager.handle(new PointerMoved(100, 100));
+            assertNull(chart.tooltip());
+
+            manager.handle(new PointerMoved(151.6f, 48.4f));
+            assertSame(tooltip, chart.tooltip());
+            assertEquals("A: 1 (33%)", tooltip.text());
+
+            manager.handle(new PointerMoved(151.96f, 130));
+            assertNull(chart.tooltip());
+            manager.handle(new PointerMoved(48.4f, 151.6f));
+            assertSame(tooltip, chart.tooltip());
+            assertEquals("B: 1 (33%)", tooltip.text());
+
+            manager.update(0.06f);
+            manager.render();
+            assertNotNull(tooltip.context());
+            assertEquals("B: 1 (33%)", tooltip.text());
+        }
+    }
+
+    @Test
+    void switchingThroughTheHoleDuringFadeOutKeepsTheTooltipUsable() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            DonutChart chart = chart();
+            chart.setBounds(new Rect(0, 0, 200, 200));
+            chart.setShowLegend(false);
+            chart.setAnimationDuration(0);
+            manager.add(chart);
+            manager.render();
+
+            manager.handle(new PointerMoved(151.6f, 48.4f));
+            manager.update(0.6f);
+            manager.update(0.3f);
+            TextTooltip tooltip = assertInstanceOf(TextTooltip.class, chart.tooltip());
+            assertNotNull(tooltip.context());
+
+            manager.handle(new PointerMoved(100, 100));
+            manager.update(0.06f);
+            assertNotNull(tooltip.context());
+
+            manager.handle(new PointerMoved(151.6f, 48.4f));
+            assertSame(tooltip, chart.tooltip());
+            assertEquals("A: 1 (33%)", tooltip.text());
+
+            manager.handle(new PointerMoved(151.96f, 130));
+            manager.handle(new PointerMoved(48.4f, 151.6f));
+            manager.update(0.06f);
+            manager.render();
+
+            assertSame(tooltip, chart.tooltip());
+            assertNotNull(tooltip.context());
+            assertEquals("B: 1 (33%)", tooltip.text());
+
+            manager.handle(new PointerMoved(600, 400));
+            manager.update(0.06f);
+            manager.update(0.07f);
+            assertNull(tooltip.context());
+        }
+    }
+
+    @Test
+    void userTooltipSurvivesReentryAndDetachesAfterLeaving() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            DonutChart chart = chart();
+            chart.setBounds(new Rect(0, 0, 200, 200));
+            chart.setShowLegend(false);
+            chart.setAnimationDuration(0);
+            TextTooltip custom = new TextTooltip("Custom");
+            chart.setTooltip(custom);
+            manager.add(chart);
+            manager.render();
+
+            manager.handle(new PointerMoved(151.6f, 48.4f));
+            manager.update(0.6f);
+            manager.render();
+            assertSame(custom, chart.tooltip());
+            assertNotNull(custom.context());
+
+            manager.handle(new PointerMoved(100, 100));
+            manager.handle(new PointerMoved(151.6f, 48.4f));
+            manager.update(0.06f);
+            manager.render();
+            assertSame(custom, chart.tooltip());
+            assertNotNull(custom.context());
+            assertEquals("Custom", custom.text());
+
+            manager.handle(new PointerMoved(600, 400));
+            manager.update(0.06f);
+            manager.update(0.07f);
+            assertNull(custom.context());
         }
     }
 

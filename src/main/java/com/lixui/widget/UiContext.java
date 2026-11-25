@@ -769,6 +769,10 @@ public final class UiContext implements AutoCloseable {
         }
     }
 
+    boolean presentsTooltip(Widget owner, Widget tooltip) {
+        return manager != null && manager.presentsTooltip(owner, tooltip);
+    }
+
     private WidgetManager manager() {
         if (manager == null) {
             throw new IllegalStateException("UI context is not attached to a widget manager.");

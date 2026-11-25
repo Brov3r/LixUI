@@ -1365,6 +1365,10 @@ public final class WidgetManager implements AutoCloseable {
         widget.setPressed(false);
     }
 
+    boolean presentsTooltip(Widget owner, Widget tooltip) {
+        return tooltips.isAvailableTo(owner, tooltip);
+    }
+
     boolean isAttached(Widget widget) {
         if (widget.context() != context) {
             return false;

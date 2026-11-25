@@ -9,17 +9,32 @@ import com.lixui.widget.tooltip.TooltipSettings;
  * Presents the tooltip widget of the hovered subtree after a delay.
  * The tooltip is attached to the manager context while visible, fades in and out, slides next to the
  * pointer and is clamped to the viewport. It is drawn after the widget tree but is not part of it,
- * so it never takes hover, captures or blocks host input.
+ * so it never takes hover, captures or blocks host input. While a tooltip fades out its owner may
+ * reassign it; the fade is then cancelled and the tooltip stays visible.
  */
 final class TooltipOverlay {
     private static final float SLIDE_PIXELS = 4;
 
     private Widget owner;
     private Widget shown;
+    private Widget shownOwner;
     private TooltipSettings active = TooltipSettings.defaults();
     private float dwellSeconds;
     private float opacity;
     private boolean leaving;
+
+    /**
+     * Reports whether the original owner may take back the tooltip that is currently presented.
+     * The check uses the owner captured when the tooltip attached, so hover and pending owner
+     * changes do not transfer the presented widget to another widget.
+     *
+     * @param candidate widget that wants to use the tooltip
+     * @param tooltip tooltip widget assigned by the candidate
+     * @return true when the tooltip is presented for exactly this owner
+     */
+    boolean isAvailableTo(Widget candidate, Widget tooltip) {
+        return tooltip != null && shown == tooltip && shownOwner == candidate;
+    }
 
     /**
      * Advances the hover delay and the fade animation, then updates the visible tooltip widget.
@@ -37,11 +52,11 @@ final class TooltipOverlay {
         if (nextOwner != owner || (shown != null && nextTooltip != shown)) {
             owner = nextOwner;
             dwellSeconds = 0;
-            if (shown != null) {
-                leaving = nextTooltip != shown;
-            }
         }
-        if (shown != null && owner != null && owner.tooltip() == shown) {
+        if (shown != null) {
+            leaving = owner == null || owner.tooltip() != shown;
+        }
+        if (shown != null && !leaving) {
             active = settingsFor(owner, defaults);
         }
         float deltaSeconds = frame.deltaSeconds();
@@ -58,6 +73,7 @@ final class TooltipOverlay {
             dwellSeconds += deltaSeconds;
             if (dwellSeconds >= settings.delaySeconds()) {
                 shown = nextTooltip;
+                shownOwner = owner;
                 active = settings;
                 opacity = 0;
                 leaving = false;
@@ -131,6 +147,7 @@ final class TooltipOverlay {
     private void detach() {
         Widget previous = shown;
         shown = null;
+        shownOwner = null;
         leaving = false;
         opacity = 0;
         if (previous != null) {

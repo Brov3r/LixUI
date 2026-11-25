@@ -220,6 +220,83 @@ class TooltipTest {
     }
 
     @Test
+    void ownerCanReclaimItsTooltipWhileItFadesOut() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
+            manager.resize(VIEWPORT);
+            manager.setTooltipSettings(TooltipSettings.defaults()
+                    .withDelay(0).withFade(0.01f, 0.2f));
+            Panel owner = new Panel();
+            owner.setBounds(new Rect(0, 0, 300, 200));
+            Panel tooltip = new Panel();
+            tooltip.setBounds(new Rect(0, 0, 60, 20));
+            owner.setTooltip(tooltip);
+            manager.add(owner);
+
+            manager.handle(new PointerMoved(20, 20));
+            manager.update(0.01f);
+            manager.update(0.03f);
+            assertNotNull(tooltip.context());
+
+            owner.setTooltip(null);
+            manager.update(0.05f);
+            assertNotNull(tooltip.context());
+
+            owner.setTooltip(tooltip);
+            manager.update(0.05f);
+            manager.render();
+            assertSame(tooltip, owner.tooltip());
+            assertNotNull(tooltip.context());
+        }
+    }
+
+    @Test
+    void onlyTheOriginalOwnerCanReclaimTheFadingTooltip() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
+            manager.resize(VIEWPORT);
+            manager.setTooltipSettings(TooltipSettings.defaults()
+                    .withDelay(0).withFade(0.01f, 0.2f));
+            Panel owner = new Panel();
+            owner.setBounds(new Rect(0, 0, 100, 100));
+            Panel otherOwner = new Panel();
+            otherOwner.setBounds(new Rect(200, 0, 100, 100));
+            Panel tooltip = new Panel();
+            tooltip.setBounds(new Rect(0, 0, 60, 20));
+            Panel otherTooltip = new Panel();
+            otherTooltip.setBounds(new Rect(0, 0, 60, 20));
+            owner.setTooltip(tooltip);
+            otherOwner.setTooltip(otherTooltip);
+            manager.add(owner);
+            manager.add(otherOwner);
+
+            manager.handle(new PointerMoved(20, 20));
+            manager.update(0.01f);
+            manager.update(0.03f);
+            assertNotNull(tooltip.context());
+
+            owner.setTooltip(null);
+            manager.update(0.05f);
+            assertNotNull(tooltip.context());
+
+            manager.handle(new PointerMoved(220, 20));
+            manager.update(0.03f);
+            assertNotNull(tooltip.context());
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> otherOwner.setTooltip(tooltip));
+            assertSame(otherTooltip, otherOwner.tooltip());
+
+            owner.setTooltip(tooltip);
+            manager.handle(new PointerMoved(20, 20));
+            manager.update(0.03f);
+            manager.render();
+            assertSame(tooltip, owner.tooltip());
+            assertNotNull(tooltip.context());
+        }
+    }
+
+    @Test
     void attachedTopLevelWidgetCannotBecomeATooltip() {
         TestBackend backend = new TestBackend();
         try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {

@@ -285,19 +285,28 @@ public abstract class Widget {
      * manager context while visible, positioned next to the pointer and drawn above the widget
      * tree. The nearest ancestor with a tooltip wins. Use {@link TextTooltip} for a ready-made
      * text tooltip.
+     * The tooltip currently presented for this widget may be assigned again while it fades out,
+     * so a control can clear and restore the same instance without waiting for the animation.
      *
      * @param tooltip detached tooltip widget, or null to clear the tooltip
      * @throws IllegalArgumentException if the tooltip is this widget, already has a parent or is
-     *                                  attached to a widget manager
+     *                                  attached to a widget manager without being presented for
+     *                                  this widget
      */
     public final void setTooltip(Widget tooltip) {
         if (tooltip == this) {
             throw new IllegalArgumentException("A widget cannot use itself as a tooltip.");
         }
-        if (tooltip != null && (tooltip.parent() != null || tooltip.context() != null)) {
+        if (tooltip != null && (tooltip.parent() != null || tooltip.context() != null)
+                && !canReusePresentedTooltip(tooltip)) {
             throw new IllegalArgumentException("A tooltip widget must be detached.");
         }
         this.tooltip = tooltip;
+    }
+
+    private boolean canReusePresentedTooltip(Widget tooltip) {
+        return tooltip.parent() == null && context != null && context == tooltip.context()
+                && context.presentsTooltip(this, tooltip);
     }
 
     /**
