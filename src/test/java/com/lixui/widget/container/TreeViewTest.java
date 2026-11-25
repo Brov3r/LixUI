@@ -8,6 +8,7 @@ import com.lixui.input.MouseButton;
 import com.lixui.input.event.KeyPressed;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
+import com.lixui.render.command.ImageCommand;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.testsupport.TestViewports;
@@ -215,6 +216,45 @@ class TreeViewTest {
     }
 
     @Test
+    void drawsTheExpansionArrowAsARotatingIcon() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            TreeView tree = tree();
+            tree.setExpansionDuration(0.2f);
+            TreeView.Node root = tree.addRoot("Root");
+            root.addChild("Child");
+            manager.add(tree);
+            manager.render();
+
+            ImageCommand collapsed = arrowCommand(backend);
+            assertEquals(1, collapsed.transform().m00(), 0.001f);
+            assertEquals(0, collapsed.transform().m01(), 0.001f);
+
+            click(manager, 15, 15);
+            assertTrue(root.isExpanded());
+            manager.update(0.1f);
+            manager.render();
+            ImageCommand expanding = arrowCommand(backend);
+            assertTrue(expanding.transform().m00() > 0.5f);
+            assertTrue(expanding.transform().m00() < 0.9f);
+
+            manager.update(0.11f);
+            manager.render();
+            ImageCommand expanded = arrowCommand(backend);
+            assertEquals(0, expanded.transform().m00(), 0.001f);
+            assertEquals(-1, expanded.transform().m01(), 0.001f);
+
+            click(manager, 15, 15);
+            assertFalse(root.isExpanded());
+            manager.update(0.1f);
+            manager.render();
+            ImageCommand collapsing = arrowCommand(backend);
+            assertTrue(collapsing.transform().m00() > 0.5f);
+            assertTrue(collapsing.transform().m00() < 0.9f);
+        }
+    }
+
+    @Test
     void notifiesNodeSelectionChanges() {
         TreeView tree = tree();
         TreeView.Node root = tree.addRoot("Root");
@@ -286,9 +326,21 @@ class TreeViewTest {
     }
 
     private static WidgetManager manager() {
-        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
+        return manager(new TestBackend());
+    }
+
+    private static WidgetManager manager(TestBackend backend) {
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(TestViewports.HIDPI);
         return manager;
+    }
+
+    private static ImageCommand arrowCommand(TestBackend backend) {
+        return backend.lastDrawList().commands().stream()
+                .filter(ImageCommand.class::isInstance)
+                .map(ImageCommand.class::cast)
+                .filter(command -> command.texture().width() == 20)
+                .findFirst().orElseThrow();
     }
 
     private static void click(WidgetManager manager, float x, float y) {

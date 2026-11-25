@@ -1,20 +1,24 @@
 package com.lixui.widget.container;
 
 import com.lixui.animation.Easing;
-import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
+import com.lixui.geometry.Transform;
 import com.lixui.graphics.Color;
-import com.lixui.graphics.Paint;
 import com.lixui.input.Key;
 import com.lixui.input.Modifiers;
 import com.lixui.input.MouseButton;
+import com.lixui.render.ImageStyle;
 import com.lixui.render.RenderManager;
+import com.lixui.render.Texture;
 import com.lixui.text.Font;
 import com.lixui.text.HorizontalAlignment;
 import com.lixui.text.TextOverflow;
 import com.lixui.text.TextStyle;
 import com.lixui.text.VerticalAlignment;
 import com.lixui.theme.Theme;
+import com.lixui.widget.FrameInfo;
+import com.lixui.widget.IconSet;
+import com.lixui.widget.UiContext;
 import com.lixui.widget.Widget;
 
 import java.util.ArrayList;
@@ -151,6 +155,7 @@ public class TreeView extends Widget {
     private final List<Node> roots = new ArrayList<>();
     private final List<Row> rows = new ArrayList<>();
     private final TreeList list;
+    private final IconSet icons = new IconSet("arrow-right-04.svg");
 
     private Consumer<Node> selectionListener;
     private Node selectedNode;
@@ -438,7 +443,16 @@ public class TreeView extends Widget {
     }
 
     /**
-     * Cancels running expansion animations and snaps branches to their target state.
+     * Loads the expansion arrow when the tree joins a managed tree.
+     */
+    @Override
+    protected void onAttached() {
+        ensureIcons();
+    }
+
+    /**
+     * Cancels running expansion animations, snaps branches to their target state and releases the
+     * expansion arrow.
      */
     @Override
     protected void onDetached() {
@@ -450,6 +464,26 @@ public class TreeView extends Widget {
             }
         }
         onStructureChanged();
+        icons.release(context());
+    }
+
+    /**
+     * Drops the cached expansion arrow so it reloads at the new pixel density.
+     */
+    @Override
+    protected void onContextChanged() {
+        icons.release(context());
+    }
+
+    /**
+     * Makes sure the expansion arrow is loaded before the rows are drawn.
+     *
+     * @param renderer drawing manager for the current frame
+     * @param frame timing information for the current frame
+     */
+    @Override
+    protected void onDraw(RenderManager renderer, FrameInfo frame) {
+        ensureIcons();
     }
 
     private void setNodeExpanded(Node node, boolean expanded, boolean animate) {
@@ -590,8 +624,9 @@ public class TreeView extends Widget {
         Color arrowColor = state.hovered() || state.active()
                 ? theme.primary() : theme.textMuted();
         if (row.node.hasChildren()) {
-            drawArrow(renderer, left + ARROW_SIZE / 2, centerY, row.node.expandedAmount,
-                    arrowColor);
+            drawExpansionIcon(renderer,
+                    new Rect(left, centerY - ARROW_SIZE / 2, ARROW_SIZE, ARROW_SIZE),
+                    row.node.expandedAmount, arrowColor);
         }
         Font font = font();
         float textX = left + ARROW_SIZE + ARROW_GAP;
@@ -603,23 +638,34 @@ public class TreeView extends Widget {
         }
     }
 
-    private static void drawArrow(RenderManager renderer, float centerX, float centerY,
-                                  float progress, Color color) {
-        double angle = Math.PI / 2 * Math.clamp(progress, 0f, 1f);
-        float cos = (float) Math.cos(angle);
-        float sin = (float) Math.sin(angle);
-        float half = ARROW_SIZE / 2;
-        float tip = ARROW_SIZE * 0.8f;
-        List<Point> points = List.of(
-                rotate(0, -half, cos, sin, centerX, centerY),
-                rotate(0, half, cos, sin, centerX, centerY),
-                rotate(tip, 0, cos, sin, centerX, centerY));
-        renderer.fillPolygon(points, Paint.solid(color));
+    private void drawExpansionIcon(RenderManager renderer, Rect slot, float progress,
+                                   Color color) {
+        Texture arrow = icons.get(0);
+        if (arrow == null) {
+            return;
+        }
+        float amount = Math.clamp(progress, 0f, 1f);
+        float angle = (float) (Math.PI / 2 * amount);
+        float centerX = slot.x() + slot.width() / 2;
+        float centerY = slot.y() + slot.height() / 2;
+        Transform transform = Transform.translation(centerX, centerY)
+                .multiply(Transform.rotation(angle));
+        Rect local = new Rect(-slot.width() / 2, -slot.height() / 2,
+                slot.width(), slot.height());
+        renderer.withTransform(transform,
+                () -> renderer.icon(arrow, local, ImageStyle.FILL, color));
     }
 
-    private static Point rotate(float x, float y, float cos, float sin,
-                                float centerX, float centerY) {
-        return new Point(centerX + x * cos - y * sin, centerY + x * sin + y * cos);
+    private void ensureIcons() {
+        UiContext context = context();
+        if (context == null) {
+            return;
+        }
+        int size = Math.max(1, Math.round(ARROW_SIZE * context.density()));
+        if (icons.matches(context, size)) {
+            return;
+        }
+        icons.reload(context, size);
     }
 
     private boolean handleTreeKey(Key key, Modifiers modifiers) {
