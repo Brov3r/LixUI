@@ -7,7 +7,6 @@ import com.lixui.widget.control.Button;
 import com.lixui.widget.control.Chart;
 import com.lixui.widget.control.CheckBox;
 import com.lixui.widget.control.Label;
-import com.lixui.widget.container.ScrollPanel;
 import com.lixui.widget.layout.Flow;
 import com.lixui.widget.layout.VBox;
 
@@ -114,9 +113,7 @@ final class ChartDemoPage {
                 .add(controls)
                 .add(status);
 
-        ScrollPanel scroll = new ScrollPanel();
-        scroll.setContent(page);
-        return scroll;
+        return new DemoScrollPage(page);
     }
 
     private Chart createLineChart() {
