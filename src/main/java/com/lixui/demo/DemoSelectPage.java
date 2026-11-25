@@ -47,6 +47,7 @@ final class DemoSelectPage {
         status.setWrap(true);
 
         Combobox classes = field("Choose a class");
+        classes.setSearchPlaceholder("Search classes...");
         addOption(classes, "Knight", "sword.svg");
         addOption(classes, "Ranger", "bow.svg");
         addOption(classes, "Mage", "potion.svg");
@@ -58,6 +59,7 @@ final class DemoSelectPage {
 
         Combobox titles = field("Pick a class or type a title");
         titles.setAllowCustom(true);
+        titles.setSearchPlaceholder("Search titles or type a new one...");
         addOption(titles, "Warden of the North", "shield.svg");
         addOption(titles, "Keeper of Ashes", "torch.svg");
         addOption(titles, "Voice of the Wilds", "bow.svg");
@@ -67,6 +69,7 @@ final class DemoSelectPage {
                 : "Title: " + option.label()));
 
         Combobox talents = field("Filter talents");
+        talents.setSearchPlaceholder("Search talents...");
         talents.setMaxPopupHeight(150);
         addOption(talents, "Swordsmanship", "sword.svg");
         addOption(talents, "Archery", "bow.svg");
@@ -87,6 +90,7 @@ final class DemoSelectPage {
 
         MultiSelectCombo abilities = new MultiSelectCombo();
         abilities.setPlaceholder("Choose abilities");
+        abilities.setSearchPlaceholder("Search abilities...");
         abilities.setMinimumSize(FIELD_WIDTH, FIELD_HEIGHT);
         abilities.setMaximumSize(FIELD_WIDTH + 100, FIELD_HEIGHT + 6);
         abilities.setMaxPopupHeight(180);
@@ -106,6 +110,7 @@ final class DemoSelectPage {
 
         MultiSelectCombo regions = new MultiSelectCombo();
         regions.setPlaceholder("Choose regions");
+        regions.setSearchPlaceholder("Search regions...");
         regions.setMinimumSize(FIELD_WIDTH, FIELD_HEIGHT);
         regions.setMaximumSize(FIELD_WIDTH + 100, FIELD_HEIGHT + 6);
         regions.setMaxPopupHeight(200);

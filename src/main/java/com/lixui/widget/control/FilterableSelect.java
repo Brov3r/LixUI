@@ -42,12 +42,13 @@ abstract class FilterableSelect extends Panel {
     private final List<SelectOption> visibleOptions = new ArrayList<>();
     private final IconSet fieldIcons = new IconSet("arrow-down-04.svg");
     private final IconSet listIcons = new IconSet("arrow-down-04.svg", "tick.svg");
-    private final FilterInput filter = new FilterInput();
+    private final FilterSearch filter = new FilterSearch();
     private final PopupContent popupContent = new PopupContent();
     private final Popup popup = new Popup();
     private final OptionList optionList;
 
     private String placeholder = "Select...";
+    private String searchPlaceholder = "Search...";
     private boolean refreshingFilter;
     private float iconSize = DEFAULT_ICON_SIZE;
     private float itemHeight = DEFAULT_ITEM_HEIGHT;
@@ -69,6 +70,7 @@ abstract class FilterableSelect extends Panel {
                 activateVisible(index);
             }
         }, this::dismissPopup, listIcons, itemHeight, iconSize);
+        filter.setPlaceholder(searchPlaceholder);
         filter.setOnChange(value -> refreshFilter());
         popupContent.add(filter).add(optionList);
         popup.setContent(popupContent);
@@ -84,7 +86,8 @@ abstract class FilterableSelect extends Panel {
     }
 
     /**
-     * Replaces every option and closes the popup.
+     * Replaces every option.
+     * An open popup is kept open and its filtered rows and size update immediately.
      *
      * @param options new options
      * @throws NullPointerException if {@code options} or one of its entries is null
@@ -92,16 +95,17 @@ abstract class FilterableSelect extends Panel {
     public final void setOptions(List<SelectOption> options) {
         Objects.requireNonNull(options, "options");
         List<SelectOption> selected = selectedOptionsSnapshot();
-        closePopup();
         this.options.clear();
         for (SelectOption option : options) {
             this.options.add(Objects.requireNonNull(option, "option"));
         }
         remapSelection(selected);
+        refreshAfterOptionsChange();
     }
 
     /**
      * Removes an option by reference.
+     * An open popup is kept open and its filtered rows and size update immediately.
      *
      * @param option option to remove
      * @return true when the option was present
@@ -112,19 +116,20 @@ abstract class FilterableSelect extends Panel {
         List<SelectOption> selected = selectedOptionsSnapshot();
         boolean removed = options.remove(option);
         if (removed) {
-            closePopup();
             remapSelection(selected);
+            refreshAfterOptionsChange();
         }
         return removed;
     }
 
     /**
-     * Removes every option and closes the popup.
+     * Removes every option.
+     * An open popup is kept open and shows only its search field.
      */
     public final void clearOptions() {
-        closePopup();
         options.clear();
         remapSelection(List.of());
+        refreshAfterOptionsChange();
     }
 
     /**
@@ -144,6 +149,27 @@ abstract class FilterableSelect extends Panel {
      */
     public final void setPlaceholder(String placeholder) {
         this.placeholder = Objects.requireNonNull(placeholder, "placeholder");
+    }
+
+    /**
+     * Returns the placeholder shown by the search field inside the popup.
+     *
+     * @return the search placeholder text
+     */
+    public final String searchPlaceholder() {
+        return searchPlaceholder;
+    }
+
+    /**
+     * Sets the placeholder shown by the search field inside the popup.
+     * It is independent from the closed field placeholder.
+     *
+     * @param searchPlaceholder search placeholder text
+     * @throws NullPointerException if {@code searchPlaceholder} is null
+     */
+    public final void setSearchPlaceholder(String searchPlaceholder) {
+        this.searchPlaceholder = Objects.requireNonNull(searchPlaceholder, "searchPlaceholder");
+        filter.setPlaceholder(searchPlaceholder);
     }
 
     /**
@@ -265,6 +291,7 @@ abstract class FilterableSelect extends Panel {
      */
     protected final void addOptionInternal(SelectOption option) {
         options.add(Objects.requireNonNull(option, "option"));
+        refreshAfterOptionsChange();
     }
 
     /**
@@ -420,13 +447,9 @@ abstract class FilterableSelect extends Panel {
         listIcons.release(context());
     }
 
-    /**
-     * Closes the popup and drops cached icons after a context change.
-     */
     @Override
     protected void onContextChanged() {
         super.onContextChanged();
-        popup.close();
         fieldIcons.release(context());
         listIcons.release(context());
     }
@@ -440,18 +463,9 @@ abstract class FilterableSelect extends Panel {
         refreshingFilter = false;
         rebuildVisibleOptions();
         optionList.setHighlighted(initialHighlight());
-        float padding = popup.padding();
-        float contentWidth = Math.max(0, bounds().width() - padding * 2);
         Rect anchor = new Rect(absolutePosition().x(), absolutePosition().y(),
                 bounds().width(), bounds().height());
-        // Attach the popup first so the filter measures with its context style and font.
-        popup.open(context(), anchor, contentWidth, maxPopupHeight);
-        float filterHeight = filter.measure(LayoutConstraints.loose(contentWidth, maxPopupHeight))
-                .height();
-        float listLimit = Math.max(0, maxPopupHeight - padding * 2 - filterHeight - POPUP_GAP);
-        float listHeight = Math.min(optionList.preferredHeight(), listLimit);
-        float height = filterHeight + POPUP_GAP + listHeight;
-        popup.open(context(), anchor, contentWidth, height);
+        popup.open(context(), anchor);
         context().requestFocus(filter);
     }
 
@@ -475,6 +489,14 @@ abstract class FilterableSelect extends Panel {
         }
         rebuildVisibleOptions();
         optionList.setHighlighted(firstAvailableHighlight());
+    }
+
+    private void refreshAfterOptionsChange() {
+        if (!popup.isOpen()) {
+            return;
+        }
+        rebuildVisibleOptions();
+        optionList.setHighlighted(initialHighlight());
     }
 
     private void rebuildVisibleOptions() {
@@ -684,6 +706,43 @@ abstract class FilterableSelect extends Panel {
 
     private final class PopupContent extends LayoutContainer {
         /**
+         * Measures the search field plus the whole filtered rows that fit the popup limits.
+         * The popup measures this attached content during its own layout, so filtering, option
+         * changes and viewport resizes do not need to reopen the popup.
+         *
+         * @param constraints available and required dimensions
+         * @return the natural content size
+         */
+        @Override
+        protected Size onMeasure(LayoutConstraints constraints) {
+            float width = Math.min(constraints.maxWidth(),
+                    Math.max(0, FilterableSelect.this.bounds().width() - popup.padding() * 2));
+            float filterHeight = filter.measure(LayoutConstraints.loose(width,
+                    constraints.maxHeight())).height();
+            float limit = contentHeightLimit(constraints.maxHeight());
+            float listLimit = Math.max(0, limit - filterHeight - POPUP_GAP);
+            int wholeRows = (int) Math.floor(listLimit / itemHeight);
+            int rows = Math.min(visibleOptions.size(), Math.max(0, wholeRows));
+            float listHeight = rows * itemHeight;
+            float height = filterHeight + (listHeight > 0 ? POPUP_GAP + listHeight : 0);
+            return new Size(width, height);
+        }
+
+        private float contentHeightLimit(float availableHeight) {
+            if (context() == null || context().viewport().isEmpty()) {
+                return availableHeight;
+            }
+            Rect viewport = context().viewport();
+            float margin = popup.viewportMargin();
+            float gap = popup.gap();
+            float anchorTop = absolutePosition().y();
+            float below = viewport.bottom() - margin - anchorTop - bounds().height() - gap;
+            float above = anchorTop - margin - gap;
+            float surface = Math.min(maxPopupHeight, Math.max(0, Math.max(above, below)));
+            return Math.max(0, Math.min(availableHeight, surface - popup.padding() * 2));
+        }
+
+        /**
          * Stacks the filter above the option list.
          */
         @Override
@@ -698,9 +757,9 @@ abstract class FilterableSelect extends Panel {
         }
     }
 
-    private final class FilterInput extends Input {
+    private final class FilterSearch extends SearchInput {
         /**
-         * Handles list navigation and commit keys before the text field editing shortcuts.
+         * Handles list navigation and commit keys before the search field editing shortcuts.
          *
          * @param key pressed key
          * @param modifiers active modifiers
