@@ -11,6 +11,41 @@ float roundedBoxSdf(vec2 point, vec2 halfSize, float radius) {
     vec2 offset = abs(point) - halfSize + radius;
     return length(max(offset, 0.0)) + min(max(offset.x, offset.y), 0.0) - radius;
 }
+// Stops are selected without an indexed loop: some drivers miscompile dynamic
+// push-constant indexing with early returns and produce tile artifacts.
+vec4 gradientColor(float position) {
+    int count = int(uPaint[6].y);
+    float first = uPaint[5][0];
+    float second = uPaint[5][1];
+    float third = uPaint[5][2];
+    float fourth = uPaint[5][3];
+    vec4 result = uPaint[1];
+    float span = second - first;
+    if (position >= first) {
+        float amount = span > 0.0 ? clamp((position - first) / span, 0.0, 1.0) : 1.0;
+        result = mix(uPaint[1], uPaint[2], amount);
+    }
+    span = third - second;
+    if (count > 2 && position >= second) {
+        float amount = span > 0.0 ? clamp((position - second) / span, 0.0, 1.0) : 1.0;
+        result = mix(uPaint[2], uPaint[3], amount);
+    }
+    span = fourth - third;
+    if (count > 3 && position >= third) {
+        float amount = span > 0.0 ? clamp((position - third) / span, 0.0, 1.0) : 1.0;
+        result = mix(uPaint[3], uPaint[4], amount);
+    }
+    if (count == 2 && position >= second) {
+        result = uPaint[2];
+    }
+    if (count == 3 && position >= third) {
+        result = uPaint[3];
+    }
+    if (count > 3 && position >= fourth) {
+        result = uPaint[4];
+    }
+    return result;
+}
 vec4 paintColor() {
     int type = int(uPaint[6].x);
     if (type == 0) {
@@ -20,17 +55,7 @@ vec4 paintColor() {
     vec2 axis = uPaint[0].zw - uPaint[0].xy;
     float position = type == 1 ? dot(delta, axis) / dot(axis, axis)
                               : length(delta) / uPaint[0].z;
-    int count = int(uPaint[6].y);
-    if (position <= uPaint[5][0]) {
-        return uPaint[1];
-    }
-    for (int i = 1; i < count; i++) {
-        if (position < uPaint[5][i]) {
-            float amount = (position - uPaint[5][i - 1]) / (uPaint[5][i] - uPaint[5][i - 1]);
-            return mix(uPaint[i], uPaint[i + 1], amount);
-        }
-    }
-    return uPaint[count];
+    return gradientColor(position);
 }
 void main() {
     float distance = vRadius < 0.0 ? length(vLocal / vHalfSize) - 1.0

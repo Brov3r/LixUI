@@ -1,8 +1,11 @@
 package com.lixui.backend.vulkan;
 
 import com.lixui.backend.MipmapScenario;
+import com.lixui.geometry.Point;
 import com.lixui.geometry.Rect;
 import com.lixui.graphics.Color;
+import com.lixui.graphics.GradientStop;
+import com.lixui.graphics.Paint;
 import com.lixui.render.RenderManager;
 import com.lixui.render.Texture;
 import com.lixui.render.TextureFilter;
@@ -126,6 +129,43 @@ class VulkanLayerTest {
             host.assertPixel(5, 5, 255, 255, 255);
             host.assertPixel(50, 50, 0, 0, 255);
             host.assertDepthStencilPreserved();
+        }
+    }
+
+    @Test
+    void rendersEveryStopOfAMultiStopRadialGradient() {
+        try (Host host = new Host();
+                VulkanLayer layer = new VulkanLayer(host.physical, host.device, host.queue, host.family,
+                        host.loadPass, VK10.VK_SAMPLE_COUNT_1_BIT)) {
+            RenderManager renderer = new RenderManager(layer);
+            renderer.resize(new Viewport(SIZE, SIZE, SIZE, SIZE));
+            Point center = new Point(32, 32);
+            Paint paint = Paint.radial(center, 24,
+                    new GradientStop(0, Color.rgb(255, 0, 0)),
+                    new GradientStop(1 / 3f, Color.rgb(0, 255, 0)),
+                    new GradientStop(2 / 3f, Color.rgb(0, 0, 255)),
+                    new GradientStop(1, Color.WHITE));
+            host.begin();
+            layer.beginFrame(host.command);
+            renderer.begin();
+            renderer.fillCircle(center, 24, paint);
+            renderer.end();
+            layer.endFrame();
+            host.beginPass(host.loadPass);
+            layer.composite(host.command);
+            VK10.vkCmdEndRenderPass(host.command);
+            host.readBack();
+
+            for (int y = 0; y < SIZE; y++) {
+                for (int x = 0; x < SIZE; x++) {
+                    Point point = new Point(x + 0.5f, y + 0.5f);
+                    float dx = point.x() - center.x();
+                    float dy = point.y() - center.y();
+                    if (Math.hypot(dx, dy) <= 20) {
+                        host.assertPixel(x, y, paint.colorAt(point), 3);
+                    }
+                }
+            }
         }
     }
 
@@ -273,6 +313,13 @@ class VulkanLayerTest {
             assertEquals(green, Byte.toUnsignedInt(pixels.get(offset + 1)), 1);
             assertEquals(blue, Byte.toUnsignedInt(pixels.get(offset + 2)), 1);
             assertEquals(255, Byte.toUnsignedInt(pixels.get(offset + 3)));
+        }
+
+        private void assertPixel(int x, int y, Color color, int tolerance) {
+            int offset = (y * SIZE + x) * 4;
+            assertEquals(Math.round(color.r() * 255), Byte.toUnsignedInt(pixels.get(offset)), tolerance);
+            assertEquals(Math.round(color.g() * 255), Byte.toUnsignedInt(pixels.get(offset + 1)), tolerance);
+            assertEquals(Math.round(color.b() * 255), Byte.toUnsignedInt(pixels.get(offset + 2)), tolerance);
         }
 
         private void assertDepthStencilPreserved() {
