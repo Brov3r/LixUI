@@ -99,6 +99,7 @@ public class Table extends Panel {
     private int sortColumn = -1;
     private SelectionMode selectionMode = SelectionMode.NONE;
     private boolean dragSelectionEnabled = true;
+    private boolean preserveSelectionOnPress;
     private Row selectionAnchor;
     private boolean selectionDragging;
     private float marqueeStartX;
@@ -751,6 +752,26 @@ public class Table extends Panel {
         clearSelection();
     }
 
+    void setPreserveSelectionOnPress(boolean preserveSelectionOnPress) {
+        this.preserveSelectionOnPress = preserveSelectionOnPress;
+    }
+
+    final float rowViewportWidth() {
+        computeLayout();
+        return viewportWidth;
+    }
+
+    final float rowViewportHeight() {
+        computeLayout();
+        return viewportHeight;
+    }
+
+    final void replaceRows(List<Row> newRows) {
+        Objects.requireNonNull(newRows, "newRows");
+        rows.clear();
+        rows.addAll(newRows);
+    }
+
     /**
      * Measures the full table content without scrollbars.
      *
@@ -1226,6 +1247,9 @@ public class Table extends Panel {
             selectionAnchor = row;
         } else if (selectionMode == SelectionMode.MULTIPLE && modifiers.shift()) {
             extendSelectionTo(row);
+        } else if (preserveSelectionOnPress && selectionMode == SelectionMode.MULTIPLE
+                && selectedRows.contains(row)) {
+            selectionAnchor = row;
         } else {
             selectOnly(row);
             selectionAnchor = row;

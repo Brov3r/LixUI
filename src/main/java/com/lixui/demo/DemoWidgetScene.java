@@ -61,6 +61,7 @@ import com.lixui.widget.control.TimePicker;
 import com.lixui.widget.control.UnitInput;
 import com.lixui.widget.container.Accordion;
 import com.lixui.widget.container.GroupBox;
+import com.lixui.widget.container.ReorderableList;
 import com.lixui.widget.container.ScrollPanel;
 import com.lixui.widget.container.SplitPanel;
 import com.lixui.widget.container.Table;
@@ -233,6 +234,8 @@ final class DemoWidgetScene implements AutoCloseable {
         bindIcon("table.svg", outerTabs.iconSize(), outerTabs.addTab("Table", createTablePage())::setIcon);
         bindIcon("time.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Timeline", TimelineDemo.create(fontFamily))::setIcon);
+        bindIcon("cursor-move.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Reorder", createReorderPage())::setIcon);
         bindIcon("menu-open.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Accordion", createAccordionPage())::setIcon);
         window = new Window();
@@ -1518,6 +1521,94 @@ final class DemoWidgetScene implements AutoCloseable {
         SelectOption option = new SelectOption(label);
         multiselect.addOption(option);
         bindIcon(icon, multiselect.iconSize(), option::setIcon);
+    }
+
+    private Widget createReorderPage() {
+        Label queueStatus = reorderStatus("Queue: drag a grip to move one task.");
+        Label boardStatus = reorderStatus("Board: select rows with Ctrl or Shift, then drag a grip.");
+
+        ReorderableList queue = new ReorderableList();
+        queue.setSelectionMode(Table.SelectionMode.SINGLE);
+        queue.setRowHeight(28);
+        queue.addColumn("Task", 140);
+        queue.addColumn("State", 70);
+        queue.addRow("Backlog", "New");
+        queue.addRow("Design", "Active");
+        queue.addRow("Review", "Waiting");
+        queue.addRow("Ship", "Done");
+        queue.setOnReorder((from, to) -> {
+            Table.Row moved = queue.rows().get(to);
+            queueStatus.setText("onReorder(" + from + ", " + to + "): \""
+                    + moved.cell(1).text() + "\"");
+        });
+        queue.setSelectionListener(rows -> {
+            if (!rows.isEmpty()) {
+                queueStatus.setText("Selected \"" + rows.get(0).cell(1).text() + "\".");
+            }
+        });
+
+        ReorderableList board = new ReorderableList();
+        board.setSelectionMode(Table.SelectionMode.MULTIPLE);
+        board.addColumn("Hero", 100);
+        board.addColumn("Class", 80);
+        board.addColumn("Level", 60);
+        String[][] heroes = {
+                {"Aria", "Ranger", "12"},
+                {"Bran", "Knight", "9"},
+                {"Cyra", "Mage", "15"},
+                {"Dain", "Guardian", "7"},
+                {"Elara", "Healer", "11"},
+                {"Fen", "Rogue", "14"},
+                {"Gale", "Monk", "10"},
+                {"Hale", "Bard", "8"}
+        };
+        for (String[] hero : heroes) {
+            board.addRow(hero);
+        }
+        board.setOnReorder((from, to) -> {
+            Table.Row first = board.rows().get(to);
+            boardStatus.setText("onReorder(" + from + ", " + to + "): "
+                    + board.selectedRows().size() + " rows, first \""
+                    + first.cell(1).text() + "\"");
+        });
+        board.setSelectionListener(rows -> {
+            if (rows.size() > 1) {
+                boardStatus.setText("Selected " + rows.size() + " rows.");
+            }
+        });
+
+        VBox queueColumn = new VBox();
+        queueColumn.setGap(6);
+        queueColumn.add(sliderCaption("Single-selection queue")).add(queue);
+
+        VBox boardColumn = new VBox();
+        boardColumn.setGap(6);
+        boardColumn.add(sliderCaption("Multi-selection board")).add(board);
+
+        HBox columns = new HBox();
+        columns.setGap(14);
+        columns.setCrossAlignment(HBox.CrossAlignment.START);
+        columns.add(queueColumn).add(boardColumn);
+
+        VBox content = new VBox();
+        content.setPadding(CONTENT_PADDING);
+        content.setGap(10);
+        content.add(sliderCaption("Two variants: a short single-select queue and a long "
+                        + "multi-select board with block moves."))
+                .add(columns)
+                .add(queueStatus)
+                .add(boardStatus);
+        ScrollPanel scroll = new ScrollPanel();
+        scroll.setContent(content);
+        return scroll;
+    }
+
+    private Label reorderStatus(String text) {
+        Label label = new Label(text);
+        label.setFontFamily(fontFamily);
+        label.setAutoSize(false);
+        label.setWrap(true);
+        return label;
     }
 
     private Widget createTablePage() {
