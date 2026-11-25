@@ -182,6 +182,19 @@ if (osName.contains('mac')) {
     }
 }
 
+tasks.register('demoShots', JavaExec) {
+    group = 'application'
+    description = 'Renders the screenshot showcase, optionally writing PNG captures.'
+    classpath = sourceSets.main.runtimeClasspath + configurations.demoNatives + configurations.demoRuntime
+    mainClass = 'com.lixui.demo.ScreenshotDemo'
+
+    // LWJGL loads native libraries and uses Unsafe for direct memory access on Java 25.
+    jvmArgs demoJvmArgs
+    if (providers.gradleProperty('args').isPresent()) {
+        args providers.gradleProperty('args').get().trim().split('\\s+')
+    }
+}
+
 def demoRuntimeClasspath = sourceSets.main.runtimeClasspath + configurations.demoNatives +
         configurations.demoRuntime
 def demoJavaExecutable = javaToolchains.launcherFor(java.toolchain).get().executablePath.asFile.absolutePath

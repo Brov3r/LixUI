@@ -11,6 +11,18 @@
 
 **LixUI** is a lightweight retained UI framework for LWJGL.
 
+## 📸 Screenshots
+
+| Dashboard · dark | Forms · light |
+|:---:|:---:|
+| ![](assets/showcase-dashboard.png) | ![](assets/showcase-forms.png) |
+
+| Navigation · dark | Feedback · light |
+|:---:|:---:|
+| ![](assets/showcase-navigation.png) | ![](assets/showcase-feedback.png) |
+
+Captured with `./gradlew demoShots`.
+
 ## ✨ Features
 
 - Retained, backend-neutral widget tree with `HBox`, `VBox`, `Grid`, `Flow`, `Dock`, `Stack` and `Anchor` layouts.
