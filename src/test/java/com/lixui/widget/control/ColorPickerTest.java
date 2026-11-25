@@ -10,19 +10,31 @@ import com.lixui.input.MouseButton;
 import com.lixui.input.event.KeyPressed;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
+import com.lixui.render.MeshVertex;
 import com.lixui.render.Viewport;
+import com.lixui.render.command.DrawCommand;
+import com.lixui.render.command.MaskBeginCommand;
+import com.lixui.render.command.MaskEndCommand;
+import com.lixui.render.command.MeshCommand;
+import com.lixui.render.command.RoundedRectCommand;
+import com.lixui.text.FontData;
+import com.lixui.text.FontStyle;
+import com.lixui.text.SystemFonts;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.overlay.Popup;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.testsupport.TestViewports;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -176,6 +188,189 @@ class ColorPickerTest {
         assertColor(picker.color(), 0, 0, 1, 64 / 255f);
     }
 
+    @Test
+    void fillsTheHueAndAlphaStripsAcrossThePopupContent() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = manager(backend);
+        ColorPicker picker = picker(Color.hex("#4F8EF7"));
+        manager.add(picker);
+        manager.render();
+        openPopup(manager, picker);
+
+        Widget content = popup(manager).content();
+        List<Widget> children = content.children();
+        Widget hueStrip = children.get(1);
+        Widget alphaStrip = children.get(2);
+        float contentWidth = content.bounds().width();
+
+        assertEquals(0, hueStrip.bounds().x(), TOLERANCE);
+        assertEquals(contentWidth, hueStrip.bounds().width(), TOLERANCE);
+        assertEquals(0, alphaStrip.bounds().x(), TOLERANCE);
+        assertEquals(contentWidth, alphaStrip.bounds().width(), TOLERANCE);
+
+        Rect hueBounds = absoluteBounds(hueStrip);
+        List<DrawCommand> commands = backend.lastDrawList().commands();
+        assertTrue(commands.stream().anyMatch(command -> command instanceof MeshCommand
+                && command.bounds().equals(hueBounds)));
+        assertTrue(commands.stream().anyMatch(command -> command instanceof MeshCommand
+                && command.bounds().equals(absoluteBounds(alphaStrip))));
+    }
+
+    @Test
+    void keepsRgbLabelsVisibleAboveTheEnteredValues() {
+        TestBackend backend = new TestBackend();
+        WidgetManager manager = manager(backend);
+        Optional<FontData> data = SystemFonts.findDefault();
+        Assumptions.assumeTrue(data.isPresent(), "No readable system font is installed.");
+        manager.setDefaultFont(manager.context().createFont(data.get(), 14, FontStyle.REGULAR));
+
+        ColorPicker picker = picker(Color.hex("#123456"));
+        manager.add(picker);
+        manager.render();
+        openPopup(manager, picker);
+
+        Widget content = popup(manager).content();
+        Widget rgbRow = content.children().get(5);
+        List<Input> inputs = inputs(content);
+        assertEquals("18", inputs.get(1).text());
+        assertEquals("52", inputs.get(2).text());
+        assertEquals("86", inputs.get(3).text());
+
+        List<Label> labels = labels(content);
+        List<String> captions = labels.stream().map(Label::text).toList();
+        assertTrue(captions.containsAll(List.of("Hex", "R", "G", "B")));
+
+        float contentWidth = content.bounds().width();
+        assertTrue(rgbRow.bounds().x() + rgbRow.bounds().width() <= contentWidth + TOLERANCE);
+        assertEquals(3, rgbRow.children().size());
+        for (int index = 0; index < rgbRow.children().size(); index++) {
+            Widget slot = rgbRow.children().get(index);
+            Widget column = slot.children().getFirst();
+            Label caption = assertInstanceOf(Label.class, column.children().get(0));
+            Input input = assertInstanceOf(Input.class, column.children().get(1));
+            assertEquals(List.of("R", "G", "B").get(index), caption.text());
+            assertTrue(caption.isVisible());
+            assertTrue(caption.bounds().width() > 0);
+            assertTrue(caption.bounds().height() > 0);
+            assertEquals(input.absolutePosition().x(), caption.absolutePosition().x(),
+                    TOLERANCE);
+            assertTrue(caption.absolutePosition().y() + caption.bounds().height()
+                    <= input.absolutePosition().y() + TOLERANCE);
+            assertTrue(slot.bounds().x() + slot.bounds().width()
+                    <= contentWidth + TOLERANCE);
+        }
+    }
+
+    @Test
+    void clipsCheckerboardsToTheRoundedPreviewContours() {
+        for (Viewport viewport : List.of(TestViewports.LOGICAL, TestViewports.HIDPI)) {
+            TestBackend backend = new TestBackend();
+            WidgetManager manager = new WidgetManager(new InputState(), backend);
+            manager.resize(viewport);
+            ColorPicker picker = picker(new Color(1, 0.5f, 0.25f, 0.45f));
+            manager.add(picker);
+            manager.render();
+            openPopup(manager, picker);
+
+            assertRoundedCheckerboards(manager, backend);
+        }
+    }
+
+    private static void assertRoundedCheckerboards(WidgetManager manager, TestBackend backend) {
+        Widget content = popup(manager).content();
+        float contentWidth = content.bounds().width();
+        List<MaskedCheckerboard> allMasks = maskedCheckerboards(
+                backend.lastDrawList().commands());
+        List<MaskedCheckerboard> masks = allMasks.stream()
+                .filter(mask -> mask.cells().size() > 4)
+                .toList();
+        assertEquals(3, masks.size());
+
+        MaskedCheckerboard swatch = maskWithSize(masks, 18, 18);
+        MaskedCheckerboard alpha = maskWithSize(masks, contentWidth, 16);
+        MaskedCheckerboard preview = maskWithSize(masks, contentWidth, 26);
+
+        for (MaskedCheckerboard mask : List.of(swatch, alpha, preview)) {
+            assertFalse(mask.cells().isEmpty());
+            for (DrawCommand cell : mask.cells()) {
+                RoundedRectCommand tile = assertInstanceOf(RoundedRectCommand.class, cell);
+                assertEquals(0, tile.radius(), TOLERANCE);
+                assertTrue(cell.bounds().x() >= mask.bounds().x() - TOLERANCE);
+                assertTrue(cell.bounds().y() >= mask.bounds().y() - TOLERANCE);
+                assertTrue(cell.bounds().right() <= mask.bounds().right() + TOLERANCE);
+                assertTrue(cell.bounds().bottom() <= mask.bounds().bottom() + TOLERANCE);
+            }
+            assertRoundedContour(mask);
+            assertTrue(backend.lastDrawList().commands().stream().anyMatch(command ->
+                    command.bounds().equals(mask.bounds())
+                            && (command.radius() == 4 || command instanceof MeshCommand)));
+        }
+
+        List<MaskedCheckerboard> markers = allMasks.stream()
+                .filter(mask -> mask.cells().size() == 2)
+                .toList();
+        assertEquals(2, markers.size());
+        for (MaskedCheckerboard marker : markers) {
+            assertRoundedContour(marker);
+            for (DrawCommand cell : marker.cells()) {
+                assertTrue(cell.bounds().height() <= marker.bounds().height() - 4 + TOLERANCE);
+            }
+        }
+    }
+
+    private static void assertRoundedContour(MaskedCheckerboard mask) {
+        Rect bounds = mask.bounds();
+        List<Point> corners = List.of(
+                new Point(bounds.x(), bounds.y()),
+                new Point(bounds.right(), bounds.y()),
+                new Point(bounds.x(), bounds.bottom()),
+                new Point(bounds.right(), bounds.bottom()));
+        for (Point corner : corners) {
+            assertFalse(mask.vertices().stream().anyMatch(vertex ->
+                            Math.abs(vertex.x() - corner.x()) < TOLERANCE
+                                    && Math.abs(vertex.y() - corner.y()) < TOLERANCE),
+                    "Mask vertices must not reach the square rectangle corner.");
+        }
+    }
+
+    private static List<MaskedCheckerboard> maskedCheckerboards(List<DrawCommand> commands) {
+        List<MaskedCheckerboard> masks = new ArrayList<>();
+        Rect bounds = null;
+        List<MeshVertex> vertices = null;
+        List<DrawCommand> cells = new ArrayList<>();
+        for (DrawCommand command : commands) {
+            if (command instanceof MaskBeginCommand begin) {
+                bounds = begin.bounds();
+                vertices = begin.vertices();
+                cells = new ArrayList<>();
+            } else if (command instanceof MaskEndCommand) {
+                if (bounds != null) {
+                    masks.add(new MaskedCheckerboard(bounds, vertices, List.copyOf(cells)));
+                }
+                bounds = null;
+                vertices = null;
+            } else if (bounds != null) {
+                cells.add(command);
+            }
+        }
+        return masks;
+    }
+
+    private static MaskedCheckerboard maskWithSize(List<MaskedCheckerboard> masks, float width,
+                                                   float height) {
+        return masks.stream()
+                .filter(mask -> Math.abs(mask.bounds().width() - width) < TOLERANCE
+                        && Math.abs(mask.bounds().height() - height) < TOLERANCE)
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static Rect absoluteBounds(Widget widget) {
+        Point origin = widget.absolutePosition();
+        return new Rect(origin.x(), origin.y(), widget.bounds().width(),
+                widget.bounds().height());
+    }
+
     private static ColorPicker picker(Color color) {
         ColorPicker picker = new ColorPicker(color);
         picker.setBounds(new Rect(10, 10, 220, 36));
@@ -209,6 +404,21 @@ class ColorPickerTest {
         return inputs;
     }
 
+    private static List<Label> labels(Widget root) {
+        List<Label> labels = new ArrayList<>();
+        collectLabels(root, labels);
+        return labels;
+    }
+
+    private static void collectLabels(Widget root, List<Label> labels) {
+        for (Widget child : root.children()) {
+            if (child instanceof Label label) {
+                labels.add(label);
+            }
+            collectLabels(child, labels);
+        }
+    }
+
     private static void collectInputs(Widget root, List<Input> inputs) {
         for (Widget child : root.children()) {
             if (child instanceof Input input) {
@@ -234,8 +444,16 @@ class ColorPickerTest {
     }
 
     private static WidgetManager manager() {
-        WidgetManager manager = new WidgetManager(new InputState(), new TestBackend());
+        return manager(new TestBackend());
+    }
+
+    private static WidgetManager manager(TestBackend backend) {
+        WidgetManager manager = new WidgetManager(new InputState(), backend);
         manager.resize(VIEWPORT);
         return manager;
+    }
+
+    private record MaskedCheckerboard(Rect bounds, List<MeshVertex> vertices,
+                                      List<DrawCommand> cells) {
     }
 }

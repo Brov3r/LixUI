@@ -43,8 +43,14 @@ public class ColorPicker extends PickerField {
     private static final float SWATCH_GAP = 8;
     private static final float RGB_WIDTH = 68;
     private static final float RGB_GAP = 6;
+    private static final float CHANNEL_LABEL_GAP = 2;
     private static final float HANDLE_RADIUS = 6;
     private static final float CHECKER_SIZE = 8;
+    private static final float SWATCH_RADIUS = 4;
+    private static final float PREVIEW_RADIUS = 4;
+    private static final float STRIP_RADIUS = 4;
+    private static final float MARKER_WIDTH = 4;
+    private static final float MARKER_INSET = 2;
 
     private static final List<GradientStop> HUE_STOPS = List.of(
             new GradientStop(0, new Color(1, 0, 0, 1)),
@@ -103,8 +109,8 @@ public class ColorPicker extends PickerField {
         hexRow.add(hexLabel).add(hexInput);
         HBox rgbRow = new HBox();
         rgbRow.setGap(RGB_GAP);
-        rgbRow.add(new WidthSlot(redInput)).add(new WidthSlot(greenInput))
-                .add(new WidthSlot(blueInput));
+        rgbRow.add(channelColumn("R", redInput)).add(channelColumn("G", greenInput))
+                .add(channelColumn("B", blueInput));
         popupContent.setGap(CONTENT_GAP);
         popupContent.add(square).add(hueStrip).add(alphaStrip).add(preview)
                 .add(hexRow).add(rgbRow);
@@ -192,9 +198,9 @@ public class ColorPicker extends PickerField {
             return;
         }
         Rect swatch = new Rect(bounds.x(), bounds.y() + (bounds.height() - size) / 2, size, size);
-        drawCheckerboard(renderer, swatch);
-        renderer.roundedRect(swatch, 4, color());
-        renderer.strokeRoundedRect(swatch, 4, 1, Paint.solid(style.border(state)));
+        drawCheckerboard(renderer, swatch, SWATCH_RADIUS);
+        renderer.roundedRect(swatch, SWATCH_RADIUS, color());
+        renderer.strokeRoundedRect(swatch, SWATCH_RADIUS, 1, Paint.solid(style.border(state)));
     }
 
     /**
@@ -209,6 +215,14 @@ public class ColorPicker extends PickerField {
         Rect anchor = new Rect(absolutePosition().x(), absolutePosition().y(),
                 bounds().width(), bounds().height());
         popup().open(context(), anchor);
+    }
+
+    private static Widget channelColumn(String labelText, Input input) {
+        Label label = new Label(labelText);
+        VBox column = new VBox();
+        column.setGap(CHANNEL_LABEL_GAP);
+        column.add(label).add(input);
+        return new WidthSlot(column);
     }
 
     private void configureChannel(Input input, String placeholder, int channel) {
@@ -394,6 +408,18 @@ public class ColorPicker extends PickerField {
         return Math.clamp(value, 0, 1);
     }
 
+    private void drawCheckerboard(RenderManager renderer, Rect bounds, float radius) {
+        if (bounds.isEmpty()) {
+            return;
+        }
+        renderer.pushMaskRoundedRect(bounds, radius);
+        try {
+            drawCheckerboard(renderer, bounds);
+        } finally {
+            renderer.popMask();
+        }
+    }
+
     private void drawCheckerboard(RenderManager renderer, Rect bounds) {
         if (bounds.isEmpty()) {
             return;
@@ -437,9 +463,9 @@ public class ColorPicker extends PickerField {
             if (localBounds().isEmpty()) {
                 return;
             }
-            drawCheckerboard(renderer, localBounds());
-            renderer.roundedRect(localBounds(), 4, color());
-            renderer.strokeRoundedRect(localBounds(), 4, 1,
+            drawCheckerboard(renderer, localBounds(), PREVIEW_RADIUS);
+            renderer.roundedRect(localBounds(), PREVIEW_RADIUS, color());
+            renderer.strokeRoundedRect(localBounds(), PREVIEW_RADIUS, 1,
                     Paint.solid(context().theme().border()));
         }
     }
@@ -615,7 +641,7 @@ public class ColorPicker extends PickerField {
             Paint gradient;
             float position;
             if (alphaStrip) {
-                drawCheckerboard(renderer, localBounds());
+                drawCheckerboard(renderer, localBounds(), STRIP_RADIUS);
                 Color current = color();
                 gradient = Paint.linear(new Point(0, 0), new Point(width, 0),
                         new GradientStop(0, new Color(current.r(), current.g(), current.b(), 0)),
@@ -625,10 +651,21 @@ public class ColorPicker extends PickerField {
                 gradient = Paint.linear(new Point(0, 0), new Point(width, 0), HUE_STOPS);
                 position = hue / 360;
             }
-            renderer.fillRoundedRect(localBounds(), 4, gradient);
-            float x = Math.clamp(position * width, 0, width);
-            renderer.rect(new Rect(x - 2, 0, 4, height), Color.BLACK);
-            renderer.rect(new Rect(x - 1, 0, 2, height), Color.WHITE);
+            renderer.fillRoundedRect(localBounds(), STRIP_RADIUS, gradient);
+            float halfMarker = MARKER_WIDTH / 2;
+            float x = Math.clamp(position * width, halfMarker,
+                    Math.max(halfMarker, width - halfMarker));
+            float markerTop = Math.min(MARKER_INSET, height / 2);
+            float markerHeight = Math.max(0, height - markerTop * 2);
+            renderer.pushMaskRoundedRect(localBounds(), STRIP_RADIUS);
+            try {
+                renderer.rect(new Rect(x - halfMarker, markerTop, MARKER_WIDTH, markerHeight),
+                        Color.BLACK);
+                renderer.rect(new Rect(x - halfMarker / 2, markerTop, halfMarker, markerHeight),
+                        Color.WHITE);
+            } finally {
+                renderer.popMask();
+            }
         }
 
         /**
@@ -725,33 +762,33 @@ public class ColorPicker extends PickerField {
      * Constrains an RGB field to an equal share of the row.
      */
     private static final class WidthSlot extends Widget {
-        private final Input input;
+        private final Widget content;
 
-        private WidthSlot(Input input) {
-            this.input = input;
-            add(input);
+        private WidthSlot(Widget content) {
+            this.content = content;
+            add(content);
         }
 
         /**
-         * Measures the input inside the fixed slot width.
+         * Measures the content inside the fixed slot width.
          *
          * @param constraints available and required dimensions
          * @return the slot size
          */
         @Override
         protected Size onMeasure(LayoutConstraints constraints) {
-            Size natural = input.measure(LayoutConstraints.loose(RGB_WIDTH,
+            Size natural = content.measure(LayoutConstraints.loose(RGB_WIDTH,
                     constraints.maxHeight()));
             return new Size(Math.min(RGB_WIDTH, constraints.maxWidth()),
                     Math.min(natural.height(), constraints.maxHeight()));
         }
 
         /**
-         * Stretches the input over the slot bounds.
+         * Stretches the content over the slot bounds.
          */
         @Override
         protected void onLayout() {
-            input.layout(new Rect(0, 0, bounds().width(), bounds().height()));
+            content.layout(new Rect(0, 0, bounds().width(), bounds().height()));
         }
     }
 }
