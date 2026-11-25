@@ -21,12 +21,14 @@ import com.lixui.text.TextShadow;
 import com.lixui.text.VerticalAlignment;
 import com.lixui.theme.Theme;
 import com.lixui.theme.WidgetStyle;
+import com.lixui.widget.control.Badge;
 import com.lixui.widget.control.Button;
 import com.lixui.widget.control.CheckBox;
 import com.lixui.widget.control.Dropdown;
 import com.lixui.widget.control.Hyperlink;
 import com.lixui.widget.FrameInfo;
 import com.lixui.widget.LayoutConstraints;
+import com.lixui.widget.control.Image;
 import com.lixui.widget.control.Input;
 import com.lixui.widget.control.InputArea;
 import com.lixui.widget.control.InputCode;
@@ -149,6 +151,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(decoratedLabel).add(justifiedLabel).add(richLabel);
         innerTabs = createInnerTabs();
         outerTabs = new TabPanel();
+        bindIcon("puzzle-01.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Elements", createElementsPage())::setIcon);
         bindIcon("user-list.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Form", createFormPage())::setIcon);
         bindIcon("grid.svg", outerTabs.iconSize(),
@@ -228,6 +232,54 @@ final class DemoWidgetScene implements AutoCloseable {
         tabs.setTabClosable(tabList.get(0), false);
         tabs.setTabMovable(tabList.get(11), false);
         return tabs;
+    }
+
+    private Widget createElementsPage() {
+        Label status = new Label("Badges mark counters for navigation items and notifications.");
+        status.setFontFamily(fontFamily);
+        status.setAutoSize(false);
+        status.setWrap(true);
+
+        Badge counter = new Badge("12");
+        Badge highlighted = new Badge("New");
+        highlighted.setBackgroundColor(GREEN);
+        highlighted.setTextColor(Color.BLACK.withAlpha(0.78f));
+        highlighted.setBorderWidth(1);
+        highlighted.setBorderColor(GREEN.withAlpha(0.55f));
+        Badge dot = new Badge();
+        dot.setDotSize(10);
+        dot.setBackgroundColor(ORANGE);
+        Badge overflow = new Badge("99+");
+        overflow.setBackgroundColor(PURPLE);
+        overflow.setTextColor(Color.WHITE);
+
+        HBox badgeRow = new HBox();
+        badgeRow.setGap(10);
+        badgeRow.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        badgeRow.add(counter).add(highlighted).add(dot).add(overflow)
+                .add(createNotificationSample());
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(10);
+        page.add(sliderCaption("Badges: counter, outlined label, dot and a corner badge"))
+                .add(badgeRow)
+                .add(status);
+        return page;
+    }
+
+    private Panel createNotificationSample() {
+        Panel panel = new Panel();
+        panel.setBounds(new Rect(0, 0, 60, 60));
+        Image icon = new Image();
+        icon.setIcon("notification.svg");
+        icon.setBounds(new Rect(12, 12, 36, 36));
+        Badge count = new Badge("3");
+        count.setAutoSize(false);
+        count.setPadding(2);
+        count.setBounds(new Rect(40, -6, 22, 22));
+        panel.add(icon).add(count);
+        return panel;
     }
 
     private VBox createFormPage() {
