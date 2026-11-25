@@ -67,7 +67,7 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
 
     private final List<Item> items = new ArrayList<>();
     private final List<Level> levels = new ArrayList<>();
-    private final IconSet icons = new IconSet("arrow-right-04.svg");
+    private final IconSet icons = new IconSet("arrow-right-04.svg", "tick.svg");
 
     private float itemHeight = DEFAULT_ITEM_HEIGHT;
     private float separatorHeight = DEFAULT_SEPARATOR_HEIGHT;
@@ -81,6 +81,7 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
     private Color dangerColor = Color.hex("#E06C75");
     private boolean closeOnOutsideClick = true;
     private Runnable closeListener;
+    private Widget focusReturn;
 
     private boolean open;
     private float openX;
@@ -384,6 +385,26 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
     }
 
     /**
+     * Returns the widget that receives keyboard focus when the menu is dismissed with Escape or an
+     * item activation.
+     *
+     * @return the focus target, or null when focus is left to the manager
+     */
+    public final Widget focusReturn() {
+        return focusReturn;
+    }
+
+    /**
+     * Sets the widget that receives keyboard focus when the menu is dismissed with Escape or an
+     * item activation. Outside presses keep their own focus target.
+     *
+     * @param focusReturn attached widget to focus, or null to leave focus unchanged
+     */
+    public final void setFocusReturn(Widget focusReturn) {
+        this.focusReturn = focusReturn;
+    }
+
+    /**
      * Reports whether the context menu is open.
      *
      * @return true while the menu is visible
@@ -531,13 +552,14 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
                 ? SCROLLBAR_THICKNESS + SCROLLBAR_GAP : 0;
         float contentRight = level.bounds.right() - padding - scrollbarSpace;
         float y = level.bounds.y() + padding - level.scrollY;
+        boolean checkSlot = hasChecked(level);
         for (int index = 0; index < level.items.size(); index++) {
             Item item = level.items.get(index);
             float height = rowHeight(item);
             if (y + height > level.bounds.y() + padding
                     && y < level.bounds.bottom() - padding) {
                 drawItem(renderer, theme, font, level, levelIndex, item, index,
-                        contentX, contentRight, y, height);
+                        contentX, contentRight, y, height, checkSlot);
             }
             y += height;
         }
@@ -545,7 +567,8 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
 
     private void drawItem(RenderManager renderer, Theme theme, Font font,
                           Level level, int levelIndex, Item item, int itemIndex,
-                          float contentX, float contentRight, float y, float height) {
+                          float contentX, float contentRight, float y, float height,
+                          boolean checkSlot) {
         if (item.isSeparator()) {
             renderer.rect(new Rect(contentX, y + height / 2,
                     Math.max(0, contentRight - contentX), 1), theme.border().withAlpha(0.7f));
@@ -563,6 +586,13 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
             color = theme.textMuted().withAlpha(0.55f);
         }
         float x = contentX + LEFT_INSET;
+        if (checkSlot) {
+            if (item.isChecked()) {
+                renderer.icon(icons.get(1), new Rect(x, y + (height - iconSize) / 2,
+                        iconSize, iconSize), ImageStyle.ICON, color);
+            }
+            x += iconSize + ICON_GAP;
+        }
         if (item.icon() != null) {
             renderer.icon(item.icon(), new Rect(x, y + (height - iconSize) / 2,
                     iconSize, iconSize), ImageStyle.ICON, color);
@@ -619,6 +649,15 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
 
     private float rowHeight(Item item) {
         return item.isSeparator() ? separatorHeight : itemHeight;
+    }
+
+    private boolean hasChecked(Level level) {
+        for (Item item : level.items) {
+            if (!item.isSeparator() && item.isChecked()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void layoutRoot(Level level) {
@@ -680,18 +719,22 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
     private float measureWidth(Level level) {
         Font font = font();
         float content = 0;
+        boolean checkSlot = hasChecked(level);
         for (Item item : level.items) {
             if (item.isSeparator()) {
                 continue;
             }
-            float width = itemWidth(item, font);
+            float width = itemWidth(item, font, checkSlot);
             content = Math.max(content, width);
         }
         return Math.max(minimumMenuWidth, content + padding * 2);
     }
 
-    private float itemWidth(Item item, Font font) {
+    private float itemWidth(Item item, Font font, boolean checkSlot) {
         float width = LEFT_INSET;
+        if (checkSlot) {
+            width += iconSize + ICON_GAP;
+        }
         if (item.icon() != null) {
             width += iconSize + ICON_GAP;
         }
@@ -815,6 +858,19 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
         }
     }
 
+    private void restoreFocus() {
+        Widget target = focusReturn;
+        if (target == null || context() == null || target.context() != context()
+                || !target.isVisible() || !target.isEnabled() || !target.isFocusable()) {
+            return;
+        }
+        try {
+            context().requestFocus(target);
+        } catch (IllegalArgumentException ignored) {
+            // The return target may have left the tree while the menu was open.
+        }
+    }
+
     /**
      * Tracks the pointer and opens submenus on hover.
      *
@@ -884,10 +940,12 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
             openSubmenu(levelIndex, itemIndex);
             return true;
         }
-        if (item.action() != null) {
-            item.action().run();
-        }
+        Runnable action = item.action();
+        restoreFocus();
         close();
+        if (action != null) {
+            action.run();
+        }
         return true;
     }
 
@@ -929,6 +987,7 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
     @Override
     protected boolean onKeyPressed(Key key, Modifiers modifiers, boolean repeat) {
         if (key == Key.ESCAPE) {
+            restoreFocus();
             close();
             return true;
         }
@@ -985,6 +1044,7 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
         private String shortcut = "";
         private Runnable action;
         private boolean enabled = true;
+        private boolean checked;
         private boolean separator;
         private Tone tone = Tone.DEFAULT;
         private Color textColor;
@@ -1113,6 +1173,24 @@ public class ContextMenu extends Widget implements ContextMenuHandle {
          */
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
+        }
+
+        /**
+         * Reports whether the item is marked as checked.
+         *
+         * @return true when a check mark is drawn beside the item
+         */
+        public boolean isChecked() {
+            return checked;
+        }
+
+        /**
+         * Marks the item as checked or unchecked.
+         *
+         * @param checked true to draw a check mark beside the item
+         */
+        public void setChecked(boolean checked) {
+            this.checked = checked;
         }
 
         /**

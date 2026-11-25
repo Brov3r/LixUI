@@ -1,13 +1,8 @@
 package com.lixui.demo;
 
-import com.lixui.geometry.Rect;
-import com.lixui.geometry.Size;
-import com.lixui.render.Texture;
 import com.lixui.text.FontFamily;
 import com.lixui.text.FontStyle;
-import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.Widget;
-import com.lixui.widget.container.ScrollPanel;
 import com.lixui.widget.control.Button;
 import com.lixui.widget.control.CheckBox;
 import com.lixui.widget.control.Combobox;
@@ -18,7 +13,6 @@ import com.lixui.widget.layout.HBox;
 import com.lixui.widget.layout.VBox;
 
 import java.util.List;
-import java.util.function.Consumer;
 
 /**
  * Builds the select page of the demo scene with several combobox variations.
@@ -28,7 +22,7 @@ final class DemoSelectPage {
     private static final float FIELD_HEIGHT = 40;
 
     private final FontFamily fontFamily;
-    private final IconBinder iconBinder;
+    private final DemoIconBinder iconBinder;
 
     /**
      * Creates a page builder.
@@ -36,7 +30,7 @@ final class DemoSelectPage {
      * @param fontFamily font family used by captions and the status label
      * @param iconBinder callback that loads a bundled icon at the requested size
      */
-    DemoSelectPage(FontFamily fontFamily, IconBinder iconBinder) {
+    DemoSelectPage(FontFamily fontFamily, DemoIconBinder iconBinder) {
         this.fontFamily = fontFamily;
         this.iconBinder = iconBinder;
     }
@@ -169,9 +163,7 @@ final class DemoSelectPage {
                 .add(regions)
                 .add(regionActions)
                 .add(status);
-        ScrollablePage scroller = new ScrollablePage();
-        scroller.setContent(page);
-        return scroller;
+        return new DemoScrollPage(page);
     }
 
     private Combobox field(String placeholder) {
@@ -201,43 +193,5 @@ final class DemoSelectPage {
         label.setAutoSize(false);
         label.setWrap(true);
         return label;
-    }
-
-    /**
-     * Scrolls a content column whose height follows its measured children.
-     */
-    private static final class ScrollablePage extends ScrollPanel {
-        private static final float MAX_CONTENT_HEIGHT = 10_000;
-        private static final float SCROLLBAR_RESERVE = 12;
-
-        /**
-         * Measures the content column at the panel width and keeps its full height scrollable.
-         */
-        @Override
-        protected void onLayout() {
-            Widget content = content();
-            if (content != null) {
-                float width = Math.max(0, bounds().width() - SCROLLBAR_RESERVE);
-                Size natural = content.measure(LayoutConstraints.loose(width,
-                        MAX_CONTENT_HEIGHT));
-                content.setBounds(new Rect(0, 0, width, natural.height()));
-            }
-            super.onLayout();
-        }
-    }
-
-    /**
-     * Loads a bundled icon and assigns the texture to a target.
-     */
-    @FunctionalInterface
-    interface IconBinder {
-        /**
-         * Binds one icon.
-         *
-         * @param name bundled icon resource name
-         * @param size requested icon size in logical UI units
-         * @param assign consumer receiving the loaded texture
-         */
-        void bind(String name, float size, Consumer<Texture> assign);
     }
 }

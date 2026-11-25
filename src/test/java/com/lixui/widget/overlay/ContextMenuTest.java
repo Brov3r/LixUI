@@ -13,6 +13,7 @@ import com.lixui.render.Viewport;
 import com.lixui.text.FontData;
 import com.lixui.text.SystemFonts;
 import com.lixui.widget.Panel;
+import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.testsupport.TestBackend;
 import com.lixui.widget.testsupport.TestViewports;
@@ -23,6 +24,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -142,6 +144,37 @@ class ContextMenuTest {
         Rect nested = menu.levelBounds(2);
         assertTrue(nested.right() <= root.x() + 0.01f);
         assertTrue(nested.right() <= submenu.x() - menu.submenuGap() + 0.01f);
+    }
+
+    @Test
+    void checkedItemsReserveACheckSlotAndEscapeReturnsFocus() {
+        WidgetManager manager = manager();
+        Widget target = new Widget() { };
+        target.setFocusable(true);
+        target.setBounds(new Rect(0, 0, 20, 20));
+        manager.add(target);
+
+        ContextMenu plain = new ContextMenu();
+        plain.setMinimumMenuWidth(0);
+        plain.addItem("Open", null);
+        plain.open(manager.context(), 100, 100);
+        manager.layout();
+        float plainWidth = plain.levelBounds(0).width();
+        plain.close();
+
+        ContextMenu menu = new ContextMenu();
+        menu.setMinimumMenuWidth(0);
+        menu.addItem("Open", null).setChecked(true);
+        menu.setFocusReturn(target);
+        menu.open(manager.context(), 100, 100);
+        manager.layout();
+
+        assertTrue(menu.levelBounds(0).width() >= plainWidth + menu.iconSize());
+
+        manager.handle(new KeyPressed(Key.ESCAPE, Modifiers.NONE, false));
+
+        assertFalse(menu.isOpen());
+        assertSame(target, manager.focused());
     }
 
     @Test
