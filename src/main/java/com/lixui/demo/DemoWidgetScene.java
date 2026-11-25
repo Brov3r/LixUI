@@ -21,10 +21,13 @@ import com.lixui.text.TextShadow;
 import com.lixui.text.VerticalAlignment;
 import com.lixui.theme.Theme;
 import com.lixui.theme.WidgetStyle;
+import com.lixui.widget.control.Alert;
+import com.lixui.widget.control.Avatar;
 import com.lixui.widget.control.Badge;
 import com.lixui.widget.control.Button;
 import com.lixui.widget.control.CheckBox;
 import com.lixui.widget.control.Dropdown;
+import com.lixui.widget.control.DurationInput;
 import com.lixui.widget.control.EmptyState;
 import com.lixui.widget.control.Hyperlink;
 import com.lixui.widget.FrameInfo;
@@ -37,6 +40,7 @@ import com.lixui.widget.control.Keycap;
 import com.lixui.widget.control.KnobSlider;
 import com.lixui.widget.control.Label;
 import com.lixui.widget.control.MultiSelect;
+import com.lixui.widget.control.NumberStepper;
 import com.lixui.widget.Panel;
 import com.lixui.widget.control.Pagination;
 import com.lixui.widget.control.PasswordInput;
@@ -52,6 +56,7 @@ import com.lixui.widget.control.Slider;
 import com.lixui.widget.control.Spacer;
 import com.lixui.widget.control.Spinner;
 import com.lixui.widget.control.SplitButton;
+import com.lixui.widget.control.UnitInput;
 import com.lixui.widget.container.Accordion;
 import com.lixui.widget.container.GroupBox;
 import com.lixui.widget.container.SplitPanel;
@@ -73,6 +78,7 @@ import com.lixui.widget.overlay.ContextMenu;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
@@ -157,6 +163,8 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(decoratedLabel).add(justifiedLabel).add(richLabel);
         innerTabs = createInnerTabs();
         outerTabs = new TabPanel();
+        bindIcon("puzzle-03.svg", outerTabs.iconSize(),
+                outerTabs.addTab("Components", createComponentsPage())::setIcon);
         bindIcon("puzzle-02.svg", outerTabs.iconSize(),
                 outerTabs.addTab("Interactive", createInteractivePage())::setIcon);
         bindIcon("puzzle-01.svg", outerTabs.iconSize(),
@@ -240,6 +248,92 @@ final class DemoWidgetScene implements AutoCloseable {
         tabs.setTabClosable(tabList.get(0), false);
         tabs.setTabMovable(tabList.get(11), false);
         return tabs;
+    }
+
+    private Widget createComponentsPage() {
+        Label status = new Label("Inline alerts, avatars, numeric steppers and unit inputs.");
+        status.setFontFamily(fontFamily);
+        status.setAutoSize(false);
+        status.setWrap(true);
+
+        Alert info = new Alert(Alert.Tone.INFO);
+        info.setTitle("Patch 1.4 is available");
+        info.setMessage("Restart the client to apply the update.");
+
+        Alert warning = new Alert(Alert.Tone.WARNING);
+        warning.setTitle("Low disk space");
+        warning.setMessage("Only 120 MB remain in the data directory.");
+        warning.setClosable(true);
+        warning.setOnClose(() -> status.setText("Warning alert dismissed."));
+
+        Avatar avatar = new Avatar();
+        avatar.setName("Aria Snow");
+        avatar.setDiameter(56);
+        avatar.addBadge("3");
+        Badge online = avatar.addBadge(Avatar.Corner.TOP_RIGHT);
+        online.setDotSize(12);
+        online.setBackgroundColor(GREEN);
+        Avatar iconAvatar = new Avatar();
+        iconAvatar.setName("Bran");
+        iconAvatar.setDiameter(56);
+        iconAvatar.setIcon("user.svg");
+        HBox avatarRow = new HBox();
+        avatarRow.setGap(16);
+        avatarRow.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        avatarRow.add(avatar).add(iconAvatar);
+
+        NumberStepper stepper = new NumberStepper();
+        stepper.setRange(0, 100);
+        stepper.setValue(12);
+        stepper.setOnValueChange(value -> status.setText("Quantity: " + formatAmount(value)));
+        NumberStepper precise = new NumberStepper();
+        precise.setRange(-10, 10);
+        precise.setStep(0.5);
+        precise.setDecimals(1);
+        precise.setValue(2.5);
+        precise.setOnValueChange(value -> status.setText("Offset: " + formatAmount(value)));
+        HBox stepperRow = new HBox();
+        stepperRow.setGap(12);
+        stepperRow.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        stepperRow.add(stepper).add(precise);
+
+        DurationInput duration = new DurationInput();
+        duration.setValue(90);
+        duration.setOnChange(seconds -> status.setText("Duration: " + formatAmount(seconds)
+                + " s"));
+        UnitInput length = new UnitInput();
+        length.setUnits(List.of(new UnitInput.UnitOption("mm", 1),
+                new UnitInput.UnitOption("cm", 10), new UnitInput.UnitOption("m", 1000)));
+        length.setUnit(new UnitInput.UnitOption("cm", 10));
+        length.setValue(250);
+        length.setOnChange(millimetres -> status.setText("Length: " + formatAmount(millimetres)
+                + " mm"));
+        HBox unitRow = new HBox();
+        unitRow.setGap(12);
+        unitRow.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        unitRow.add(duration).add(length);
+
+        VBox page = new VBox();
+        page.setPadding(CONTENT_PADDING);
+        page.setGap(10);
+        page.add(sliderCaption("Alert: tone colors, wrapped text and an optional close button"))
+                .add(info)
+                .add(warning)
+                .add(sliderCaption("Avatar: initials, image source and a corner badge"))
+                .add(avatarRow)
+                .add(sliderCaption("Number stepper: click, hold to repeat and type a value"))
+                .add(stepperRow)
+                .add(sliderCaption("Duration and unit inputs: switch units without losing the value"))
+                .add(unitRow)
+                .add(status);
+        return page;
+    }
+
+    private static String formatAmount(double value) {
+        if (value == Math.rint(value)) {
+            return Long.toString(Math.round(value));
+        }
+        return String.format(Locale.ROOT, "%.2f", value);
     }
 
     private Widget createInteractivePage() {
