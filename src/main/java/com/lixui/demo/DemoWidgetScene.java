@@ -28,6 +28,7 @@ import com.lixui.widget.control.Avatar;
 import com.lixui.widget.control.Badge;
 import com.lixui.widget.control.Button;
 import com.lixui.widget.control.CheckBox;
+import com.lixui.widget.control.ColorPicker;
 import com.lixui.widget.control.DatePicker;
 import com.lixui.widget.control.Dropdown;
 import com.lixui.widget.control.DurationInput;
@@ -613,7 +614,8 @@ final class DemoWidgetScene implements AutoCloseable {
 
     private Widget createPickersPage() {
         Label status = new Label("Start: 09:30    Reminder: 18:45\nUS date: " + LocalDate.now()
-                + "    RU date: " + LocalDate.now());
+                + "    RU date: " + LocalDate.now()
+                + "\nRGB: #4F8EF7FF    Alpha: #FF6B3573");
         status.setFontFamily(fontFamily);
         status.setAutoSize(false);
         status.setWrap(true);
@@ -636,13 +638,26 @@ final class DemoWidgetScene implements AutoCloseable {
         ruDate.setMinimumSize(200, 36);
         ruDate.setMaximumSize(280, 46);
         ruDate.setTooltipText("Weeks start on Monday and month names use ru.");
+        ColorPicker rgbColor = new ColorPicker(Color.hex("#4F8EF7"));
+        rgbColor.setMinimumSize(200, 36);
+        rgbColor.setMaximumSize(260, 46);
+        rgbColor.setTooltipText("Opaque color: drag the square, strips or type hex/RGB values.");
+        ColorPicker alphaColor = new ColorPicker(new Color(1f, 0.42f, 0.21f, 0.45f));
+        alphaColor.setMinimumSize(200, 36);
+        alphaColor.setMaximumSize(260, 46);
+        alphaColor.setTooltipText("Semi-transparent color: the swatch and popup preview show "
+                + "the alpha over a checkerboard.");
         Runnable updateStatus = () -> status.setText("Start: " + startTime.time()
                 + "    Reminder: " + reminderTime.time()
-                + "\nUS date: " + enDate.date() + "    RU date: " + ruDate.date());
+                + "\nUS date: " + enDate.date() + "    RU date: " + ruDate.date()
+                + "\nRGB: " + rgbColor.color().toHex()
+                + "    Alpha: " + alphaColor.color().toHex());
         startTime.setOnChange(value -> updateStatus.run());
         reminderTime.setOnChange(value -> updateStatus.run());
         enDate.setOnChange(value -> updateStatus.run());
         ruDate.setOnChange(value -> updateStatus.run());
+        rgbColor.setOnChange(value -> updateStatus.run());
+        alphaColor.setOnChange(value -> updateStatus.run());
 
         HBox timeRow = new HBox();
         timeRow.setGap(12);
@@ -654,6 +669,11 @@ final class DemoWidgetScene implements AutoCloseable {
         dateRow.setCrossAlignment(HBox.CrossAlignment.CENTER);
         dateRow.add(enDate).add(ruDate);
 
+        HBox colorRow = new HBox();
+        colorRow.setGap(12);
+        colorRow.setCrossAlignment(HBox.CrossAlignment.CENTER);
+        colorRow.add(rgbColor).add(alphaColor);
+
         VBox page = new VBox();
         page.setPadding(CONTENT_PADDING);
         page.setGap(10);
@@ -663,8 +683,11 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(sliderCaption("Date pickers: en-US weeks start on Sunday, ru weeks start "
                         + "on Monday; month and weekday names are localized"))
                 .add(dateRow)
+                .add(sliderCaption("Color pickers: opaque RGB and semi-transparent variants; "
+                        + "checkerboard previews make alpha visible"))
+                .add(colorRow)
                 .add(status);
-        return page;
+        return new DemoScrollPage(page);
     }
 
     private VBox createLayoutsPage() {

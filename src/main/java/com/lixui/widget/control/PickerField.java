@@ -99,6 +99,29 @@ abstract class PickerField extends Panel {
     protected abstract String fieldText();
 
     /**
+     * Returns the horizontal space reserved before the text for custom leading content.
+     * The default reserves no space.
+     *
+     * @return the leading slot width in logical UI units
+     */
+    protected float leadingWidth() {
+        return 0;
+    }
+
+    /**
+     * Paints custom leading content inside the reserved slot.
+     * The default draws nothing.
+     *
+     * @param renderer drawing manager for the current frame
+     * @param bounds leading slot in field-local coordinates
+     * @param state current widget state
+     * @param style resolved field style
+     */
+    protected void drawLeading(RenderManager renderer, Rect bounds, WidgetState state,
+                               WidgetStyle style) {
+    }
+
+    /**
      * Opens the popup for the current value.
      */
     protected abstract void openPopup();
@@ -124,7 +147,8 @@ abstract class PickerField extends Panel {
         }
         Font font = font();
         Size textSize = font == null ? new Size(0, 0) : font.measure(fieldText());
-        float contentWidth = textSize.width() + iconSize + ICON_GAP;
+        float leading = leadingWidth();
+        float contentWidth = leading + textSize.width() + iconSize + ICON_GAP;
         float contentHeight = Math.max(textSize.height(), iconSize);
         float padding = style.padding();
         return new Size(contentWidth + padding * 2, contentHeight + padding * 2);
@@ -147,10 +171,14 @@ abstract class PickerField extends Panel {
         drawBorder(renderer, style, state);
         Font font = font();
         float padding = style.padding();
+        float leading = leadingWidth();
+        float textX = padding + leading;
         float iconX = localBounds().width() - padding - iconSize;
-        float contentWidth = Math.max(0, iconX - ICON_GAP - padding);
+        float contentWidth = Math.max(0, iconX - ICON_GAP - textX);
+        drawLeading(renderer, new Rect(padding, padding, leading,
+                Math.max(0, localBounds().height() - padding * 2)), state, style);
         if (font != null) {
-            renderer.text(font, fieldText(), padding, localBounds().height() / 2,
+            renderer.text(font, fieldText(), textX, localBounds().height() / 2,
                     style.text(state), new TextStyle(contentWidth, 0, 1, TextOverflow.ELLIPSIS,
                             HorizontalAlignment.LEFT, VerticalAlignment.CENTER));
         }
