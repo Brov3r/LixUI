@@ -4,16 +4,20 @@ import com.lixui.text.FontStyle;
 import com.lixui.widget.Widget;
 import com.lixui.widget.control.FilterBar;
 import com.lixui.widget.control.Label;
+import com.lixui.widget.control.PropertyGrid;
 import com.lixui.widget.control.TagInput;
+import com.lixui.widget.layout.HBox;
 import com.lixui.widget.layout.VBox;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * Builds the form widget samples shown by the demo scene.
  */
 final class DemoFormWidgets {
     private static final float GAP = 6;
+    private static final float COLUMN_GAP = 12;
 
     private DemoFormWidgets() {
     }
@@ -81,6 +85,45 @@ final class DemoFormWidgets {
                 .add(quick)
                 .add(caption("Three filters with an initial selection"))
                 .add(detailed)
+                .add(status);
+        return group;
+    }
+
+    /**
+     * Builds two property grid variations.
+     *
+     * @return the property grid section
+     */
+    static Widget propertyGrids() {
+        Label status = status("Change a property to see the value here.");
+        PropertyGrid display = new PropertyGrid();
+        display.addBoolean("fullscreen", "Fullscreen", "Display", false);
+        display.addSelect("quality", "Quality", "Display",
+                List.of("Low", "Medium", "High"), 1);
+        display.addNumber("hud", "HUD scale", "Display", 100, 50, 200, 5, 0);
+        display.addBoolean("vsync", "VSync", "Display", true);
+
+        PropertyGrid connection = new PropertyGrid();
+        connection.addText("host", "Host", "Connection", "play.example.com");
+        connection.addNumber("port", "Port", "Connection", 25565, 1, 65535, 1, 0);
+        connection.addSelect("region", "Region", "Connection",
+                List.of("Europe", "America", "Asia"), 0);
+
+        Consumer<PropertyGrid.Property<?>> listener =
+                property -> status.setText(property.label() + ": " + property.value());
+        display.setOnValueChange(listener);
+        connection.setOnValueChange(listener);
+        display.setGrow(1);
+        connection.setGrow(1);
+
+        HBox columns = new HBox();
+        columns.setGap(COLUMN_GAP);
+        columns.add(display).add(connection);
+
+        VBox group = new VBox();
+        group.setGap(GAP);
+        group.add(caption("Property grid: typed editors, section search and reset"))
+                .add(columns)
                 .add(status);
         return group;
     }

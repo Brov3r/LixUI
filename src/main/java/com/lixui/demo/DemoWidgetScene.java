@@ -599,7 +599,8 @@ final class DemoWidgetScene implements AutoCloseable {
         page.setPadding(CONTENT_PADDING);
         page.setGap(10);
         page.add(nameField).add(emailField).add(roleField).add(updatesField).add(showError)
-                .add(DemoFormWidgets.tagInputs());
+                .add(DemoFormWidgets.tagInputs())
+                .add(DemoFormWidgets.propertyGrids());
         return new DemoScrollPage(page);
     }
 
