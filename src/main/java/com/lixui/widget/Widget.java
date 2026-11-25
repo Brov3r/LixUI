@@ -281,19 +281,21 @@ public abstract class Widget {
 
     /**
      * Assigns a tooltip widget shown after the pointer rests on this widget or its descendants.
-     * Any widget can serve as a tooltip; it is attached to the manager context while visible,
-     * positioned next to the pointer and drawn above the widget tree. The nearest ancestor with a
-     * tooltip wins. Use {@link TextTooltip} for a ready-made text tooltip.
+     * Any widget that is not attached to a manager can serve as a tooltip; it is attached to the
+     * manager context while visible, positioned next to the pointer and drawn above the widget
+     * tree. The nearest ancestor with a tooltip wins. Use {@link TextTooltip} for a ready-made
+     * text tooltip.
      *
-     * @param tooltip tooltip widget without a parent, or null to clear the tooltip
-     * @throws IllegalArgumentException if the tooltip is this widget or already has a parent
+     * @param tooltip detached tooltip widget, or null to clear the tooltip
+     * @throws IllegalArgumentException if the tooltip is this widget, already has a parent or is
+     *                                  attached to a widget manager
      */
     public final void setTooltip(Widget tooltip) {
         if (tooltip == this) {
             throw new IllegalArgumentException("A widget cannot use itself as a tooltip.");
         }
-        if (tooltip != null && tooltip.parent() != null) {
-            throw new IllegalArgumentException("A tooltip widget must not have a parent.");
+        if (tooltip != null && (tooltip.parent() != null || tooltip.context() != null)) {
+            throw new IllegalArgumentException("A tooltip widget must be detached.");
         }
         this.tooltip = tooltip;
     }

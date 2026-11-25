@@ -22,7 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TooltipTest {
     private static final Viewport VIEWPORT = TestViewports.LOGICAL;
@@ -214,6 +216,31 @@ class TooltipTest {
             assertNotNull(tooltip.context());
             manager.close();
             assertNull(tooltip.context());
+        }
+    }
+
+    @Test
+    void attachedTopLevelWidgetCannotBecomeATooltip() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = new WidgetManager(new InputState(), backend)) {
+            manager.resize(VIEWPORT);
+            Panel owner = new Panel();
+            owner.setBounds(new Rect(10, 10, 100, 50));
+            Panel registered = new Panel();
+            registered.setBounds(new Rect(300, 300, 80, 30));
+            manager.add(owner);
+            manager.add(registered);
+            manager.handle(new PointerMoved(20, 20));
+
+            assertThrows(IllegalArgumentException.class, () -> owner.setTooltip(registered));
+            manager.update(1);
+            manager.render();
+            manager.handle(new PointerMoved(600, 400));
+            manager.update(1);
+
+            assertNull(owner.tooltip());
+            assertSame(manager.context(), registered.context());
+            assertTrue(manager.widgets().contains(registered));
         }
     }
 
