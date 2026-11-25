@@ -8,6 +8,7 @@ import com.lixui.input.MouseButton;
 import com.lixui.platform.Cursor;
 import com.lixui.render.ImageStyle;
 import com.lixui.render.RenderManager;
+import com.lixui.render.Texture;
 import com.lixui.text.Font;
 import com.lixui.text.HorizontalAlignment;
 import com.lixui.text.TextOverflow;
@@ -19,25 +20,35 @@ import com.lixui.widget.IconSet;
 import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.UiContext;
 import com.lixui.widget.Widget;
+import com.lixui.widget.image.ImageSource;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
  * A horizontal breadcrumb trail with clickable segments and icon separators.
- * When the available width is too small, middle segments collapse into an ellipsis while the first
- * and last segments remain visible. Segments without an action are shown as the current location.
+ * Every crumb may carry an icon drawn before its label. When the available width is too small,
+ * middle segments collapse into an ellipsis while the first and last segments remain visible.
+ * Segments without an action are shown as the muted current location.
  */
 public class Breadcrumbs extends Widget {
     private static final float DEFAULT_SEPARATOR_SIZE = 12;
     private static final float SEPARATOR_GAP = 6;
     private static final float CRUMB_PADDING = 4;
     private static final float VERTICAL_PADDING = 4;
+    private static final float CRUMB_ICON_SIZE = 16;
+    private static final float CRUMB_ICON_GAP = 4;
 
     private final List<Crumb> crumbs = new ArrayList<>();
     private final List<Segment> segments = new ArrayList<>();
+    private final Map<Crumb, CrumbIcon> crumbIcons = new IdentityHashMap<>();
     private final IconSet icons = new IconSet("arrow-right-04.svg");
 
     private float separatorSize = DEFAULT_SEPARATOR_SIZE;
@@ -103,16 +114,22 @@ public class Breadcrumbs extends Widget {
      * @throws NullPointerException if {@code crumb} is null
      */
     public final boolean removeCrumb(Crumb crumb) {
-        return crumbs.remove(Objects.requireNonNull(crumb, "crumb"));
+        Objects.requireNonNull(crumb, "crumb");
+        if (!crumbs.remove(crumb)) {
+            return false;
+        }
+        releaseCrumbIcon(crumb);
+        return true;
     }
 
     /**
-     * Removes every crumb.
+     * Removes every crumb and releases their icons.
      */
     public final void clearCrumbs() {
         crumbs.clear();
         segments.clear();
         hovered = -1;
+        releaseCrumbIcons();
     }
 
     /**
@@ -165,11 +182,14 @@ public class Breadcrumbs extends Widget {
     protected Size onMeasure(LayoutConstraints constraints) {
         Font font = font();
         float width = separatorSlot() * Math.max(0, crumbs.size() - 1);
+        float height = font == null ? 0 : font.lineHeight();
         for (Crumb crumb : crumbs) {
             width += crumbWidth(crumb, font);
+            if (crumb.icon() != null) {
+                height = Math.max(height, CRUMB_ICON_SIZE);
+            }
         }
-        float height = (font == null ? 0 : font.lineHeight()) + VERTICAL_PADDING * 2;
-        return new Size(width, height);
+        return new Size(width, height + VERTICAL_PADDING * 2);
     }
 
     /**
@@ -181,7 +201,7 @@ public class Breadcrumbs extends Widget {
     }
 
     /**
-     * Paints separators, hover highlights and crumb labels.
+     * Paints separators, hover highlights, crumb icons and labels.
      *
      * @param renderer drawing manager for the current frame
      * @param frame timing information for the current frame
@@ -193,7 +213,8 @@ public class Breadcrumbs extends Widget {
         }
         Theme theme = context().theme();
         Font font = font();
-        ensureIcons();
+        ensureSeparatorIcons();
+        ensureCrumbIcons();
         for (int index = 0; index < segments.size(); index++) {
             Segment segment = segments.get(index);
             if (index > 0) {
@@ -264,20 +285,22 @@ public class Breadcrumbs extends Widget {
     }
 
     /**
-     * Releases separator icons when the trail leaves the tree.
+     * Releases separator and crumb icons when the trail leaves the tree.
      */
     @Override
     protected void onDetached() {
         super.onDetached();
+        releaseCrumbIcons();
         icons.release(context());
     }
 
     /**
-     * Drops separator icons after a density or theme change.
+     * Drops separator and crumb icons after a density or theme change.
      */
     @Override
     protected void onContextChanged() {
         super.onContextChanged();
+        releaseCrumbIcons();
         icons.release(context());
     }
 
@@ -368,10 +391,26 @@ public class Breadcrumbs extends Widget {
         } else {
             color = active ? theme.text() : theme.primary();
         }
-        String label = ellipsis ? "…" : crumbs.get(segment.crumbIndex).label();
+        Crumb crumb = ellipsis ? null : crumbs.get(segment.crumbIndex);
+        String label = ellipsis ? "…" : crumb.label();
+        float contentX = segment.bounds.x() + CRUMB_PADDING;
         float width = Math.max(0, segment.bounds.width() - CRUMB_PADDING * 2);
+        if (crumb != null && crumb.icon() != null) {
+            float slot = iconSlot(crumb);
+            if (width > 0) {
+                float side = Math.min(CRUMB_ICON_SIZE, width);
+                Texture texture = crumbIcon(crumb);
+                if (texture != null) {
+                    renderer.icon(texture, new Rect(contentX,
+                            segment.bounds.y() + (segment.bounds.height() - side) / 2, side, side),
+                            ImageStyle.ICON, color);
+                }
+                contentX += slot;
+                width = Math.max(0, width - slot);
+            }
+        }
         if (width > 0) {
-            renderer.text(font, label, segment.bounds.x() + CRUMB_PADDING,
+            renderer.text(font, label, contentX,
                     segment.bounds.y() + segment.bounds.height() / 2, color,
                     new TextStyle(width, 0, 1, TextOverflow.ELLIPSIS,
                             HorizontalAlignment.LEFT, VerticalAlignment.CENTER));
@@ -403,7 +442,22 @@ public class Breadcrumbs extends Widget {
     }
 
     private float crumbWidth(Crumb crumb, Font font) {
-        return textWidth(crumb.label(), font) + CRUMB_PADDING * 2;
+        return textWidth(crumb.label(), font) + CRUMB_PADDING * 2 + iconSlot(crumb);
+    }
+
+    private float iconSlot(Crumb crumb) {
+        if (crumb.icon() == null) {
+            return 0;
+        }
+        return crumb.label().isEmpty() ? CRUMB_ICON_SIZE : CRUMB_ICON_SIZE + CRUMB_ICON_GAP;
+    }
+
+    private Texture crumbIcon(Crumb crumb) {
+        if (crumb.icon() instanceof ImageSource.TextureSource textureSource) {
+            return textureSource.texture();
+        }
+        CrumbIcon state = crumbIcons.get(crumb);
+        return state == null ? null : state.iconSet().get(0);
     }
 
     private float textWidth(String text, Font font) {
@@ -414,7 +468,7 @@ public class Breadcrumbs extends Widget {
         return separatorSize + SEPARATOR_GAP * 2;
     }
 
-    private void ensureIcons() {
+    private void ensureSeparatorIcons() {
         UiContext context = context();
         if (context == null) {
             return;
@@ -425,15 +479,67 @@ public class Breadcrumbs extends Widget {
         }
     }
 
+    private void ensureCrumbIcons() {
+        UiContext context = context();
+        if (context == null) {
+            return;
+        }
+        Set<Crumb> current = Collections.newSetFromMap(new IdentityHashMap<>());
+        current.addAll(crumbs);
+        Iterator<Map.Entry<Crumb, CrumbIcon>> iterator = crumbIcons.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<Crumb, CrumbIcon> entry = iterator.next();
+            CrumbIcon state = entry.getValue();
+            if (!current.contains(entry.getKey()) || !Objects.equals(state.source(),
+                    entry.getKey().icon())) {
+                state.iconSet().release(context);
+                iterator.remove();
+            }
+        }
+        int size = Math.max(1, Math.round(CRUMB_ICON_SIZE * context.density()));
+        for (Crumb crumb : crumbs) {
+            if (!(crumb.icon() instanceof ImageSource.IconSource icon)) {
+                continue;
+            }
+            CrumbIcon state = crumbIcons.get(crumb);
+            if (state == null) {
+                state = new CrumbIcon(icon, new IconSet(icon.name()));
+                crumbIcons.put(crumb, state);
+            }
+            if (!state.iconSet().matches(context, size)) {
+                state.iconSet().reload(context, size);
+            }
+        }
+    }
+
+    private void releaseCrumbIcon(Crumb crumb) {
+        CrumbIcon state = crumbIcons.remove(crumb);
+        if (state != null) {
+            state.iconSet().release(context());
+        }
+    }
+
+    private void releaseCrumbIcons() {
+        UiContext context = context();
+        for (CrumbIcon state : crumbIcons.values()) {
+            state.iconSet().release(context);
+        }
+        crumbIcons.clear();
+    }
+
     private record Segment(int crumbIndex, Rect bounds) {
     }
 
+    private record CrumbIcon(ImageSource source, IconSet iconSet) {
+    }
+
     /**
-     * A single breadcrumb label and its optional action.
+     * A single breadcrumb label, its optional icon and its optional action.
      */
     public static final class Crumb {
         private String label;
         private Runnable action;
+        private ImageSource icon;
 
         /**
          * Creates a crumb.
@@ -482,6 +588,26 @@ public class Breadcrumbs extends Widget {
          */
         public void setAction(Runnable action) {
             this.action = action;
+        }
+
+        /**
+         * Returns the crumb icon source.
+         *
+         * @return the icon source, or null when the crumb has no icon
+         */
+        public ImageSource icon() {
+            return icon;
+        }
+
+        /**
+         * Assigns the icon drawn before the label.
+         * A bundled icon is rasterized at the current density and released with this crumb;
+         * a caller-owned texture is drawn as is and never released by the trail.
+         *
+         * @param icon icon source, or null to remove the icon
+         */
+        public void setIcon(ImageSource icon) {
+            this.icon = icon;
         }
     }
 }

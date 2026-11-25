@@ -5,11 +5,12 @@ import com.lixui.text.FontStyle;
 import com.lixui.widget.Widget;
 import com.lixui.widget.control.Breadcrumbs;
 import com.lixui.widget.control.Label;
+import com.lixui.widget.image.ImageSource;
 import com.lixui.widget.layout.HBox;
 import com.lixui.widget.layout.VBox;
 
 /**
- * Builds the breadcrumbs page with full, constrained and short trails.
+ * Builds the breadcrumbs page with full, constrained, short and icon trails.
  */
 final class DemoBreadcrumbsPage {
     private static final float BAR_HEIGHT = 30;
@@ -52,6 +53,12 @@ final class DemoBreadcrumbsPage {
         Breadcrumbs shortTrail = trail(status, "Dashboard", "Settings");
         shortTrail.setMinimumSize(0, BAR_HEIGHT);
 
+        Breadcrumbs iconTrail = new Breadcrumbs();
+        iconTrail.setMinimumSize(0, BAR_HEIGHT);
+        iconCrumb(iconTrail, "Home", "house.svg", status);
+        iconCrumb(iconTrail, "Projects", "folder.svg", status);
+        iconCrumb(iconTrail, "LixUI", "settings.svg", null);
+
         VBox page = new VBox();
         page.setPadding(10);
         page.setGap(10);
@@ -62,8 +69,19 @@ final class DemoBreadcrumbsPage {
                 .add(narrowRow)
                 .add(caption("Short trail: no ellipsis and no separators around empty space"))
                 .add(shortTrail)
+                .add(caption("Icon trail: bundled icons are drawn before the labels and counted "
+                        + "in the width"))
+                .add(iconTrail)
                 .add(status);
         return new DemoScrollPage(page);
+    }
+
+    private Breadcrumbs.Crumb iconCrumb(Breadcrumbs breadcrumbs, String label, String icon,
+                                        Label status) {
+        Breadcrumbs.Crumb crumb = breadcrumbs.addCrumb(label,
+                status == null ? null : () -> status.setText("Breadcrumb: " + label));
+        crumb.setIcon(ImageSource.icon(icon));
+        return crumb;
     }
 
     private Breadcrumbs trail(Label status, String... labels) {
