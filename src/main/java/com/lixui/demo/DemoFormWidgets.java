@@ -12,6 +12,7 @@ import com.lixui.widget.layout.VBox;
 
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
  * Builds the form widget samples shown by the demo scene.
@@ -38,8 +39,9 @@ final class DemoFormWidgets {
         skills.setMaxTags(8);
         skills.setValidator(tag -> tag.length() > 1);
         skills.setTags(List.of("design", "frontend", "quality", "documentation",
-                "localization", "security", "analytics", "testing"));
+                "localization", "security", "analytics"));
         skills.setOnTagsChanged(tags -> status.setText(tagStatus(tags)));
+        skills.setOnTagRejected(tag -> status.setText(tagRejection(skills, tag)));
 
         TagInput singleRow = new TagInput(List.of("accessibility", "performance",
                 "documentation", "localization", "integration", "security"));
@@ -51,7 +53,8 @@ final class DemoFormWidgets {
         VBox group = new VBox();
         group.setGap(GAP);
         group.add(caption("Tag input: Enter adds a chip, the cross removes it, and rows grow "
-                        + "with the tag count"))
+                        + "with the tag count. The limit is eight tags and every tag needs at "
+                        + "least two characters"))
                 .add(skills)
                 .add(caption("Single-row mode: tags that do not fit collapse into an overflow "
                         + "counter"))
@@ -136,6 +139,19 @@ final class DemoFormWidgets {
 
     private static String tagStatus(List<String> tags) {
         return "Tags: " + tags.size() + " - " + String.join(", ", tags);
+    }
+
+    private static String tagRejection(TagInput input, String tag) {
+        // Mirror the acceptance order so the status names the rule that blocked the value.
+        if (input.tags().contains(tag)) {
+            return "Rejected \"" + tag + "\": the tag already exists.";
+        }
+        Predicate<String> validator = input.validator();
+        if (validator != null && !validator.test(tag)) {
+            return "Rejected \"" + tag + "\": the validator requires at least two characters.";
+        }
+        return "Rejected \"" + tag + "\": the limit of " + input.maxTags()
+                + " tags is reached.";
     }
 
     /**
