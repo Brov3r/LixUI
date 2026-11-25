@@ -77,6 +77,20 @@ class DockPanelTest {
     }
 
     @Test
+    void reAddedChildrenDefaultToFill() {
+        DockPanel panel = new DockPanel();
+        FixedWidget child = new FixedWidget(10, 30);
+        panel.add(child, Dock.TOP);
+        panel.remove(child);
+
+        panel.add(child);
+
+        assertEquals(Dock.FILL, panel.dock(child));
+        panel.layout(new Rect(0, 0, 100, 100));
+        assertEquals(new Rect(0, 0, 100, 100), child.bounds());
+    }
+
+    @Test
     void removedChildrenLoseTheirDockAssignment() {
         DockPanel panel = new DockPanel();
         Widget child = new FixedWidget(10, 30);

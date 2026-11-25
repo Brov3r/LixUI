@@ -647,6 +647,7 @@ public abstract class Widget {
             child.detach();
         } finally {
             child.setParent(null);
+            onChildRemoved(child);
             notifyStateChanged();
         }
         return true;
@@ -1060,6 +1061,16 @@ public abstract class Widget {
      * while this callback runs.
      */
     protected void onDetached() {
+    }
+
+    /**
+     * Called after a direct child has been removed and detached from this widget.
+     * The child no longer has a parent while this callback runs. Subclasses that store references
+     * to their children can release them here; the default implementation does nothing.
+     *
+     * @param child removed child
+     */
+    protected void onChildRemoved(Widget child) {
     }
 
     /**

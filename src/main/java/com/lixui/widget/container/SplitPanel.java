@@ -342,6 +342,20 @@ public class SplitPanel extends LayoutContainer {
         add(divider);
     }
 
+    /**
+     * Clears a pane whose widget was removed directly from this panel.
+     *
+     * @param child removed child
+     */
+    @Override
+    protected void onChildRemoved(Widget child) {
+        if (first == child) {
+            first = null;
+        }
+        if (second == child) {
+            second = null;
+        }
+    }
 
     /**
      * The draggable divider between the two panes.

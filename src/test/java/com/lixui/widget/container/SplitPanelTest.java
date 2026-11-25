@@ -25,7 +25,9 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SplitPanelTest {
     private static final Viewport VIEWPORT = TestViewports.HIDPI;
@@ -180,6 +182,38 @@ class SplitPanelTest {
 
         assertEquals(new Rect(5, 5, 190, 90), first.bounds());
         assertFalse(divider(panel).isVisible());
+    }
+
+    @Test
+    void removingAPaneClearsItAndLetsTheOtherPaneFillTheContent() {
+        SplitPanel panel = new SplitPanel();
+        panel.setPadding(4);
+        panel.setDividerThickness(8);
+        FixedWidget first = new FixedWidget(10, 10);
+        FixedWidget second = new FixedWidget(10, 10);
+        panel.setFirst(first);
+        panel.setSecond(second);
+        panel.layout(new Rect(0, 0, 200, 100));
+
+        assertTrue(panel.remove(first));
+
+        assertNull(panel.first());
+        panel.layout(new Rect(0, 0, 200, 100));
+        assertEquals(new Rect(4, 4, 192, 92), second.bounds());
+        assertFalse(divider(panel).isVisible());
+    }
+
+    @Test
+    void removingAllChildrenClearsBothPanes() {
+        SplitPanel panel = new SplitPanel();
+        panel.setFirst(new FixedWidget(10, 10));
+        panel.setSecond(new FixedWidget(10, 10));
+
+        panel.removeAll();
+
+        assertNull(panel.first());
+        assertNull(panel.second());
+        assertTrue(panel.children().isEmpty());
     }
 
     @Test

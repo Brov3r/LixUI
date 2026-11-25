@@ -101,7 +101,6 @@ public final class DockPanel extends LayoutContainer {
      */
     @Override
     protected void onLayout() {
-        pruneDocks();
         float left = padding();
         float top = padding();
         float right = left + contentWidth();
@@ -153,7 +152,13 @@ public final class DockPanel extends LayoutContainer {
         }
     }
 
-    private void pruneDocks() {
-        docks.entrySet().removeIf(entry -> entry.getKey().parent() != this);
+    /**
+     * Drops the dock assignment of a removed child so a later re-add defaults to fill.
+     *
+     * @param child removed child
+     */
+    @Override
+    protected void onChildRemoved(Widget child) {
+        docks.remove(child);
     }
 }
