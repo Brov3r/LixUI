@@ -2,6 +2,7 @@ package com.lixui.widget.control;
 
 import com.lixui.geometry.Rect;
 import com.lixui.geometry.Size;
+import com.lixui.text.HorizontalAlignment;
 import com.lixui.widget.IconSet;
 import com.lixui.widget.LayoutConstraints;
 import com.lixui.widget.Widget;
@@ -71,6 +72,7 @@ public class TimePicker extends PickerField {
         minutes = createOptionList(true);
         manualInput.setPlaceholder("HH:mm");
         manualInput.setMaxLength(MAX_MANUAL_LENGTH);
+        manualInput.setTextAlignment(HorizontalAlignment.CENTER);
         manualInput.setAllowedCharacters(Input.CharacterKind.DIGITS, Input.CharacterKind.SYMBOLS);
         manualInput.setOnSubmit(this::commitManualInput);
         listRow.setGap(LIST_GAP);
@@ -214,6 +216,16 @@ public class TimePicker extends PickerField {
     @Override
     protected String fieldText() {
         return formattedTime();
+    }
+
+    /**
+     * Centers the time between the field padding and the clock icon.
+     *
+     * @return the centered alignment
+     */
+    @Override
+    protected HorizontalAlignment fieldTextAlignment() {
+        return HorizontalAlignment.CENTER;
     }
 
     /**

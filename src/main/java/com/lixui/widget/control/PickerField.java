@@ -109,6 +109,30 @@ abstract class PickerField extends Panel {
     }
 
     /**
+     * Returns the horizontal alignment of the field text inside the text area.
+     * The default aligns the text to the left.
+     *
+     * @return the field text alignment
+     */
+    protected HorizontalAlignment fieldTextAlignment() {
+        return HorizontalAlignment.LEFT;
+    }
+
+    /**
+     * Returns the text area inside the padding, leading slot and trailing icon.
+     *
+     * @param style resolved field style
+     * @return the text area in field-local coordinates
+     */
+    protected final Rect fieldTextBounds(WidgetStyle style) {
+        float padding = style.padding();
+        float textX = padding + leadingWidth();
+        float iconX = localBounds().width() - padding - iconSize;
+        return new Rect(textX, padding, Math.max(0, iconX - ICON_GAP - textX),
+                Math.max(0, localBounds().height() - padding * 2));
+    }
+
+    /**
      * Paints custom leading content inside the reserved slot.
      * The default draws nothing.
      *
@@ -172,19 +196,19 @@ abstract class PickerField extends Panel {
         Font font = font();
         float padding = style.padding();
         float leading = leadingWidth();
-        float textX = padding + leading;
-        float iconX = localBounds().width() - padding - iconSize;
-        float contentWidth = Math.max(0, iconX - ICON_GAP - textX);
         drawLeading(renderer, new Rect(padding, padding, leading,
                 Math.max(0, localBounds().height() - padding * 2)), state, style);
+        Rect textBounds = fieldTextBounds(style);
         if (font != null) {
-            renderer.text(font, fieldText(), textX, localBounds().height() / 2,
-                    style.text(state), new TextStyle(contentWidth, 0, 1, TextOverflow.ELLIPSIS,
-                            HorizontalAlignment.LEFT, VerticalAlignment.CENTER));
+            renderer.text(font, fieldText(), textBounds.x(), localBounds().height() / 2,
+                    style.text(state), new TextStyle(textBounds.width(), 0, 1,
+                            TextOverflow.ELLIPSIS, fieldTextAlignment(),
+                            VerticalAlignment.CENTER));
         }
         ensureFieldIcon();
         Texture icon = fieldIcons.get(0);
         if (icon != null) {
+            float iconX = localBounds().width() - padding - iconSize;
             renderer.icon(icon, new Rect(iconX, (localBounds().height() - iconSize) / 2,
                     iconSize, iconSize), ImageStyle.ICON, style.text(state));
         }

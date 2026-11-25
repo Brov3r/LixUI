@@ -11,6 +11,8 @@ import com.lixui.input.event.KeyPressed;
 import com.lixui.input.event.PointerPressed;
 import com.lixui.input.event.PointerReleased;
 import com.lixui.render.Viewport;
+import com.lixui.text.HorizontalAlignment;
+import com.lixui.theme.WidgetStyle;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.overlay.Popup;
@@ -138,6 +140,30 @@ class TimePickerTest {
         assertFalse(picker.isPopupOpen());
         assertEquals(LocalTime.of(7, 5), picker.time());
         assertTrue(picker.isFocused());
+    }
+
+    @Test
+    void centersTheFieldTextAndManualInputInsideTheIconSlot() {
+        WidgetManager manager = manager();
+        TimePicker picker = picker(LocalTime.of(23, 59), 15);
+        manager.add(picker);
+        manager.render();
+
+        WidgetStyle style = manager.context().theme().controlStyle();
+        assertEquals(HorizontalAlignment.CENTER, picker.fieldTextAlignment());
+
+        Rect textBounds = picker.fieldTextBounds(style);
+        assertTrue(textBounds.width() > 0);
+        assertEquals(style.padding(), textBounds.x(), 0.001f);
+        assertTrue(textBounds.right() <= picker.bounds().width() - picker.iconSize());
+        assertTrue(textBounds.right() < picker.bounds().width() - style.padding()
+                - picker.iconSize());
+
+        clickField(manager, picker);
+        manager.render();
+
+        Input manual = findInput(popup(manager).content());
+        assertEquals(HorizontalAlignment.CENTER, manual.textAlignment());
     }
 
     @Test
