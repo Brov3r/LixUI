@@ -1047,11 +1047,12 @@ public final class RenderManager {
 
     /**
      * Fills a polygon using ear-clipping triangulation.
+     * Empty polygons and polygons with no measurable area are skipped instead of throwing.
      *
      * @param points polygon vertices in order
      * @param paint fill paint
      * @throws NullPointerException if an argument or point is null
-     * @throws IllegalArgumentException if the polygon has fewer than three distinct points or no area
+     * @throws IllegalArgumentException if a coordinate is not finite
      * @throws IllegalStateException if no frame is in progress
      */
     public void fillPolygon(List<Point> points, Paint paint) {
@@ -1267,10 +1268,12 @@ public final class RenderManager {
 
     /**
      * Pushes a polygon stencil mask.
+     * An empty or zero-area polygon pushes an empty mask, so the matching {@link #popMask()} must
+     * still be called.
      *
      * @param points polygon vertices in order
      * @throws NullPointerException if {@code points} or a point is null
-     * @throws IllegalArgumentException if the polygon is invalid
+     * @throws IllegalArgumentException if a coordinate is not finite
      * @throws IllegalStateException if no frame is in progress
      */
     public void pushMaskPolygon(List<Point> points) {

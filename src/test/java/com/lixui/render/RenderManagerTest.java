@@ -278,10 +278,29 @@ class RenderManagerTest {
         assertThrows(IllegalArgumentException.class,
                 () -> manager.strokeLine(new Point(0, 0), new Point(1, 1), 0, Paint.solid(RED)));
         assertThrows(NullPointerException.class, () -> manager.fillPolygon(null, Paint.solid(RED)));
-        assertThrows(IllegalArgumentException.class,
-                () -> manager.fillPolygon(List.of(new Point(0, 0), new Point(1, 1)), Paint.solid(RED)));
         assertThrows(IllegalArgumentException.class, () -> manager.fillPolygon(
-                List.of(new Point(0, 0), new Point(10, 0), new Point(20, 0)), Paint.solid(RED)));
+                List.of(new Point(0, 0), new Point(Float.NaN, 0), new Point(1, 1)),
+                Paint.solid(RED)));
+    }
+
+    @Test
+    void emptyPolygonsDrawNothing() {
+        TestBackend backend = new TestBackend();
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+
+        manager.begin();
+        manager.fillPolygon(List.of(), Paint.solid(RED));
+        manager.fillPolygon(List.of(new Point(0, 0), new Point(1, 1)), Paint.solid(RED));
+        manager.fillPolygon(List.of(new Point(0, 0), new Point(10, 0), new Point(20, 0)),
+                Paint.solid(RED));
+        manager.pushMaskPolygon(List.of());
+        manager.fillRect(LOGICAL, Paint.solid(RED));
+        manager.popMask();
+        manager.end();
+
+        List<DrawCommand> commands = backend.lastDrawList().commands();
+        assertTrue(commands.stream().noneMatch(MeshCommand.class::isInstance));
     }
 
     @Test
@@ -497,8 +516,8 @@ class RenderManagerTest {
         manager.begin();
 
         assertThrows(IllegalStateException.class, manager::popMask);
-        assertThrows(IllegalArgumentException.class, () -> manager.pushMaskPolygon(
-                List.of(new Point(0, 0), new Point(1, 1))));
+        manager.pushMaskPolygon(List.of(new Point(0, 0), new Point(1, 1)));
+        manager.popMask();
         assertThrows(NullPointerException.class, () -> manager.pushMaskTexture(null,
                 new Rect(0, 0, 10, 10)));
     }

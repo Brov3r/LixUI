@@ -182,6 +182,33 @@ class ShapeTessellatorTest {
         assertEquals(expected, meshArea(vertices), expected * 0.01);
     }
 
+    @Test
+    void fillsRingSectorsAcrossAnimatedMenuParameters() {
+        float[] radii = {20, 108, 128, 140, 400};
+        float[] ratios = {0.2f, 0.32f, 0.4f, 0.8f};
+        float[] amounts = {0.001f, 0.0012f, 0.0018f, 0.002f, 0.01f, 0.5f, 1f};
+        float[] lifts = {0, 4};
+        Point center = new Point(640.37f, 360.61f);
+        for (int items = 2; items <= 8; items++) {
+            float baseSweep = (float) (Math.PI * 2) / items;
+            float gap = Math.min(0.02f, baseSweep * 0.2f);
+            float sweep = baseSweep - gap;
+            float start = (float) (-Math.PI / 2) - baseSweep / 2 + gap / 2;
+            for (float radius : radii) {
+                for (float ratio : ratios) {
+                    for (float amount : amounts) {
+                        float outer = radius * amount;
+                        for (float lift : lifts) {
+                            List<MeshVertex> vertices = ShapeTessellator.fillRingSector(
+                                    center, outer * ratio, outer + lift, start, sweep, SOLID);
+                            assertEquals(0, vertices.size() % 3);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private static List<Point> ringSectorPolygon(Point center, float inner, float outer,
                                                  float startAngle, float sweep) {
         int steps = Math.max(2, (int) Math.ceil(sweep / (Math.PI * 2) * 96));
@@ -212,13 +239,40 @@ class ShapeTessellatorTest {
     }
 
     @Test
-    void rejectsDegeneratePolygonsAndPaths() {
+    void skipsEmptyPolygonsInsteadOfFailing() {
+        List<List<Point>> emptyPolygons = List.of(
+                List.of(),
+                List.of(new Point(10, 10)),
+                List.of(new Point(0, 0), new Point(10, 0)),
+                List.of(new Point(5, 5), new Point(5, 5), new Point(5, 5)),
+                List.of(new Point(0, 0), new Point(10, 0), new Point(20, 0)),
+                List.of(new Point(640.37f, 360.61f), new Point(640.37f, 360.61f)));
+
+        for (List<Point> polygon : emptyPolygons) {
+            assertTrue(ShapeTessellator.fillPolygon(polygon, SOLID).isEmpty(),
+                    "An empty polygon must not produce geometry: " + polygon);
+        }
+    }
+
+    @Test
+    void rejectsNonFinitePolygonCoordinates() {
         assertThrows(IllegalArgumentException.class,
                 () -> ShapeTessellator.fillPolygon(
-                        List.of(new Point(0, 0), new Point(1, 1)), SOLID));
+                        List.of(new Point(0, 0), new Point(Float.NaN, 0), new Point(1, 1)),
+                        SOLID));
         assertThrows(IllegalArgumentException.class,
                 () -> ShapeTessellator.fillPolygon(
-                        List.of(new Point(0, 0), new Point(10, 0), new Point(20, 0)), SOLID));
+                        List.of(new Point(0, 0), new Point(1, 0), new Point(1, Float.POSITIVE_INFINITY)),
+                        SOLID));
+        assertThrows(NullPointerException.class,
+                () -> ShapeTessellator.fillPolygon(
+                        List.of(new Point(0, 0), new Point(1, 0), null), SOLID));
+        assertThrows(NullPointerException.class,
+                () -> ShapeTessellator.fillPolygon(null, SOLID));
+    }
+
+    @Test
+    void rejectsDegeneratePaths() {
         assertThrows(IllegalArgumentException.class,
                 () -> ShapeTessellator.strokePolyline(
                         List.of(new Point(0, 0), new Point(0, 0)), 4, SOLID));

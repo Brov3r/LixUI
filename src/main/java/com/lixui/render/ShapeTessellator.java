@@ -116,9 +116,12 @@ final class ShapeTessellator {
 
     static List<MeshVertex> fillPolygon(List<Point> points, Paint paint) {
         List<Point> polygon = normalizePolygon(points);
+        if (polygon.size() < 3) {
+            return List.of();
+        }
         double area = signedArea(polygon);
         if (Math.abs(area) < areaTolerance(polygon)) {
-            throw new IllegalArgumentException("Polygon has no area.");
+            return List.of();
         }
         if (area < 0) {
             Collections.reverse(polygon);
@@ -588,8 +591,10 @@ final class ShapeTessellator {
         if (points.size() > 1 && points.get(0).equals(points.get(points.size() - 1))) {
             points = new ArrayList<>(points.subList(0, points.size() - 1));
         }
-        if (points.size() < 3) {
-            throw new IllegalArgumentException("A polygon requires at least three distinct points.");
+        for (Point point : points) {
+            if (!Float.isFinite(point.x()) || !Float.isFinite(point.y())) {
+                throw new IllegalArgumentException("Polygon coordinates must be finite.");
+            }
         }
         return points;
     }

@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -311,6 +312,21 @@ class ProgressBarTest {
                     .filter(MaskBeginCommand.class::isInstance).count());
             assertEquals(1, backend.lastDrawList().commands().stream()
                     .filter(MaskEndCommand.class::isInstance).count());
+        }
+    }
+
+    @Test
+    void zeroAreaPolygonDrawsNothingInsteadOfFailing() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            ProgressBar bar = new ProgressBar(0);
+            bar.setBounds(new Rect(0, 0, 64, 64));
+            bar.setAnimationRate(0);
+            bar.setShape(ProgressBar.Shape.POLYGON);
+            bar.setPolygon(List.of(new Point(0, 0), new Point(0.5f, 0), new Point(1, 0)));
+            manager.add(bar);
+
+            assertDoesNotThrow(manager::render);
         }
     }
 
