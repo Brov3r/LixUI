@@ -116,14 +116,72 @@ final class ShapeTessellator {
 
     static List<MeshVertex> fillPolygon(List<Point> points, Paint paint) {
         List<Point> polygon = normalizePolygon(points);
-        float area = signedArea(polygon);
-        if (Math.abs(area) < EPSILON) {
+        double area = signedArea(polygon);
+        if (Math.abs(area) < areaTolerance(polygon)) {
             throw new IllegalArgumentException("Polygon has no area.");
         }
         if (area < 0) {
             Collections.reverse(polygon);
         }
         return triangulate(polygon, paint);
+    }
+
+    /**
+     * Fills the area between two concentric arcs as a single quad strip.
+     * Tessellating the strip directly keeps sub-pixel sectors stable, while ear clipping a polygon
+     * whose vertices are tiny offsets from a far origin loses the winding to float cancellation.
+     *
+     * @param center shared arc center
+     * @param innerRadius inner arc radius, or zero to fill up to the center
+     * @param outerRadius outer arc radius
+     * @param startAngle start angle in radians
+     * @param sweepAngle signed sweep in radians, at most one full turn
+     * @param paint fill paint
+     * @return triangle vertices covering only the band between the arcs
+     * @throws NullPointerException if {@code center} is null
+     * @throws IllegalArgumentException if a radius or angle is invalid
+     */
+    static List<MeshVertex> fillRingSector(Point center, float innerRadius, float outerRadius,
+                                           float startAngle, float sweepAngle, Paint paint) {
+        validateRingSector(center, innerRadius, outerRadius, startAngle, sweepAngle);
+        if (innerRadius <= EPSILON) {
+            return fillArc(center, outerRadius, outerRadius, startAngle, sweepAngle, paint);
+        }
+        int segments = ellipseSegments(outerRadius, outerRadius, Math.abs(sweepAngle));
+        boolean closed = isFullCircle(sweepAngle);
+        List<MeshVertex> vertices = new ArrayList<>(segments * 6);
+        for (int segment = 0; segment < segments; segment++) {
+            int next = closed && segment == segments - 1 ? 0 : segment + 1;
+            float firstAngle = angleAt(startAngle, sweepAngle, segment, segments);
+            float secondAngle = angleAt(startAngle, sweepAngle, next, segments);
+            addQuad(vertices,
+                    pointOnCircle(center, outerRadius, firstAngle),
+                    pointOnCircle(center, outerRadius, secondAngle),
+                    pointOnCircle(center, innerRadius, secondAngle),
+                    pointOnCircle(center, innerRadius, firstAngle),
+                    paint);
+        }
+        return vertices;
+    }
+
+    static void validateRingSector(Point center, float innerRadius, float outerRadius,
+                                   float startAngle, float sweepAngle) {
+        if (center == null) {
+            throw new NullPointerException("center");
+        }
+        if (!Float.isFinite(innerRadius) || innerRadius < 0
+                || !Float.isFinite(outerRadius) || outerRadius <= 0
+                || innerRadius >= outerRadius) {
+            throw new IllegalArgumentException(
+                    "Ring radii must be finite with 0 <= inner < outer.");
+        }
+        if (!Float.isFinite(startAngle) || !Float.isFinite(sweepAngle)) {
+            throw new IllegalArgumentException("Arc angles must be finite.");
+        }
+        float magnitude = Math.abs(sweepAngle);
+        if (magnitude < EPSILON || magnitude > TWO_PI + EPSILON) {
+            throw new IllegalArgumentException("Arc sweep must be non-zero and at most one full turn.");
+        }
     }
 
     static List<MeshVertex> strokeLine(Point start, Point end, float width, Paint paint) {
@@ -552,12 +610,12 @@ final class ShapeTessellator {
         return result;
     }
 
-    private static float signedArea(List<Point> points) {
-        float area = 0;
+    private static double signedArea(List<Point> points) {
+        double area = 0;
         for (int index = 0; index < points.size(); index++) {
             Point current = points.get(index);
             Point next = points.get((index + 1) % points.size());
-            area += current.x() * next.y() - next.x() * current.y();
+            area += (double) current.x() * next.y() - (double) next.x() * current.y();
         }
         return area / 2;
     }
@@ -617,6 +675,15 @@ final class ShapeTessellator {
                     center.y() + (float) Math.sin(angle) * radiusY));
         }
         return points;
+    }
+
+    private static float angleAt(float startAngle, float sweepAngle, int index, int segments) {
+        return startAngle + sweepAngle * index / segments;
+    }
+
+    private static Point pointOnCircle(Point center, float radius, float angle) {
+        return new Point(center.x() + (float) Math.cos(angle) * radius,
+                center.y() + (float) Math.sin(angle) * radius);
     }
 
     private static void appendArc(List<Point> points, Point center, float radiusX, float radiusY,

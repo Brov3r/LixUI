@@ -144,6 +144,61 @@ class ShapeTessellatorTest {
         }
     }
 
+    @Test
+    void fillsSubPixelRingSectorsFarFromTheOriginWithoutPaintingTheCenter() {
+        Point center = new Point(640.37f, 360.61f);
+        float inner = 0.04096f;
+        float outer = 0.128f;
+        float sweep = (float) (Math.PI * 2) / 8 - 0.02f;
+
+        List<MeshVertex> vertices = ShapeTessellator.fillRingSector(
+                center, inner, outer, (float) (-Math.PI / 2), sweep, SOLID);
+
+        assertTrue(vertices.size() >= 6);
+        assertEquals(0, vertices.size() % 3);
+        double expected = 0.5 * ((double) outer * outer - (double) inner * inner) * sweep;
+        assertEquals(expected, meshArea(vertices), expected * 0.01);
+        for (MeshVertex vertex : vertices) {
+            double distance = Math.hypot(vertex.x() - center.x(), vertex.y() - center.y());
+            assertTrue(distance >= inner * 0.98,
+                    "The inner disc must stay transparent, but a vertex sits at " + distance);
+        }
+    }
+
+    @Test
+    void triangulatesTinyRingPolygonsFarFromTheOrigin() {
+        Point center = new Point(640.37f, 360.61f);
+        float inner = 0.04096f;
+        float outer = 0.128f;
+        float sweep = (float) (Math.PI * 2) / 8 - 0.02f;
+        List<Point> polygon = ringSectorPolygon(center, inner, outer,
+                (float) (-Math.PI / 2), sweep);
+
+        List<MeshVertex> vertices = ShapeTessellator.fillPolygon(polygon, SOLID);
+
+        assertTrue(vertices.size() >= 6);
+        assertEquals(0, vertices.size() % 3);
+        double expected = 0.5 * ((double) outer * outer - (double) inner * inner) * sweep;
+        assertEquals(expected, meshArea(vertices), expected * 0.01);
+    }
+
+    private static List<Point> ringSectorPolygon(Point center, float inner, float outer,
+                                                 float startAngle, float sweep) {
+        int steps = Math.max(2, (int) Math.ceil(sweep / (Math.PI * 2) * 96));
+        List<Point> points = new ArrayList<>((steps + 1) * 2);
+        for (int step = 0; step <= steps; step++) {
+            float angle = startAngle + sweep * step / steps;
+            points.add(new Point(center.x() + (float) Math.cos(angle) * outer,
+                    center.y() + (float) Math.sin(angle) * outer));
+        }
+        for (int step = steps; step >= 0; step--) {
+            float angle = startAngle + sweep * step / steps;
+            points.add(new Point(center.x() + (float) Math.cos(angle) * inner,
+                    center.y() + (float) Math.sin(angle) * inner));
+        }
+        return points;
+    }
+
     private static double meshArea(List<MeshVertex> vertices) {
         double area = 0;
         for (int index = 0; index < vertices.size(); index += 3) {

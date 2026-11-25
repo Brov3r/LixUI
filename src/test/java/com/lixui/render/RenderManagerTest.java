@@ -239,6 +239,30 @@ class RenderManagerTest {
     }
 
     @Test
+    void fillsRingSectorsWithoutEarClippingEvenAtSubPixelSizes() {
+        TestBackend backend = new TestBackend();
+        RenderManager manager = new RenderManager(backend);
+        manager.resize(VIEWPORT);
+        Point center = new Point(640.37f, 360.61f);
+        float sweep = (float) (Math.PI * 2) / 8 - 0.02f;
+
+        manager.begin();
+        manager.fillRingSector(center, 0.04096f, 0.128f,
+                (float) (-Math.PI / 2), sweep, Paint.solid(RED));
+        assertThrows(IllegalArgumentException.class,
+                () -> manager.fillRingSector(center, 10, 5, 0, 1, Paint.solid(RED)));
+        assertThrows(IllegalArgumentException.class,
+                () -> manager.fillRingSector(center, 1, 2, 0, 0, Paint.solid(RED)));
+        manager.end();
+
+        List<DrawCommand> commands = backend.lastDrawList().commands();
+        assertEquals(1, commands.size());
+        MeshCommand mesh = assertInstanceOf(MeshCommand.class, commands.get(0));
+        assertTrue(mesh.vertices().size() >= 6);
+        assertEquals(0, mesh.vertices().size() % 3);
+    }
+
+    @Test
     void rejectsInvalidShapeArguments() {
         TestBackend backend = new TestBackend();
         RenderManager manager = new RenderManager(backend);

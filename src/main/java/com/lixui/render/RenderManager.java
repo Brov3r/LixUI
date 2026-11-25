@@ -1019,6 +1019,33 @@ public final class RenderManager {
     }
 
     /**
+     * Fills a ring sector between two concentric arcs.
+     * The band is tessellated directly instead of ear-clipping a polygon, so sub-pixel sectors
+     * remain stable at large viewport coordinates. The area inside the inner radius is not painted.
+     * Angles are in radians; zero points along positive X and positive angles move toward positive Y.
+     *
+     * @param center shared arc center
+     * @param innerRadius inner arc radius, or zero to fill up to the center
+     * @param outerRadius outer arc radius
+     * @param startAngle start angle in radians
+     * @param sweepAngle signed sweep in radians, at most one full turn
+     * @param paint fill paint
+     * @throws NullPointerException if an argument is null
+     * @throws IllegalArgumentException if a radius or angle is invalid
+     * @throws IllegalStateException if no frame is in progress
+     */
+    public void fillRingSector(Point center, float innerRadius, float outerRadius,
+                               float startAngle, float sweepAngle, Paint paint) {
+        Objects.requireNonNull(center, "center");
+        Objects.requireNonNull(paint, "paint");
+        paint = applyOpacity(paint);
+        ShapeTessellator.validateRingSector(center, innerRadius, outerRadius,
+                startAngle, sweepAngle);
+        drawMesh(ShapeTessellator.fillRingSector(center, innerRadius, outerRadius,
+                startAngle, sweepAngle, paint));
+    }
+
+    /**
      * Fills a polygon using ear-clipping triangulation.
      *
      * @param points polygon vertices in order

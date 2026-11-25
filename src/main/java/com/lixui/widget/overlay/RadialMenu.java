@@ -182,7 +182,6 @@ public class RadialMenu extends Widget {
     private static final float FULL_TURN = (float) (Math.PI * 2);
     private static final float START_OFFSET = (float) (-Math.PI / 2);
     private static final float ANIMATION_SNAP = 0.001f;
-    private static final int ARC_STEPS = 96;
 
     private final List<Item> items = new ArrayList<>();
 
@@ -1154,17 +1153,7 @@ public class RadialMenu extends Widget {
             renderer.fillArc(center, outer, outer, startAngle, sweep, paint);
             return;
         }
-        int steps = Math.max(2, (int) Math.ceil(sweep / FULL_TURN * ARC_STEPS));
-        List<Point> points = new ArrayList<>((steps + 1) * 2);
-        for (int step = 0; step <= steps; step++) {
-            float angle = startAngle + sweep * step / steps;
-            points.add(pointAt(center, outer, angle));
-        }
-        for (int step = steps; step >= 0; step--) {
-            float angle = startAngle + sweep * step / steps;
-            points.add(pointAt(center, inner, angle));
-        }
-        renderer.fillPolygon(points, paint);
+        renderer.fillRingSector(center, inner, outer, startAngle, sweep, paint);
     }
 
     private int itemAt(float x, float y) {
@@ -1301,11 +1290,6 @@ public class RadialMenu extends Widget {
         if (closeListener != null) {
             closeListener.run();
         }
-    }
-
-    private static Point pointAt(Point center, float radius, float angle) {
-        return new Point(center.x() + (float) Math.cos(angle) * radius,
-                center.y() + (float) Math.sin(angle) * radius);
     }
 
     private static float normalize(float angle) {
