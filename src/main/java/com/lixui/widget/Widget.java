@@ -1241,7 +1241,8 @@ public abstract class Widget {
     }
 
     /**
-     * Called when a primary click is completed on this widget or one of its descendants.
+     * Called when a click is completed on this widget or one of its descendants.
+     * Any mouse button can complete a click after a matching press and release on the subtree.
      * The event bubbles to ancestors until a callback returns true.
      *
      * @param x horizontal pointer position relative to the widget's top-left corner
@@ -1255,7 +1256,8 @@ public abstract class Widget {
     }
 
     /**
-     * Called when a second click is completed within the double-click interval.
+     * Called when a second click is completed with the same button within the double-click
+     * interval.
      * The event bubbles to ancestors until a callback returns true.
      *
      * @param x horizontal pointer position relative to the widget's top-left corner
