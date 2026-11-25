@@ -17,6 +17,8 @@ import com.lixui.widget.testsupport.TestViewports;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -95,6 +97,69 @@ class NumberStepperTest {
         stepper.setValue(1.25);
 
         assertEquals(1.3, stepper.value(), 0.001);
+    }
+
+    @Test
+    void keepsExternalCallbacksWhileParsingText() {
+        TestBackend backend = new TestBackend();
+        try (WidgetManager manager = manager(backend)) {
+            manager.setDefaultFont(font(manager));
+            NumberStepper stepper = new NumberStepper();
+            stepper.setRange(0, 10);
+            stepper.setBounds(new Rect(0, 0, 260, 40));
+            manager.add(stepper);
+            manager.render();
+
+            List<String> texts = new ArrayList<>();
+            List<String> submissions = new ArrayList<>();
+            List<Double> values = new ArrayList<>();
+            stepper.setOnChange(texts::add);
+            stepper.setOnSubmit(() -> submissions.add("submitted"));
+            stepper.setOnValueChange(values::add);
+
+            stepper.setText("7.6");
+            assertEquals(8, stepper.value(), 0.001);
+            assertEquals(List.of("7.6"), texts);
+            assertEquals(List.of(8.0), values);
+
+            manager.focus(stepper);
+            manager.handle(new KeyPressed(Key.ENTER, Modifiers.NONE, false));
+
+            assertEquals(List.of("submitted"), submissions);
+            assertEquals("8", stepper.text());
+        }
+    }
+
+    @Test
+    void keepsLargeValuesAtMaximumDecimalPrecision() {
+        NumberStepper stepper = new NumberStepper();
+        stepper.setRange(0, 1e13);
+        stepper.setDecimals(9);
+        stepper.setValue(1e12);
+
+        assertEquals(1e12, stepper.value(), 0.0);
+        assertEquals("1000000000000.000000000", stepper.text());
+    }
+
+    @Test
+    void keepsHalfTiesRoundedTowardPositiveInfinity() {
+        NumberStepper stepper = new NumberStepper();
+        stepper.setRange(-10, 10);
+
+        stepper.setValue(1.5);
+        assertEquals(2, stepper.value(), 0.001);
+
+        stepper.setValue(-1.5);
+        assertEquals(-1, stepper.value(), 0.001);
+    }
+
+    @Test
+    void roundsValuesJustBelowHalfDown() {
+        NumberStepper stepper = new NumberStepper();
+        stepper.setRange(0, 1);
+        stepper.setValue(Math.nextDown(0.5));
+
+        assertEquals(0, stepper.value(), 0.0);
     }
 
     @Test

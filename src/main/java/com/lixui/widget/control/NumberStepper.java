@@ -49,8 +49,6 @@ public class NumberStepper extends Input {
         setAllowedCharacters(Input.CharacterKind.DIGITS, Input.CharacterKind.SYMBOLS);
         setMaxLength(MAX_INPUT_LENGTH);
         setTextAlignment(HorizontalAlignment.CENTER);
-        setOnChange(this::parseChange);
-        setOnSubmit(this::commitInput);
         add(decrement).add(increment);
         syncInput();
     }
@@ -355,11 +353,17 @@ public class NumberStepper extends Input {
         setValue(value + direction * step * multiplier);
     }
 
-    private void parseChange(String text) {
+    /**
+     * Parses the current text into the value after every text change.
+     * Values written by the stepper itself are ignored to avoid a feedback loop.
+     */
+    @Override
+    protected void onTextChanged() {
+        super.onTextChanged();
         if (syncing) {
             return;
         }
-        Double parsed = parse(text);
+        Double parsed = parse(text());
         if (parsed == null) {
             return;
         }
@@ -368,6 +372,15 @@ public class NumberStepper extends Input {
             value = normalized;
             notifyChange();
         }
+    }
+
+    /**
+     * Normalizes the typed text into the configured range and precision after Enter is pressed.
+     */
+    @Override
+    protected void onSubmitted() {
+        super.onSubmitted();
+        commitInput();
     }
 
     private void commitInput() {
@@ -394,7 +407,16 @@ public class NumberStepper extends Input {
     private double normalize(double raw) {
         double clamped = Math.clamp(raw, minimum, maximum);
         double scale = Math.pow(10, decimals);
-        double rounded = Math.round(clamped * scale) / scale;
+        double scaled = clamped * scale;
+        // Math.round(double) saturates at the long range, while its floor(x + 0.5) shortcut
+        // is not exact for every double. Beyond the long range the scaled double is integral,
+        // so the clamped value is already rounded.
+        double rounded;
+        if (scaled >= -0x1p63 && scaled < 0x1p63) {
+            rounded = Math.round(scaled) / scale;
+        } else {
+            rounded = clamped;
+        }
         return rounded == -0.0 ? 0 : rounded;
     }
 
