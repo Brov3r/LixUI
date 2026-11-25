@@ -32,6 +32,38 @@ Captured with `./gradlew demoShots`.
 - Standalone toasts with custom content or a fully custom renderer.
 - Windowing-library agnostic: feed `InputState` and a `RenderBackend`; logging through SLF4J.
 
+## 📦 Installation
+
+JitPack builds the tagged release on first request. LWJGL 3.4 and SLF4J come from the published POM;
+add the LWJGL natives for your platform. Prebuilt JARs are also attached to
+[Releases](https://github.com/Brov3r/LixUI/releases).
+
+**Gradle (Groovy)**
+```groovy
+repositories { maven { url 'https://jitpack.io' } }
+dependencies { implementation 'com.github.Brov3r:LixUI:v1.0.0' }
+```
+
+**Gradle (Kotlin DSL)**
+```kotlin
+repositories { maven("https://jitpack.io") }
+dependencies { implementation("com.github.Brov3r:LixUI:v1.0.0") }
+```
+
+**Maven**
+```xml
+<repository>
+  <id>jitpack.io</id>
+  <url>https://jitpack.io</url>
+</repository>
+
+<dependency>
+  <groupId>com.github.Brov3r</groupId>
+  <artifactId>LixUI</artifactId>
+  <version>v1.0.0</version>
+</dependency>
+```
+
 ## 🚀 Quick Start
 
 Requires Java 25 and LWJGL 3.4. The fat JAR is built with `./gradlew shadowJar`.
