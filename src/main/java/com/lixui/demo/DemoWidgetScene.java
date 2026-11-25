@@ -75,6 +75,7 @@ import com.lixui.widget.control.ToggleGroup;
 import com.lixui.widget.Widget;
 import com.lixui.widget.WidgetManager;
 import com.lixui.widget.container.Window;
+import com.lixui.widget.image.ImageSource;
 import com.lixui.widget.layout.Anchor;
 import com.lixui.widget.layout.Flow;
 import com.lixui.widget.layout.FormField;
@@ -1738,23 +1739,118 @@ final class DemoWidgetScene implements AutoCloseable {
             status.setText("Default lifetime: " + durations[index] + "s.");
         });
 
-        Button shortToast = new Button("Show toast");
-        shortToast.setOnAction(() -> {
+        Button plainToast = new Button("Plain show()");
+        plainToast.setOnAction(() -> {
             toasts.show("Settings saved.");
-            status.setText("Shown \"Settings saved.\" for " + toasts.defaultDuration() + "s.");
+            status.setText("Shown the plain show(String) toast with the default lifetime.");
         });
-        Button longToast = new Button("Long toast");
-        longToast.setOnAction(() -> {
-            toasts.show("A longer notification wraps across several lines. The card keeps at "
-                    + "most three lines and truncates the rest with an ellipsis so the stack "
-                    + "stays compact and readable.", 6);
-            status.setText("Shown a long toast with a six second lifetime.");
+        Button infoToast = new Button("Info");
+        infoToast.setOnAction(() -> {
+            toasts.show(new ToastManager.Options("The keyboard shortcut was copied.")
+                    .type(ToastManager.Type.INFO)
+                    .title("Heads up")
+                    .duration(5));
+            status.setText("Shown an info toast with a title and the default info icon.");
+        });
+        Button successToast = new Button("Success");
+        successToast.setOnAction(() -> {
+            toasts.show(new ToastManager.Options("Your preferences were updated.")
+                    .type(ToastManager.Type.SUCCESS)
+                    .title("Saved")
+                    .duration(5));
+            status.setText("Shown a success toast with a title and the default success icon.");
+        });
+        Button warningToast = new Button("Warning");
+        warningToast.setOnAction(() -> {
+            toasts.show(new ToastManager.Options("The server did not respond in time.")
+                    .type(ToastManager.Type.WARNING)
+                    .title("Check connection")
+                    .duration(6));
+            status.setText("Shown a warning toast with a title and a warning icon.");
+        });
+        Button errorToast = new Button("Error");
+        errorToast.setOnAction(() -> {
+            toasts.show(new ToastManager.Options("The file could not be uploaded. Try again.")
+                    .type(ToastManager.Type.ERROR)
+                    .title("Upload failed")
+                    .duration(6));
+            status.setText("Shown an error toast with a title and an error icon.");
+        });
+        Button customIconToast = new Button("Custom icon");
+        customIconToast.setOnAction(() -> {
+            toasts.show(new ToastManager.Options("ImageSource.icon(\"heart.svg\") and a custom "
+                            + "accent replace the info defaults.")
+                    .type(ToastManager.Type.INFO)
+                    .title("Custom icon")
+                    .icon(ImageSource.icon("heart.svg"))
+                    .accent(Color.hex("#F07EA6"))
+                    .duration(6));
+            status.setText("Shown a toast with an explicit icon source and accent color.");
+        });
+
+        Flow typeActions = new Flow();
+        typeActions.setGap(8);
+        typeActions.add(plainToast).add(infoToast).add(successToast)
+                .add(warningToast).add(errorToast).add(customIconToast);
+
+        Button longTextToast = new Button("Max lines");
+        longTextToast.setOnAction(() -> {
+            toasts.show(new ToastManager.Options("A long notification wraps across several lines. "
+                            + "This card keeps only two lines and replaces the rest with an ellipsis "
+                            + "so the stack stays compact even when the message keeps going.")
+                    .type(ToastManager.Type.WARNING)
+                    .title("Limited to two lines")
+                    .maxLines(2)
+                    .maxWidth(220)
+                    .duration(8));
+            status.setText("Shown a toast limited to two lines with a trailing ellipsis.");
+        });
+        Button wideTextToast = new Button("Wide wrap");
+        wideTextToast.setOnAction(() -> {
+            toasts.show(new ToastManager.Options("A wide notification uses a larger text column "
+                            + "and wraps at the configured maximum width instead of growing "
+                            + "without a bound. The card itself is allowed to grow between the "
+                            + "minimum and maximum card widths, so wide content stays readable "
+                            + "and still leaves a comfortable margin around the toast.")
+                    .type(ToastManager.Type.INFO)
+                    .title("Wide wrap")
+                    .minCardWidth(360)
+                    .maxWidth(520)
+                    .maxCardWidth(560)
+                    .maxLines(4)
+                    .duration(8));
+            status.setText("Shown a wide toast wrapping at 520 units inside a 560 unit card.");
+        });
+        Button timerOnToast = new Button("Timer on");
+        timerOnToast.setOnAction(() -> {
+            toasts.show(new ToastManager.Options("The accent bar shows the remaining lifetime.")
+                    .type(ToastManager.Type.SUCCESS)
+                    .title("Timer visible")
+                    .showTimer(true)
+                    .duration(8));
+            status.setText("Shown a toast with the remaining-time bar enabled.");
+        });
+        Button timerOffToast = new Button("No timer");
+        timerOffToast.setOnAction(() -> {
+            toasts.show(new ToastManager.Options("This toast still expires and pauses on hover, "
+                            + "but the remaining-time bar is hidden.")
+                    .type(ToastManager.Type.INFO)
+                    .title("Timer hidden")
+                    .showTimer(false)
+                    .duration(6));
+            status.setText("Shown a toast without the remaining-time bar.");
         });
         Button hoverToast = new Button("Hover test");
         hoverToast.setOnAction(() -> {
             toasts.show("Hover this toast to pause its countdown, then move away to resume.", 8);
             status.setText("Shown an eight second toast. Hover it to pause the timer.");
         });
+
+        Flow contentActions = new Flow();
+        contentActions.setGap(8);
+        contentActions.add(longTextToast).add(wideTextToast)
+                .add(timerOnToast).add(timerOffToast).add(hoverToast);
+
         Button burst = new Button("Queue 4");
         burst.setOnAction(() -> {
             for (int index = 1; index <= 4; index++) {
@@ -1769,14 +1865,8 @@ final class DemoWidgetScene implements AutoCloseable {
             status.setText("All toasts are fading out.");
         });
 
-        HBox primaryActions = new HBox();
-        primaryActions.setGap(8);
-        primaryActions.setCrossAlignment(HBox.CrossAlignment.CENTER);
-        primaryActions.add(shortToast).add(longToast).add(hoverToast);
-
-        HBox queueActions = new HBox();
+        Flow queueActions = new Flow();
         queueActions.setGap(8);
-        queueActions.setCrossAlignment(HBox.CrossAlignment.CENTER);
         queueActions.add(burst).add(clear);
 
         VBox page = new VBox();
@@ -1786,8 +1876,11 @@ final class DemoWidgetScene implements AutoCloseable {
                 .add(corner)
                 .add(sliderCaption("Default lifetime"))
                 .add(duration)
-                .add(sliderCaption("Queue, long text and hover pause"))
-                .add(primaryActions)
+                .add(sliderCaption("Types, titles and icons"))
+                .add(typeActions)
+                .add(sliderCaption("Line limit, wrap width, timer and hover pause"))
+                .add(contentActions)
+                .add(sliderCaption("Queue"))
                 .add(queueActions)
                 .add(status);
         return page;
