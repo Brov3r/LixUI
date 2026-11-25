@@ -35,6 +35,15 @@ class DemoPageScrollTest {
     }
 
     @Test
+    void stepperPageKeepsTheStatusLineReachable() {
+        DemoScrollPage scroll = assertInstanceOf(DemoScrollPage.class,
+                new StepperDemoPage(null, (name, size, assign) -> {
+                }).build());
+
+        assertBottomRowReachable(scroll);
+    }
+
+    @Test
     void modalPageKeepsAllSixVariantsInOrder() {
         Widget modalPage = new DemoModalPage(null).page();
         DemoScrollPage scroll = new DemoScrollPage(modalPage);

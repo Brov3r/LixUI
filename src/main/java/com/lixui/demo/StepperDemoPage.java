@@ -123,7 +123,7 @@ final class StepperDemoPage {
                 .add(caption("Icons: larger faces with a custom icon per step"))
                 .add(icons)
                 .add(status);
-        return page;
+        return new DemoScrollPage(page);
     }
 
     private Stepper createPipeline() {
