@@ -98,14 +98,10 @@ final class DemoWidgetScene implements AutoCloseable {
     private static final float CONTENT_PADDING = 10;
     private static final float CONTENT_GAP = 8;
     private static final float THEME_SELECT_WIDTH = 210;
-    private static final float FIXED_COLOR_BADGE_WIDTH = 110;
-    private static final float FIXED_COLOR_BADGE_HEIGHT = 24;
     private static final Color BLUE = Color.hex("#7EA6F5");
     private static final Color GREEN = Color.hex("#86C46A");
     private static final Color ORANGE = Color.hex("#E39A5B");
     private static final Color PURPLE = Color.hex("#C39BF2");
-    private static final Color FIXED_BADGE_BACKGROUND = Color.hex("#FF9E64");
-    private static final Color FIXED_BADGE_TEXT = Color.hex("#1A1A1A");
     private static final Theme EMBER_THEME = Theme.dracula()
             .withPrimary(Color.hex("#FF9E64"))
             .withOnPrimary(Color.hex("#282A36"))
@@ -127,7 +123,6 @@ final class DemoWidgetScene implements AutoCloseable {
     private final Widget background;
     private final Button themeButton;
     private final Dropdown themeSelect;
-    private final Badge fixedColorBadge;
     private final Window window;
     private final TabPanel outerTabs;
     private final TabPanel innerTabs;
@@ -165,10 +160,6 @@ final class DemoWidgetScene implements AutoCloseable {
         themeSelect.setPlaceholder("Theme");
         themeSelect.setMinimumSize(THEME_SELECT_WIDTH, THEME_BUTTON_SIZE);
         themeSelect.setMaximumSize(THEME_SELECT_WIDTH, THEME_BUTTON_SIZE);
-        fixedColorBadge = new Badge("Fixed color");
-        fixedColorBadge.setAutoSize(false);
-        fixedColorBadge.setBackgroundColor(FIXED_BADGE_BACKGROUND);
-        fixedColorBadge.setTextColor(FIXED_BADGE_TEXT);
         titleLabel = new Label("Labels and rich text");
         bodyLabel = new Label("A wrapped label reflows at the window width and aligns its text "
                 + "inside the assigned bounds. Resize the window and the lines reflow again, "
@@ -254,10 +245,9 @@ final class DemoWidgetScene implements AutoCloseable {
         // Keep the toolbar above the window when a small viewport shifts the window upward.
         themeButton.setAlwaysOnTop(true);
         themeSelect.setAlwaysOnTop(true);
-        fixedColorBadge.setAlwaysOnTop(true);
         statsPanel.setAlwaysOnTop(true);
         applyStyles();
-        manager.add(background).add(themeButton).add(themeSelect).add(fixedColorBadge)
+        manager.add(background).add(themeButton).add(themeSelect)
                 .add(statsPanel).add(window);
     }
 
@@ -280,11 +270,7 @@ final class DemoWidgetScene implements AutoCloseable {
         themeButton.setBounds(new Rect(16, 16, THEME_BUTTON_SIZE, THEME_BUTTON_SIZE));
         float controlsX = 16 + THEME_BUTTON_SIZE + STATS_GAP;
         themeSelect.setBounds(new Rect(controlsX, 16, THEME_SELECT_WIDTH, THEME_BUTTON_SIZE));
-        float badgeX = controlsX + THEME_SELECT_WIDTH + STATS_GAP;
-        fixedColorBadge.setBounds(new Rect(badgeX,
-                16 + (THEME_BUTTON_SIZE - FIXED_COLOR_BADGE_HEIGHT) / 2,
-                FIXED_COLOR_BADGE_WIDTH, FIXED_COLOR_BADGE_HEIGHT));
-        statsPanel.setPosition(badgeX + FIXED_COLOR_BADGE_WIDTH + STATS_GAP, 16);
+        statsPanel.setPosition(controlsX + THEME_SELECT_WIDTH + STATS_GAP, 16);
         float windowX = Math.max(0, (viewport.logicalWidth() - WINDOW_WIDTH) / 2);
         float windowY = Math.max(0, (viewport.logicalHeight() - WINDOW_HEIGHT) / 2);
         window.setBounds(new Rect(windowX, windowY, WINDOW_WIDTH, WINDOW_HEIGHT));
