@@ -39,6 +39,7 @@ import com.lixui.widget.control.Label;
 import com.lixui.widget.control.MultiSelect;
 import com.lixui.widget.Panel;
 import com.lixui.widget.control.Pagination;
+import com.lixui.widget.control.PasswordInput;
 import com.lixui.widget.control.ProgressBar;
 import com.lixui.widget.control.RadioBox;
 import com.lixui.widget.control.RangeSlider;
@@ -240,7 +241,7 @@ final class DemoWidgetScene implements AutoCloseable {
     }
 
     private Widget createInteractivePage() {
-        Label status = new Label("Pagination: click an arrow to change the page.");
+        Label status = new Label("Pagination and the password field share this tab.");
         status.setFontFamily(fontFamily);
         status.setAutoSize(false);
         status.setWrap(true);
@@ -251,11 +252,23 @@ final class DemoWidgetScene implements AutoCloseable {
         pagination.setOnChange(page -> status.setText("Page " + (page + 1)
                 + " of " + pagination.pageCount() + "."));
 
+        PasswordInput password = new PasswordInput("hunter2");
+        password.setPlaceholder("Password");
+        password.setOnChange(value -> status.setText("Password length: "
+                + password.rawText().codePointCount(0, password.rawText().length())));
+
+        CheckBox reveal = new CheckBox("Show the reveal button");
+        reveal.setChecked(true);
+        reveal.setOnChange(password::setRevealButtonVisible);
+
         VBox page = new VBox();
         page.setPadding(CONTENT_PADDING);
         page.setGap(10);
         page.add(sliderCaption("Pagination: ellipses keep the first, current and last pages visible"))
                 .add(pagination)
+                .add(sliderCaption("Password input: the eye toggles the mask"))
+                .add(password)
+                .add(reveal)
                 .add(status);
         return page;
     }

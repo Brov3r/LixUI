@@ -958,11 +958,12 @@ public class Input extends Panel {
 
     /**
      * Returns the content rectangle inside the field padding.
+     * Subclasses can override this method to reserve space for embedded controls.
      *
      * @param widgetStyle resolved style used for the field
      * @return the content rectangle in widget-local coordinates, or an empty rectangle
      */
-    protected final Rect contentRect(WidgetStyle widgetStyle) {
+    protected Rect contentRect(WidgetStyle widgetStyle) {
         float padding = widgetStyle.padding();
         float width = localBounds().width() - padding * 2;
         float height = localBounds().height() - padding * 2;
